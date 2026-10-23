@@ -10,4 +10,5 @@ if [[ "$(xcode-select -p)" == /Library/Developer/CommandLineTools* && -d "$clt_f
   args+=(-Xswiftc -F -Xswiftc "$clt_frameworks" -Xlinker -rpath -Xlinker "$clt_frameworks")
 fi
 
-swift test "${args[@]}" "$@"
+# ${args[@]+...} form: bash 3.2 (macOS /bin/bash) treats an empty array as unbound under set -u.
+swift test ${args[@]+"${args[@]}"} "$@"
