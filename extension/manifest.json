@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Webby",
+  "version": "0.0.1",
+  "description": "Tells the Webby Mac app which page you are on so your notes stick to it.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxsw6oeDP9j/5umDntQqFp0+1N2Tg2Phq6cd/WzjU42hwECAtAkC+0KSSHHXblqTFditCoAYaybatKWHfI+iDDTPoynGM6OcngttxQ9kIZm/3LpD+gnShp3uzjMmnqtMdFQlymmDDORDpH92HtXL6aaUs9zqBnCtWf9IESw0VVFZ0aFoy7izjAYx6tLGIx8hxxT4k5xjgPPhAHpQOGvkxAk+DIbROIS0HSpM2kTvdAEkqj2yky1n6awZkfa3/ZnDnLwVlM9UWD2M7YzkAQA4bqApcgNJyt3kqJbC9bROWivcSOGF7ZWAzZyhXwK5YX5P7m/ynRjiqb0cDyun9N6vB6wIDAQAB",
+  "permissions": [
+    "tabs",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
