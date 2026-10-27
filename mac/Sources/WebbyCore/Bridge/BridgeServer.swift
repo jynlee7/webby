@@ -41,16 +41,16 @@ public final class BridgeServer: @unchecked Sendable {
     private final class Connection {
         let id: Int
         let fd: Int32
-        /// Commands are written here so a slow reader never blocks the server queue.
-        let writeQueue: DispatchQueue
+        /// Commands are written through this, so a slow reader never blocks the server queue.
+        let writer: SocketWriter
         var source: DispatchSourceRead?
         var framer = NativeMessageFramer(limit: BridgeConstants.maxMessageFromChrome)
         var profile: String?
 
-        init(id: Int, fd: Int32) {
+        init(id: Int, fd: Int32, writer: SocketWriter) {
             self.id = id
             self.fd = fd
-            self.writeQueue = DispatchQueue(label: "com.webby.bridge-server.write.\(id)")
+            self.writer = writer
         }
     }
 
@@ -153,16 +153,10 @@ public final class BridgeServer: @unchecked Sendable {
                 emit(.dropped(connection: connection.id, reason: "\(command.type) not sent: \(error)"))
                 return
             }
-            let fd = connection.fd
-            let id = connection.id
-            connection.writeQueue.async { [weak self] in
-                do {
-                    try UnixSocket.send(frame, to: fd)
-                } catch {
-                    // A partial frame cannot be retried on this stream. A write failure
-                    // need not produce read EOF, so explicitly retire the connection.
-                    self?.queue.async { [weak self] in self?.disconnect(id) }
-                }
+            // A failed write retires the connection (see `open`).
+            guard connection.writer.enqueue(frame) else {
+                emit(.dropped(connection: connection.id, reason: "bridge isn't reading; \(command.type) not sent"))
+                return
             }
         }
     }
@@ -190,19 +184,19 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func open(_ fd: Int32) {
-        let connection = Connection(id: nextConnectionID, fd: fd)
+        let id = nextConnectionID
         nextConnectionID += 1
+        // A partial frame can't be retried on this stream, and a failed write need not show
+        // up as EOF on the read side, so a write failure retires the connection.
+        let writer = SocketWriter(fd: fd, label: "com.webby.bridge-server.write.\(id)", limit: BridgeConstants.maxMessageToChrome) { [weak self] in
+            self?.queue.async { [weak self] in self?.disconnect(id) }
+        }
+        let connection = Connection(id: id, fd: fd, writer: writer)
 
-        let id = connection.id
-        let writeQueue = connection.writeQueue
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.readAvailable(on: id) }
-        source.setCancelHandler {
-            // Unblock any pending write, then close once queued writes are done, so a
-            // write can never land on a reused descriptor.
-            shutdown(fd, SHUT_RDWR)
-            writeQueue.async { close(fd) }
-        }
+        // The writer closes the descriptor after its last write.
+        source.setCancelHandler { writer.cancel() }
         connection.source = source
         connections[id] = connection
         emit(.connected(connection: id))

@@ -183,9 +183,10 @@ final class Flag: @unchecked Sendable {
 
 /// A pipe whose write end never raises SIGPIPE. Each end is closed at most once, so a
 /// test never closes a descriptor number another test has since reused.
-final class Pipe {
+final class Pipe: @unchecked Sendable {
     let read: Int32
     let write: Int32
+    private let lock = NSLock()
     private var writeClosed = false
 
     init() throws {
@@ -197,6 +198,8 @@ final class Pipe {
     }
 
     func closeWrite() {
+        lock.lock()
+        defer { lock.unlock() }
         guard !writeClosed else { return }
         writeClosed = true
         close(write)

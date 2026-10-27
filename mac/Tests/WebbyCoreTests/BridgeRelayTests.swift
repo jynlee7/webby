@@ -165,7 +165,7 @@ private final class RelayHarness {
     let directory = try makeSocketDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let path = directory.appendingPathComponent("bridge.sock").path
-    // A raw listener whose connections are never read, like a stalled app.
+    // Webby accepts the connection but never reads from it.
     let listener = try UnixSocket.makeListener(path: path)
     defer { close(listener) }
     let chrome = try RelayHarness(socketURL: URL(fileURLWithPath: path))
@@ -176,11 +176,16 @@ private final class RelayHarness {
     })
     defer { close(app) }
 
-    // Larger than the socket buffers, so writing it to Webby stalls.
-    let url = "https://example.com/" + String(repeating: "a", count: 300_000)
-    let tab = BridgeTab(id: 1, index: 0, active: true, url: url, title: "Long")
-    try chrome.fromChrome(helloPayload(), ExtensionMessage.active(windowId: 1, incognito: false, tab: tab).encoded())
-    // Each stalled write gives up within seconds, so the relay still sees stdin close.
-    chrome.chromeIn.closeWrite()
-    #expect(await eventually(timeout: 15) { chrome.hasEnded })
+    // Chrome sends far more than the socket buffer holds, then closes stdin. Written from
+    // another thread, because a relay stuck on a write would stop reading stdin too.
+    let big = try ExtensionMessage.tabUpdated(tabId: 1, url: "https://example.com/" + String(repeating: "a", count: 1_000_000), title: nil).encoded()
+    let stream = try frame(helloPayload()) + (0..<8).map { _ in try frame(big) }.reduce(Data(), +)
+    let input = chrome.chromeIn
+    DispatchQueue.global().async {
+        try? UnixSocket.send(stream, to: input.write)
+        input.closeWrite()
+    }
+    // Writes to Webby happen off the relay's queue, so the EOF is seen right away rather
+    // than after each stalled write times out.
+    #expect(await eventually(timeout: 5) { chrome.hasEnded }, "relay did not exit after Chrome closed stdin")
 }

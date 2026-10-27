@@ -5,8 +5,14 @@ import Foundation
 /// reconnecting every `reconnectInterval`. Meanwhile it keeps only the latest `hello`,
 /// `inventory` and `active`, replays them on reconnecting, and asks the extension to
 /// resend if anything else may have been missed. Both directions are validated, and
-/// everything runs on one serial queue, so messages keep their order.
+/// everything runs on one serial queue, so messages keep their order. Writes to the app go
+/// through a `SocketWriter`, so an app that stops reading can't stall that queue: the relay
+/// keeps reading Chrome, and exits as soon as Chrome closes stdin.
 public final class BridgeRelay: @unchecked Sendable {
+    /// Messages for the app that may wait unwritten. Past this the app isn't keeping up,
+    /// so the relay drops the connection, reconnects and asks the extension to resend.
+    static let maxQueuedToApp = 8 * 1024 * 1024
+
     private let input: Int32
     private let output: Int32
     private let socketPath: String
@@ -20,6 +26,10 @@ public final class BridgeRelay: @unchecked Sendable {
     private var reconnectTimer: DispatchSourceTimer?
     private var appSocket: Int32 = -1
     private var appSource: DispatchSourceRead?
+    private var appWriter: SocketWriter?
+    /// Identifies the current app connection, so a late write failure from an earlier
+    /// connection can't drop a newer one.
+    private var appConnection = 0
 
     private var fromChrome = NativeMessageFramer(limit: BridgeConstants.maxMessageFromChrome)
     private var fromApp = NativeMessageFramer(limit: BridgeConstants.maxMessageToChrome)
@@ -131,12 +141,20 @@ public final class BridgeRelay: @unchecked Sendable {
     }
 
     private func sendToApp(_ payload: Data) {
-        do {
-            try UnixSocket.send(NativeMessageFramer.frame(payload, limit: BridgeConstants.maxMessageFromChrome), to: appSocket)
-        } catch {
-            log("lost the connection to Webby: \(error)")
+        guard let appWriter,
+              let frame = try? NativeMessageFramer.frame(payload, limit: BridgeConstants.maxMessageFromChrome)
+        else { return }
+        guard appWriter.enqueue(frame) else {
+            log("Webby isn't reading; reconnecting")
             disconnectFromApp()
+            return
         }
+    }
+
+    private func appWriteFailed(connection: Int) {
+        guard connection == appConnection, appSocket >= 0 else { return }
+        log("lost the connection to Webby: a write failed")
+        disconnectFromApp()
     }
 
     // MARK: - App connection
@@ -147,10 +165,17 @@ public final class BridgeRelay: @unchecked Sendable {
         else { return }
 
         appSocket = fd
+        appConnection += 1
         fromApp = NativeMessageFramer(limit: BridgeConstants.maxMessageToChrome)
+        let connection = appConnection
+        let writer = SocketWriter(fd: fd, label: "com.webby.bridge-relay.write", limit: Self.maxQueuedToApp) { [weak self] in
+            self?.queue.async { [weak self] in self?.appWriteFailed(connection: connection) }
+        }
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
         source.setEventHandler { [weak self] in self?.readFromApp() }
-        source.setCancelHandler { close(fd) }
+        // The writer closes the descriptor after its last write.
+        source.setCancelHandler { writer.cancel() }
+        appWriter = writer
         appSource = source
         source.resume()
         log("connected to Webby")
@@ -169,6 +194,7 @@ public final class BridgeRelay: @unchecked Sendable {
         guard appSocket >= 0 else { return }
         appSource?.cancel()
         appSource = nil
+        appWriter = nil
         appSocket = -1
         // Anything written just before the app went away may have been lost.
         needsResend = true
