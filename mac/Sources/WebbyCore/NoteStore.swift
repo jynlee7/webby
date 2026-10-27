@@ -56,14 +56,20 @@ public final class NoteStore {
     public private(set) var workspaces: [WorkspaceRecord]
 
     public var mode: Mode {
-        switch file.mode {
+        switch gate.mode {
         case .writable: return .writable
         case .readOnly(let problem): return .readOnly(problem)
         }
     }
 
-    public var outcome: FileLoadOutcome { file.outcome }
-    public var migrationBackupURL: URL? { file.migrationBackupURL }
+    public var outcome: FileLoadOutcome { gate.outcome }
+    public var migrationBackupURL: URL? { gate.migrationBackupURL }
+
+    /// Generation of the newest in-memory mutation; 0 means nothing changed since load.
+    public private(set) var mutationGeneration: UInt64 = 0
+    /// Generation known to be on disk.
+    public var committedGeneration: UInt64 { gate.generation }
+    public var hasUnsavedChanges: Bool { mutationGeneration > gate.generation }
 
     public static var defaultFileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -71,7 +77,8 @@ public final class NoteStore {
         return base.appendingPathComponent("Webby", isDirectory: true).appendingPathComponent("notes.json")
     }
 
-    private var file: VersionedJSONFile<NotesDocument>
+    private let gate: SaveGate<NotesDocument>
+    private let writer: DiskWriter<NotesDocument>
 
     public init(fileURL: URL = NoteStore.defaultFileURL, now: Date = Date()) {
         let file = VersionedJSONFile<NotesDocument>(
@@ -83,11 +90,22 @@ public final class NoteStore {
             backupBeforeUpgrade: true,
             now: { now }
         )
+        let gate = SaveGate(file: file, committedGeneration: 0)
         self.fileURL = fileURL
         self.notes = file.content.notes
         self.workspaces = file.content.workspaces
-        self.file = file
+        self.gate = gate
+        self.writer = DiskWriter(gate: gate)
     }
+
+    private var document: NotesDocument {
+        NotesDocument(notes: notes, workspaces: workspaces)
+    }
+
+    private func advanceGeneration() {
+        mutationGeneration &+= 1
+    }
+
 
     public func note(id: UUID) -> Note? { notes.first { $0.id == id } }
 
@@ -99,6 +117,7 @@ public final class NoteStore {
     public func add(_ note: Note) -> Bool {
         guard mode == .writable, self.note(id: note.id) == nil else { return false }
         notes.append(note)
+        advanceGeneration()
         return true
     }
 
@@ -125,6 +144,7 @@ public final class NoteStore {
         candidate.revision += 1
         candidate.updatedAt = now
         notes[index] = candidate
+        advanceGeneration()
         return true
     }
 
@@ -144,6 +164,7 @@ public final class NoteStore {
         }
         guard candidate != notes[index] else { return false }
         notes[index] = candidate
+        advanceGeneration()
         return true
     }
 
@@ -156,6 +177,7 @@ public final class NoteStore {
         change(&binding)
         guard binding != notes[index].tab else { return false }
         notes[index].tab = binding
+        advanceGeneration()
         return true
     }
 
@@ -165,6 +187,7 @@ public final class NoteStore {
               let index = notes.firstIndex(where: { $0.id == id }),
               notes[index].trashedAt == nil else { return false }
         notes[index].trashedAt = now
+        advanceGeneration()
         return true
     }
 
@@ -174,6 +197,7 @@ public final class NoteStore {
               let index = notes.firstIndex(where: { $0.id == id }),
               notes[index].trashedAt != nil else { return false }
         notes[index].trashedAt = nil
+        advanceGeneration()
         return true
     }
 
@@ -183,20 +207,48 @@ public final class NoteStore {
         guard mode == .writable else { return 0 }
         let oldCount = notes.count
         notes.removeAll { note in note.trashedAt.map { $0 < cutoff } ?? false }
-        return oldCount - notes.count
+        let removed = oldCount - notes.count
+        if removed > 0 { advanceGeneration() }
+        return removed
     }
 
     public func replaceWorkspaces(_ records: [WorkspaceRecord]) throws {
         if case .readOnly(let reason) = mode { throw StoreError.readOnly(reason) }
         try NotesDocument.validateWorkspaces(records)
+        guard records != workspaces else { return }
         workspaces = records
+        advanceGeneration()
     }
 
+    /// Writes the current state through the shared gate on the calling thread.
     public func save() throws {
-        file.updateContent(NotesDocument(notes: notes, workspaces: workspaces))
+        _ = try commit()
+    }
+
+    /// Queues the current state for the ordered background writer.
+    public func enqueueSave() async {
+        await writer.enqueue(snapshot())
+    }
+
+    /// Waits until the newest in-memory state is on disk.
+    public func flush() async throws {
+        try await writer.flush(snapshot())
+    }
+
+    /// Synchronous quit fallback. Uses the same gate as the background writer, so an
+    /// in-flight commit cannot be duplicated or overtaken.
+    public func saveSynchronously() throws {
+        _ = try commit()
+    }
+
+    private func snapshot() -> SaveGate<NotesDocument>.Snapshot {
+        SaveGate<NotesDocument>.Snapshot(generation: mutationGeneration, content: document)
+    }
+
+    private func commit() throws -> SaveGate<NotesDocument>.Acknowledgement {
         do {
-            try file.save()
-        } catch let error as VersionedJSONFile<NotesDocument>.SaveError {
+            return try gate.commit(snapshot())
+        } catch let error as SaveFailure {
             switch error {
             case .readOnly(let problem): throw StoreError.readOnly(problem)
             case .sourceChanged: throw StoreError.sourceChanged

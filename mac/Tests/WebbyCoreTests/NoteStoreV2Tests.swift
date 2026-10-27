@@ -227,6 +227,55 @@ import Testing
         }
     }
 
+    @Test func orderedFlushPersistsNewestGeneration() async throws {
+        try withStore { _, url in }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("notes.json")
+        let store = NoteStore(fileURL: url, now: created)
+        let first = note()
+        store.add(first)
+        #expect(store.mutationGeneration == 1)
+        await store.enqueueSave()
+        store.updateContent(id: first.id, change: .text("newer"), now: edited)
+        #expect(store.mutationGeneration == 2)
+        await store.enqueueSave()
+        try await store.flush()
+        #expect(store.hasUnsavedChanges == false)
+        #expect(store.committedGeneration == 2)
+        #expect(NoteStore(fileURL: url).notes.first?.text == "newer")
+    }
+
+    @Test func readOnlyStoreRejectsEverySavePath() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("notes.json")
+        let original = Data(#"{"version":99,"future":"schema"}"#.utf8)
+        try original.write(to: url)
+        let store = NoteStore(fileURL: url)
+        #expect(throws: NoteStore.StoreError.self) { try store.save() }
+        #expect(throws: NoteStore.StoreError.self) { try store.saveSynchronously() }
+        #expect(try Data(contentsOf: url) == original)
+    }
+
+    @Test func migratedFileStillWritesOnFirstSaveWithoutMutations() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("notes.json")
+        let original = Data(#"{"version":1,"notes":[]}"#.utf8)
+        try original.write(to: url)
+        let store = NoteStore(fileURL: url, now: created)
+        #expect(store.mutationGeneration == 0)
+        try store.save()
+        let backup = try #require(store.migrationBackupURL)
+        #expect(try Data(contentsOf: backup) == original)
+        let object = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        #expect(object["version"] as? Int == 2)
+    }
+
     @Test func migrationConflictUsesThePublicStoreError() throws {
         try withStore { _, url in
             try Data(#"{"version":1,"notes":[]}"#.utf8).write(to: url)

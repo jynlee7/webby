@@ -53,6 +53,7 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var file: VersionedJSONFile<Content>
     private var committedGeneration: UInt64
+    private var hasCommitted = false
 
     public init(file: VersionedJSONFile<Content>, committedGeneration: UInt64) {
         self.file = file
@@ -63,6 +64,18 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return file.fileURL
+    }
+
+    public var mode: FileLoadMode {
+        lock.lock()
+        defer { lock.unlock() }
+        return file.mode
+    }
+
+    public var outcome: FileLoadOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        return file.outcome
     }
 
     public var isReadOnly: Bool {
@@ -93,15 +106,31 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        guard snapshot.generation > committedGeneration else {
+        if case .readOnly(let problem) = file.mode {
+            throw SaveFailure.readOnly(problem)
+        }
+
+        // The first write must happen even at generation 0, so a loaded older format
+        // is actually upgraded and backed up rather than left untouched on disk.
+        if hasCommitted && snapshot.generation <= committedGeneration {
             return Acknowledgement(generation: committedGeneration, migrationBackupURL: file.migrationBackupURL)
         }
 
         var candidate = file
         candidate.updateContent(snapshot.content)
-        try candidate.save()
+        do {
+            try candidate.save()
+        } catch let error as VersionedJSONFile<Content>.SaveError {
+            switch error {
+            case .readOnly(let problem): throw SaveFailure.readOnly(problem)
+            case .sourceChanged: throw SaveFailure.sourceChanged
+            case .backupChanged: throw SaveFailure.backupChanged
+            case .backupNameUnavailable: throw SaveFailure.backupNameUnavailable
+            }
+        }
         file = candidate
         committedGeneration = snapshot.generation
+        hasCommitted = true
         return Acknowledgement(generation: snapshot.generation, migrationBackupURL: candidate.migrationBackupURL)
     }
 }
