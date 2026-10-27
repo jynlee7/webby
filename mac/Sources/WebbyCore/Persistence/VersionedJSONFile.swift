@@ -41,14 +41,11 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
 
     private let now: @Sendable () -> Date
     private let randomSuffix: @Sendable (Int) -> String
+    /// Top-level key holding `content`, so existing file shapes such as `notes` stay unchanged.
+    private let contentKey: String
 
     private struct VersionProbe: Decodable {
         let version: Int
-    }
-
-    private struct Envelope: Codable {
-        let version: Int
-        let content: Content
     }
 
     private static var decoder: JSONDecoder {
@@ -67,6 +64,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     public init(
         fileURL: URL,
         defaultContent: Content,
+        contentKey: String = "content",
         now: @escaping @Sendable () -> Date = { Date() },
         randomSuffix: @escaping @Sendable (Int) -> String = { _ in
             String(UUID().uuidString.lowercased().prefix(8))
@@ -78,6 +76,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         self.outcome = .missing
         self.now = now
         self.randomSuffix = randomSuffix
+        self.contentKey = contentKey
 
         load()
     }
@@ -91,9 +90,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
             throw SaveError.readOnly(problem)
         }
 
-        let data = try Self.encoder.encode(
-            Envelope(version: Self.currentVersion, content: content)
-        )
+        let data = try Self.encodedEnvelope(version: Self.currentVersion, content: content, contentKey: contentKey)
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -143,13 +140,32 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         }
 
         do {
-            let envelope = try Self.decoder.decode(Envelope.self, from: data)
-            content = envelope.content
+            content = try Self.decodedContent(from: data, contentKey: contentKey)
             mode = .writable
             outcome = .loaded
         } catch {
             recoverFromCorruptFile()
         }
+    }
+
+    /// Writes `version` beside the content at `contentKey`, so existing shapes like `{"version": 1, "notes": []}` are preserved.
+    private static func encodedEnvelope(version: Int, content: Content, contentKey: String) throws -> Data {
+        let contentObject = try JSONSerialization.jsonObject(with: encoder.encode(content))
+        return try JSONSerialization.data(
+            withJSONObject: ["version": version, contentKey: contentObject],
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
+    private static func decodedContent(from data: Data, contentKey: String) throws -> Content {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawContent = object[contentKey] else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: [], debugDescription: "Missing \"\(contentKey)\" key")
+            )
+        }
+        let contentData = try JSONSerialization.data(withJSONObject: rawContent, options: [.fragmentsAllowed])
+        return try decoder.decode(Content.self, from: contentData)
     }
 
     private mutating func recoverFromCorruptFile() {

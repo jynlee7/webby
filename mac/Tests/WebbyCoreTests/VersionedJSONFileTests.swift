@@ -371,3 +371,32 @@ private func fileNames(in directory: URL) throws -> [String] {
     let savedAgain = try Data(contentsOf: url)
     #expect(try JSONSerialization.jsonObject(with: savedAgain) as? [String: Any] != nil)
 }
+
+@Test func contentKeyPreservesAnExistingTopLevelShape() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    var file = VersionedJSONFile(
+        fileURL: url,
+        defaultContent: loadedContent,
+        contentKey: "notes",
+        now: { fixedDate }
+    )
+
+    try file.save()
+
+    let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    #expect(object["version"] as? Int == VersionedJSONFile<TestContent>.currentVersion)
+    #expect(object["notes"] is [String: Any])
+    #expect(object["content"] == nil)
+
+    let reloaded = VersionedJSONFile(
+        fileURL: url,
+        defaultContent: TestContent(title: "", count: 0),
+        contentKey: "notes",
+        now: { fixedDate }
+    )
+    #expect(reloaded.content == loadedContent)
+    #expect(reloaded.outcome == .loaded)
+}
