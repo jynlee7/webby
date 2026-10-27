@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -13,5 +13,6 @@ let package = Package(
         .executableTarget(name: "Webby", dependencies: ["WebbyCore"]),
         .executableTarget(name: "WebbyBridge", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyCoreTests", dependencies: ["WebbyCore"]),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
