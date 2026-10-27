@@ -1373,7 +1373,7 @@ These rules follow Apple's guidance; how they are enforced is Webby's design.
 | `Webby` | executable | all libraries | AppKit/SwiftUI UI, Keychain, ScreenCaptureKit, FSEvents, global hotkeys, `ChromeBridge` (bridge wiring and debug log), `BrowserMonitor` | + AppKit, SwiftUI, WebKit, Security, ScreenCaptureKit, OSLog |
 | `WebbyBridge` | executable | `WebbyCore` | Native-messaging stdio ↔ Unix socket (`main.swift` runs `BridgeRelay`) | Foundation |
 
-- **Why `OSLog` in `Webby`:** `Logger` is the only logging API with privacy markers, so URLs and titles stay `<private>` in the unified log (SECURITY.md). Libraries don't import it: they report through return values, event streams or an injected log closure.
+- **Why `OSLog` in `Webby`:** `Logger` supports privacy markers, which `NSLog` and `print` don't, so URLs and titles stay `<private>` in the unified log (SECURITY.md). Libraries don't import it: they report through return values, event streams or an injected log closure.
 
 - **Test targets:** `WebbyCoreTests`, `WebbySkinArchiveTests`, `WebbyVoiceTests` and `WebbyAgentTests`. All use Swift Testing and run through `scripts/test.sh`.
 - **Import and macro check:** `scripts/check-imports.sh`, added in Step 2a and run in CI:
