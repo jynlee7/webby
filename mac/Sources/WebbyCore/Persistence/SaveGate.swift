@@ -24,10 +24,11 @@ public enum SaveFailure: Error, LocalizedError, Equatable {
 
 /// Serializes every write for one file so an older generation can never replace a newer one.
 ///
-/// The gate owns the single canonical `VersionedJSONFile`, because that type carries
-/// migration source bytes and backup identity that must not be copied per snapshot.
-/// The background writer, explicit saves and the synchronous quit fallback all call
-/// `commit`, so they cannot interleave or duplicate migration work.
+/// Two separate mechanisms, on purpose:
+/// - a private serial queue serializes the encode-and-write work, keeping blocking file
+///   I/O off both the caller's thread and the Swift concurrency cooperative pool;
+/// - a short-lived `NSLock` guards only the small in-memory state, so `mode`,
+///   `generation` and `isReadOnly` never wait for a write to finish.
 public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
     public struct Snapshot: Sendable {
         public let generation: UInt64
@@ -49,8 +50,10 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         }
     }
 
-    // `NSLock` guards every mutable field below; `Content: Sendable` covers the payload.
     private let lock = NSLock()
+    private let queue = DispatchQueue(label: "com.webby.save-gate", qos: .utility)
+
+    // Guarded by `lock`. Never held across file I/O.
     private var file: VersionedJSONFile<Content>
     private var committedGeneration: UInt64
     private var hasCommitted = false
@@ -60,29 +63,17 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         self.committedGeneration = committedGeneration
     }
 
-    public var fileURL: URL {
-        lock.lock()
-        defer { lock.unlock() }
-        return file.fileURL
-    }
+    public var fileURL: URL { locked { $0.fileURL } }
 
-    public var mode: FileLoadMode {
-        lock.lock()
-        defer { lock.unlock() }
-        return file.mode
-    }
+    public var mode: FileLoadMode { locked { $0.mode } }
 
-    public var outcome: FileLoadOutcome {
-        lock.lock()
-        defer { lock.unlock() }
-        return file.outcome
-    }
+    public var outcome: FileLoadOutcome { locked { $0.outcome } }
 
     public var isReadOnly: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if case .readOnly = file.mode { return true }
-        return false
+        locked {
+            if case .readOnly = $0.mode { return true }
+            return false
+        }
     }
 
     public var generation: UInt64 {
@@ -91,32 +82,49 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         return committedGeneration
     }
 
-    public var migrationBackupURL: URL? {
-        lock.lock()
-        defer { lock.unlock() }
-        return file.migrationBackupURL
+    public var migrationBackupURL: URL? { locked { $0.migrationBackupURL } }
+
+    /// Synchronous write for callers that must block, such as the quit fallback.
+    /// The serial queue still orders it against background writes.
+    public func commit(_ snapshot: Snapshot) throws -> Acknowledgement {
+        try queue.sync { try performCommit(snapshot) }
     }
 
-    /// Writes `snapshot` unless a generation at least this new is already committed.
-    ///
-    /// The lock is held across the generation check, encoding, migration and atomic
-    /// replacement. A newer generation arriving mid-write therefore waits and then
-    /// writes after this one, rather than racing it.
-    public func commit(_ snapshot: Snapshot) throws -> Acknowledgement {
+    /// Write for async callers. The blocking work runs on the gate's queue, so a
+    /// committed generation never parks a cooperative-pool thread.
+    public func commitAsync(_ snapshot: Snapshot) async throws -> Acknowledgement {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                continuation.resume(with: Result { try self.performCommit(snapshot) })
+            }
+        }
+    }
+
+    private func locked<T>(_ body: (VersionedJSONFile<Content>) -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
+        return body(file)
+    }
 
-        if case .readOnly(let problem) = file.mode {
+    private func performCommit(_ snapshot: Snapshot) throws -> Acknowledgement {
+        lock.lock()
+        let mode = file.mode
+        let alreadyCommitted = hasCommitted && snapshot.generation <= committedGeneration
+        let currentGeneration = committedGeneration
+        let currentBackup = file.migrationBackupURL
+        let currentFile = file
+        lock.unlock()
+
+        if case .readOnly(let problem) = mode {
             throw SaveFailure.readOnly(problem)
+        }
+        if alreadyCommitted {
+            return Acknowledgement(generation: currentGeneration, migrationBackupURL: currentBackup)
         }
 
         // The first write must happen even at generation 0, so a loaded older format
         // is actually upgraded and backed up rather than left untouched on disk.
-        if hasCommitted && snapshot.generation <= committedGeneration {
-            return Acknowledgement(generation: committedGeneration, migrationBackupURL: file.migrationBackupURL)
-        }
-
-        var candidate = file
+        var candidate = currentFile
         candidate.updateContent(snapshot.content)
         do {
             try candidate.save()
@@ -128,9 +136,13 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
             case .backupNameUnavailable: throw SaveFailure.backupNameUnavailable
             }
         }
+
+        lock.lock()
         file = candidate
         committedGeneration = snapshot.generation
         hasCommitted = true
+        lock.unlock()
+
         return Acknowledgement(generation: snapshot.generation, migrationBackupURL: candidate.migrationBackupURL)
     }
 }
