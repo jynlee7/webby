@@ -1,0 +1,358 @@
+import Foundation
+import Testing
+@testable import WebbyCore
+
+private struct TestSaveError: Error, LocalizedError, Equatable, Sendable {
+    var errorDescription: String? { "test save failed" }
+}
+
+private final class Recorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flushCallCount = 0
+    private var fallbackCallCount = 0
+    private var recordedOutcomes: [QuitOutcome] = []
+    private var recordedSuddenStates: [Bool] = []
+
+    func recordFlush() {
+        lock.lock()
+        flushCallCount += 1
+        lock.unlock()
+    }
+
+    func recordFallback() {
+        lock.lock()
+        fallbackCallCount += 1
+        lock.unlock()
+    }
+
+    func recordOutcome(_ outcome: QuitOutcome) {
+        lock.lock()
+        recordedOutcomes.append(outcome)
+        lock.unlock()
+    }
+
+    func recordSudden(_ disabled: Bool) {
+        lock.lock()
+        recordedSuddenStates.append(disabled)
+        lock.unlock()
+    }
+
+    var flushCalls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return flushCallCount
+    }
+
+    var fallbackCalls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return fallbackCallCount
+    }
+
+    var outcomes: [QuitOutcome] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedOutcomes
+    }
+
+    var suddenStates: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedSuddenStates
+    }
+}
+
+/// A continuation that never resolves unless its task is cancelled.
+private final class SuspendedGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, any Error>?
+    private var wasCancelled = false
+
+    func wait() async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                lock.lock()
+                if wasCancelled {
+                    lock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    self.continuation = continuation
+                    lock.unlock()
+                }
+            }
+        } onCancel: {
+            self.cancel()
+        }
+    }
+
+    private func cancel() {
+        lock.lock()
+        wasCancelled = true
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(throwing: CancellationError())
+    }
+}
+
+private let hangingSleep: QuitFlushCoordinator.Sleep = { _ in
+    try await SuspendedGate().wait()
+}
+
+private let immediateSleep: QuitFlushCoordinator.Sleep = { _ in }
+
+@Test func cleanStateTerminatesWithoutFlushing() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 1
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+
+    #expect(coordinator.plan() == .terminateNow)
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.flushCalls == 0)
+    #expect(recorder.fallbackCalls == 0)
+    #expect(recorder.outcomes == [.nothingToSave])
+}
+
+@Test func readOnlyTerminatesImmediatelyEvenWhenDirty() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 1
+        },
+        isReadOnly: { true },
+        hasUnsavedChanges: { true },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(coordinator.plan() == .terminateNow)
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.flushCalls == 0)
+    #expect(recorder.fallbackCalls == 0)
+    #expect(recorder.outcomes == [.nothingToSave])
+}
+
+@Test func flushSuccessTerminatesWithoutFallback() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            return 42
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 0
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+    #expect(coordinator.hasPendingChanges)
+
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.flushCalls == 1)
+    #expect(recorder.fallbackCalls == 0)
+    #expect(recorder.outcomes == [.flushed(generation: 42)])
+    #expect(!coordinator.hasPendingChanges)
+}
+
+@Test func flushFailureFallsBackOnce() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            throw TestSaveError()
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 9
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.flushCalls == 1)
+    #expect(recorder.fallbackCalls == 1)
+    #expect(recorder.outcomes == [.fallback(generation: 9)])
+    #expect(!coordinator.hasPendingChanges)
+}
+
+@Test func timeoutRunsSynchronousFallbackExactlyOnce() async {
+    let recorder = Recorder()
+    let gate = SuspendedGate()
+    let coordinator = QuitFlushCoordinator(
+        timeout: .milliseconds(10),
+        now: { .zero },
+        sleep: immediateSleep,
+        flush: {
+            recorder.recordFlush()
+            try await gate.wait()
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 7
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.fallbackCalls == 1)
+    #expect(recorder.outcomes == [.fallback(generation: 7)])
+}
+
+@Test func timeoutFallbackFailureReportsFalse() async {
+    let recorder = Recorder()
+    let gate = SuspendedGate()
+    let coordinator = QuitFlushCoordinator(
+        timeout: .milliseconds(10),
+        now: { .zero },
+        sleep: immediateSleep,
+        flush: {
+            recorder.recordFlush()
+            try await gate.wait()
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            throw TestSaveError()
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination() == false)
+    #expect(recorder.fallbackCalls == 1)
+    #expect(recorder.outcomes == [.failed(QuitFailure(TestSaveError()))])
+}
+
+@Test func flushCancellationIsNotSuccess() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            throw CancellationError()
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 5
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.fallbackCalls == 1)
+    #expect(recorder.outcomes == [.fallback(generation: 5)])
+}
+
+@Test func doubleTerminationDoesNotFallbackTwice() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            throw TestSaveError()
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 3
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination())
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.fallbackCalls == 1)
+    #expect(recorder.outcomes == [.fallback(generation: 3)])
+}
+
+@Test func staleCommitDoesNotClearDirty() {
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: { 1 },
+        fallback: { 1 },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false }
+    )
+
+    coordinator.noteMutation(generation: 5)
+    #expect(coordinator.hasPendingChanges)
+
+    coordinator.noteCommitted(generation: 4)
+    #expect(coordinator.hasPendingChanges)
+
+    coordinator.noteCommitted(generation: 5)
+    #expect(!coordinator.hasPendingChanges)
+
+    coordinator.noteMutation(generation: 6)
+    coordinator.noteCommitted(generation: 7)
+    #expect(!coordinator.hasPendingChanges)
+}
+
+@Test func suddenTerminationEdgesAreBalanced() {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: { 1 },
+        fallback: { 1 },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        suddenTermination: { recorder.recordSudden($0) }
+    )
+
+    #expect(recorder.suddenStates.isEmpty)
+
+    coordinator.noteMutation(generation: 1)
+    coordinator.noteMutation(generation: 2)
+    #expect(recorder.suddenStates == [true])
+
+    coordinator.noteCommitted(generation: 1)
+    #expect(recorder.suddenStates == [true])
+
+    coordinator.noteCommitted(generation: 2)
+    #expect(recorder.suddenStates == [true, false])
+}
