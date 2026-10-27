@@ -165,6 +165,26 @@ private func startServer(in directory: URL, allowedUID: uid_t = getuid()) throws
     #expect(await eventually { log.messages.count == 1 })
 }
 
+@Test func aServerThatIsStillStartingIsNeverReplaced() throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("bridge.sock")
+    // Another server owns the path and has a socket there but isn't listening yet, so
+    // connecting is refused just as it is for a stale socket.
+    let lock = try #require(try BridgeServer.lockOwnership(ofSocketAt: url.path))
+    close(try UnixSocket.makeListener(path: url.path))
+
+    let server = BridgeServer(socketURL: url)
+    #expect(throws: BridgeServer.ServerError.alreadyRunning) { try server.start() }
+    #expect(UnixSocket.isSocket(atPath: url.path) == true)
+
+    // Once the owner is gone, its socket is stale and is replaced.
+    close(lock)
+    try server.start()
+    server.stop()
+    #expect(UnixSocket.isSocket(atPath: url.path) == nil)
+}
+
 @Test func somethingOtherThanASocketIsLeftAlone() throws {
     let directory = try makeSocketDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

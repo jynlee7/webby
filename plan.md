@@ -1508,6 +1508,7 @@ Dangling references never fail a load. A missing record makes an override fall b
   Skins/<id>/                        installed skins, plain folders
   Extension/                         unpacked Chrome extension copied from the app bundle (v0.1 distribution)
   bridge.sock                        Unix socket (0600), created by the app, unlinked on start if stale
+  bridge.sock.lock                   empty (0600); the app holds an exclusive flock on it while it owns bridge.sock
 ~/Library/Caches/<bundle ID>/search-cache.sqlite   only past the §5.2 thresholds; deletable
 ~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.webby.bridge.json
 Keychain (generic passwords): service = bundle ID, accounts "cartesia", "anthropic"

@@ -17,7 +17,7 @@ public enum BridgeEvent: Equatable, Sendable {
 /// before it reaches `events`. All state lives on one serial queue.
 public final class BridgeServer: @unchecked Sendable {
     public enum ServerError: Error, Equatable {
-        /// Another Webby process is already listening on the socket.
+        /// Another server owns the socket, whether or not it is listening yet.
         case alreadyRunning
         /// Something other than a socket exists at the socket path; it is left alone.
         case pathInUse
@@ -33,6 +33,8 @@ public final class BridgeServer: @unchecked Sendable {
     private let continuation: AsyncStream<BridgeEvent>.Continuation
     private let queue = DispatchQueue(label: "com.webby.bridge-server")
     private var listener: DispatchSourceRead?
+    /// Held from before the socket is checked until after it is removed.
+    private var ownershipLock: Int32?
     private var connections: [Int: Connection] = [:]
     private var nextConnectionID = 1
 
@@ -59,7 +61,9 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     /// Starts listening. A stale socket left by a crashed run is replaced; a live one means
-    /// another Webby is running, and nothing is changed.
+    /// another Webby is running, and nothing is changed. Only the holder of the socket's
+    /// lock may replace or remove it, so a server that has bound the socket but isn't
+    /// listening yet is never mistaken for a stale one.
     public func start() throws {
         try queue.sync {
             guard listener == nil else { return }
@@ -69,25 +73,36 @@ public final class BridgeServer: @unchecked Sendable {
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700]
             )
-            switch UnixSocket.isSocket(atPath: path) {
-            case nil:
-                break
-            case false?:
-                throw ServerError.pathInUse
-            case true?:
-                if let fd = try? UnixSocket.makeConnection(path: path) {
-                    close(fd)
-                    throw ServerError.alreadyRunning
-                }
-                unlink(path)
+            guard let lock = try Self.lockOwnership(ofSocketAt: path) else {
+                throw ServerError.alreadyRunning
             }
+            do {
+                switch UnixSocket.isSocket(atPath: path) {
+                case nil:
+                    break
+                case false?:
+                    throw ServerError.pathInUse
+                case true?:
+                    do {
+                        let fd = try UnixSocket.makeConnection(path: path)
+                        close(fd)
+                        throw ServerError.alreadyRunning
+                    } catch let error as UnixSocket.Failure where error.code == ECONNREFUSED {
+                        unlink(path)
+                    }
+                }
 
-            let fd = try UnixSocket.makeListener(path: path)
-            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-            source.setEventHandler { [weak self] in self?.acceptPending(on: fd) }
-            source.setCancelHandler { close(fd) }
-            listener = source
-            source.resume()
+                let fd = try UnixSocket.makeListener(path: path)
+                let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+                source.setEventHandler { [weak self] in self?.acceptPending(on: fd) }
+                source.setCancelHandler { close(fd) }
+                listener = source
+                ownershipLock = lock
+                source.resume()
+            } catch {
+                close(lock)
+                throw error
+            }
         }
     }
 
@@ -101,8 +116,27 @@ public final class BridgeServer: @unchecked Sendable {
                 disconnect(id)
             }
             unlink(socketURL.path)
+            if let ownershipLock {
+                close(ownershipLock)
+                self.ownershipLock = nil
+            }
         }
         continuation.finish()
+    }
+
+    /// Takes the exclusive lock beside the socket at `path`, or returns nil if another
+    /// server holds it. The system releases the lock when its holder exits, even by crashing.
+    /// The lock file is never removed, so two servers can never lock different files.
+    static func lockOwnership(ofSocketAt path: String) throws -> Int32? {
+        let fd = Darwin.open(path + ".lock", O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw UnixSocket.Failure(operation: "open lock", code: errno) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            let code = errno
+            close(fd)
+            if code == EWOULDBLOCK { return nil }
+            throw UnixSocket.Failure(operation: "lock", code: code)
+        }
+        return fd
     }
 
     /// Sends a command to the newest connection for `profile`.
