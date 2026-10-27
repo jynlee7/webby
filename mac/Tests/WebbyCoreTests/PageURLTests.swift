@@ -79,6 +79,7 @@ import Testing
     let page = try #require(PageURL(string: "https://example.com/a/b?x=1&y=2#section"))
 
     #expect(page.path == "/a/b")
+    #expect(page.query == nil)
     #expect(page.description == "example.com/a/b")
 }
 
@@ -96,9 +97,34 @@ import Testing
 
     #expect(page.host == "www.example.com")
     #expect(page.path == "/problems/two-sum")
+    #expect(page.query == nil)
     #expect(page.segments == ["problems", "two-sum"])
     #expect(PageURL(host: "example.com", path: "").path == "")
     #expect(PageURL(host: "example.com", path: "///").path == "")
+}
+
+@Test func storedQueryRoundTripsWithoutAffectingParsedPages() throws {
+    let page = PageURL(host: "example.com", path: "/search", query: "q=swift&page=2")
+
+    #expect(page.query == "q=swift&page=2")
+
+    let data = try JSONEncoder().encode(page)
+    let decoded = try JSONDecoder().decode(PageURL.self, from: data)
+
+    #expect(decoded == page)
+    #expect(decoded.query == "q=swift&page=2")
+
+    let parsed = try #require(PageURL(string: "https://example.com/search?q=swift&page=2"))
+    #expect(parsed.query == nil)
+    #expect(parsed.path == "/search")
+}
+
+@Test func decodingAPageWithoutAQueryStillWorks() throws {
+    let data = Data(#"{"host":"example.com","path":"/a"}"#.utf8)
+    let decoded = try JSONDecoder().decode(PageURL.self, from: data)
+
+    #expect(decoded.query == nil)
+    #expect(decoded == PageURL(host: "example.com", path: "/a"))
 }
 
 @Test func codableRoundTripPreservesIdentity() throws {
