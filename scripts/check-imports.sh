@@ -151,11 +151,12 @@ check_webbycore_dependencies() {
   # SwiftPM also accepts a product as a plain string ("SomePackage") or as
   # .byName("SomePackage"), so inspect the dependencies list for those forms.
   local names entry
+  local localTargets=" WebbyCore Webby WebbyBridge WebbyCoreTests "
   names="$(printf '%s\n' "$deps" | grep -oE '\.byName[[:space:]]*\([[:space:]]*"[^"]*"|"[^"]*"' | sed -E 's/^\.byName[[:space:]]*\([[:space:]]*"//; s/^"//; s/"$//' || true)"
 
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
-    case " WebbyCore Webby WebbyBridge WebbyCoreTests " in
+    case "$localTargets" in
       *" $entry "*) ;;
       *) report "$package: WebbyCore dependency '$entry' is not a local target" ;;
     esac
