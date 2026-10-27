@@ -377,7 +377,7 @@ private func fileNames(in directory: URL) throws -> [String] {
     defer { removeTempDirectory(root) }
 
     let url = root.appendingPathComponent("notes.json")
-    var file = VersionedJSONFile(
+    let file = VersionedJSONFile(
         fileURL: url,
         defaultContent: loadedContent,
         contentKey: "notes",
