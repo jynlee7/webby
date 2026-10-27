@@ -711,9 +711,9 @@ Snapshots are Step 7b, after Milestone A.
 
 - **Message size:** extension-to-host messages may be up to 64 MiB, so an inventory of hundreds of tabs is fine.
 - **Service worker:**
-  - Listeners are registered at the top level. The worker connects lazily and reconnects on the next event after a disconnect.
+  - Listeners are registered at the top level. The worker connects lazily and retries after a disconnect, first after one second and then backing off to a minute while the host keeps failing; a browser event reconnects immediately.
   - An open `connectNative` port keeps the worker alive (Chrome 105+).
-  - No essential state lives in globals. `chrome.storage.session` holds only the dedupe state for the last value sent.
+  - The profile key persists in `chrome.storage.local`. Dedupe state stays in worker memory and is rebuilt from a fresh snapshot on every connection, avoiding session-storage quota failures. Events already covered by that snapshot are skipped.
 - **Incognito windows before Step 7b:** if `hello.incognitoAllowed` is true and an `active` message comes from an `incognito` window, the app ignores its page and tab and uses the app context, so no web note is created or shown there until ephemeral notes exist (§5.1.8).
 - **Not used:**
   - `webNavigation`, which adds nothing the core needs.
@@ -1366,12 +1366,14 @@ These rules follow Apple's guidance; how they are enforced is Webby's design.
 
 | Target | Kind | Depends on | Contents | Allowed imports |
 | --- | --- | --- | --- | --- |
-| `WebbyCore` | library | — | Models, `NoteStore`, migrations, `VersionedJSONFile`, `SettingsStore` model, workspace resolver, visibility, query rules, Library queries/search cache/page tree/compiled documents, bridge protocol, framing and constants, skin manifest/pure validator/resolver/contrast, `SkinAssetChecking` protocol, `CredentialProvider` protocol | Foundation, CoreGraphics |
+| `WebbyCore` | library | — | Models, `NoteStore`, migrations, `VersionedJSONFile`, `SettingsStore` model, workspace resolver, visibility, query rules, Library queries/search cache/page tree/compiled documents, bridge protocol, framing and constants, `BridgeServer` (the app's socket), `BridgeRelay` (the bridge process's logic), `NativeHostInstaller`, skin manifest/pure validator/resolver/contrast, `SkinAssetChecking` protocol, `CredentialProvider` protocol | Foundation, CoreGraphics |
 | `WebbySkinArchive` | library | `WebbyCore`, ZIPFoundation | `.webbyskin` extraction and export; `SkinAssetChecker` (decode-level image and sound checks) | + ZIPFoundation, ImageIO, AVFAudio |
 | `WebbyVoice` | library | `WebbyCore` | `AudioEngineHost` (capture and playback facets on one engine), `PCMRingBuffer`, `CartesiaSTTClient`, `CartesiaTTSClient`, `LocalSpeech`, WebSocket transport protocol | + AVFoundation, Speech |
 | `WebbyAgent` | library | `WebbyCore`, `WebbyVoice` | `ContextAssembler`, `ClaudeClient` (SSE, tool loop), `SpeechChunker`, `TurnController`, `ConversationStore`, `CitationValidator` | Foundation |
-| `Webby` | executable | all libraries | AppKit/SwiftUI UI, Keychain, ScreenCaptureKit, FSEvents, global hotkeys, `BridgeServer`, `BrowserMonitor`, `NativeHostInstaller` | + AppKit, SwiftUI, WebKit, Security, ScreenCaptureKit |
-| `WebbyBridge` | executable | `WebbyCore` | Native-messaging stdio ↔ Unix socket | Foundation |
+| `Webby` | executable | all libraries | AppKit/SwiftUI UI, Keychain, ScreenCaptureKit, FSEvents, global hotkeys, `ChromeBridge` (bridge wiring and debug log), `BrowserMonitor` | + AppKit, SwiftUI, WebKit, Security, ScreenCaptureKit, OSLog |
+| `WebbyBridge` | executable | `WebbyCore` | Native-messaging stdio ↔ Unix socket (`main.swift` runs `BridgeRelay`) | Foundation |
+
+- **Why `OSLog` in `Webby`:** `Logger` supports privacy markers, which `NSLog` and `print` don't, so URLs and titles stay `<private>` in the unified log (SECURITY.md). Libraries don't import it: they report through return values, event streams or an injected log closure.
 
 - **Test targets:** `WebbyCoreTests`, `WebbySkinArchiveTests`, `WebbyVoiceTests` and `WebbyAgentTests`. All use Swift Testing and run through `scripts/test.sh`.
 - **Import and macro check:** `scripts/check-imports.sh`, added in Step 2a and run in CI:
@@ -1506,6 +1508,7 @@ Dangling references never fail a load. A missing record makes an override fall b
   Skins/<id>/                        installed skins, plain folders
   Extension/                         unpacked Chrome extension copied from the app bundle (v0.1 distribution)
   bridge.sock                        Unix socket (0600), created by the app, unlinked on start if stale
+  bridge.sock.lock                   empty (0600); the app holds an exclusive flock on it while it owns bridge.sock
 ~/Library/Caches/<bundle ID>/search-cache.sqlite   only past the §5.2 thresholds; deletable
 ~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.webby.bridge.json
 Keychain (generic passwords): service = bundle ID, accounts "cartesia", "anthropic"
@@ -1744,7 +1747,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
     - `connectNative`, with reconnect.
     - Protocol v1 as in §5.1.7, including `tabCreated` and `openerTabId`, so Step 7b needs no protocol change.
   - **Bridge:** `WebbyBridge` handles native-messaging framing (a 32-bit length in native byte order, then UTF-8 JSON), checks the caller origin, forwards to `bridge.sock`, keeps only the latest `active` and inventory while the app is down, and exits on EOF.
-  - **App:** `BridgeServer` (socket, `getpeereid`, frames → `AsyncStream`) with a debug log and no UI.
+  - **App:** `BridgeServer` (socket, `getpeereid`, frames → `AsyncStream`) with a debug log and no UI. `BridgeServer`, `BridgeRelay` and `NativeHostInstaller` live in `WebbyCore` so `WebbyCoreTests` can cover them; the app keeps only `ChromeBridge`.
   - **Host manifest:** `NativeHostInstaller` generates the manifest in code from `BridgeConstants` (host name, extension ID for `allowed_origins`, the bridge path inside the bundle), so the bundle needs no template file.
     - It creates `NativeMessagingHosts` only if `~/Library/Application Support/Google/Chrome` exists.
     - If the bundle path contains `/AppTranslocation/`, it installs nothing and asks the user to move Webby to Applications. A translocated path is a temporary mount, and web notes would break when it disappears.
@@ -1752,8 +1755,8 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Key files:**
   - `extension/background.js`, `extension/protocol.js`, `extension/manifest.json`, `extension/package.json` (type module, for Node tooling only; excluded from the packaged extension), `extension/tests/protocol.test.js`
   - `mac/Sources/WebbyBridge/main.swift`
-  - In `mac/Sources/WebbyCore/`: `Bridge/NativeMessageFramer.swift`, `Bridge/BridgeMessage.swift`, `Bridge/BridgeConstants.swift`
-  - In `mac/Sources/Webby/`: `Browser/BridgeServer.swift`, `Browser/NativeHostInstaller.swift`
+  - In `mac/Sources/WebbyCore/`: `Bridge/NativeMessageFramer.swift`, `Bridge/BridgeMessage.swift`, `Bridge/BridgeConstants.swift`, `Bridge/UnixSocket.swift`, `Bridge/BridgeServer.swift`, `Bridge/BridgeRelay.swift`, `Bridge/NativeHostInstaller.swift`
+  - In `mac/Sources/Webby/`: `Browser/ChromeBridge.swift`
   - `scripts/check-extension.sh`, which now also runs `node --test extension/tests/` and checks that `BridgeConstants.swift`, `native-host.template.json` and the ID derived from `key` agree
 - **Acceptance (manual checklist):**
   - With the extension loaded unpacked, switching tabs logs `active` messages in the app's debug log.
@@ -1764,7 +1767,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
   - `NativeMessageFramerTests`: round trips, split reads, the 1 MB host→Chrome cap, oversize rejection.
   - `BridgeMessageTests`: fixture JSON for every message, including `tabCreated`.
   - `NativeHostInstallerTests`: manifest JSON, a translocated path is skipped, a missing Chrome folder is not created.
-  - Node `protocol.test.js`: URL dedupe, message shapes.
+  - Node `protocol.test.js` and `background.test.js`: URL dedupe, message shapes, reconnects, snapshot ordering and failure recovery.
   - `check-extension.sh` still checks the pinned ID.
 - **Cut line:** the translocation prompt can be a log line plus a menu item until Step 10.
 

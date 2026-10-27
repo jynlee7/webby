@@ -1,0 +1,13 @@
+{
+  "type": "active",
+  "windowId": 1,
+  "incognito": false,
+  "tab": {
+    "id": 12,
+    "index": 1,
+    "active": true,
+    "url": "https://example.com/docs/intro",
+    "title": "Intro",
+    "openerTabId": 11
+  }
+}

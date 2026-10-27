@@ -10,15 +10,17 @@ host. The Swift package requires Swift tools 5.10 and targets macOS 14 or later.
 
 - `mac/Sources/Webby/`: macOS app entry point and UI.
 - `mac/Sources/WebbyCore/`: note models, persistence, URL identity, anchor matching,
-  and geometry.
+  and geometry. `Bridge/` holds the extension protocol, framing, the app's socket
+  server, the bridge's relay and the native host installer.
 - `mac/Sources/WebbyBridge/`: Chrome native messaging executable.
 - `mac/Tests/WebbyCoreTests/`: core behavior tests.
-- `extension/`: Manifest V3 extension and native host manifest template.
+- `extension/`: Manifest V3 extension, native host manifest template, and Node tests
+  whose `tests/fixtures/` are shared with the Swift protocol tests.
 - `scripts/`: test, app packaging, and extension validation commands.
 - `.github/workflows/ci.yml`: CI checks.
 
-Read the implementation before assuming a feature exists. The extension and
-bridge currently contain startup stubs. `PLAN.md` and product documents describe
+Read the implementation before assuming a feature exists. The extension, bridge and
+app exchange tab messages, but nothing in the app uses them yet. `PLAN.md` and product documents describe
 intended behavior; distinguish proposals from implemented behavior and from the
 requirements of the PR under review.
 
