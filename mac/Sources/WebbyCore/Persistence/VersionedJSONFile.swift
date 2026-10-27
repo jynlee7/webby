@@ -99,16 +99,17 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     }
 
     private mutating func load() {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            outcome = .missing
-            return
-        }
-
         let attributes: [FileAttributeKey: Any]
         do {
             attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         } catch {
-            markUnreadable(error.localizedDescription)
+            // `fileExists` hides permissions and dangling links, so use the
+            // attribute lookup's error to decide whether the path is absent.
+            if Self.isNoSuchFileError(error) {
+                classifyMissingOrDanglingLink()
+            } else {
+                markUnreadable(error.localizedDescription)
+            }
             return
         }
 
@@ -204,9 +205,38 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         markUnreadable("No unused name was available for the corrupt file.")
     }
 
+    /// Called when `attributesOfItem` reports `ENOENT`: the entry is absent, or a
+    /// dangling symlink sits in its place and must not be treated as absent.
+    private mutating func classifyMissingOrDanglingLink() {
+        do {
+            _ = try FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path)
+            markUnreadable("The path is a symbolic link whose target is missing.")
+        } catch {
+            if Self.isNoSuchFileError(error) {
+                outcome = .missing
+            } else {
+                markUnreadable(error.localizedDescription)
+            }
+        }
+    }
+
     private mutating func markUnreadable(_ reason: String) {
         mode = .readOnly(.unreadable(reason: reason))
         outcome = .unreadable
+    }
+
+    private static func isNoSuchFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain
+            && (nsError.code == NSFileNoSuchFileError || nsError.code == NSFileReadNoSuchFileError) {
+            return true
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain,
+           underlying.code == ENOENT {
+            return true
+        }
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT
     }
 
     private static func isFileExistsError(_ error: Error) -> Bool {

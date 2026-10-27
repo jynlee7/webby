@@ -271,6 +271,95 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(try fileNames(in: root) == ["notes.json"])
 }
 
+@Test func danglingSymlinkIsReadOnlyAndUntouched() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let target = root.appendingPathComponent("does-not-exist.json")
+    try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+
+    let file = VersionedJSONFile(fileURL: url, defaultContent: defaultContent, now: { fixedDate })
+
+    guard case .readOnly(.unreadable(let reason)) = file.mode else {
+        Issue.record("Expected a dangling symlink to open read-only")
+        return
+    }
+    #expect(!reason.isEmpty)
+    #expect(file.outcome == .unreadable)
+    #expect(file.content == defaultContent)
+
+    do {
+        try file.save()
+        Issue.record("Expected saving a dangling symlink to fail")
+    } catch let error as VersionedJSONFile<TestContent>.SaveError {
+        guard case .readOnly(.unreadable) = error else {
+            Issue.record("Expected the save error to be read-only unreadable")
+            return
+        }
+    }
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+    #expect(!FileManager.default.fileExists(atPath: target.path))
+    #expect(try fileNames(in: root) == ["notes.json"])
+}
+
+@Test func unsearchableParentDirectoryIsReadOnlyAndByteIdentical() throws {
+    guard geteuid() != 0 else { return }
+
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let locked = root.appendingPathComponent("locked", isDirectory: true)
+    try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: false)
+    let url = locked.appendingPathComponent("notes.json")
+    let contents = Data(#"{"version":1,"content":{"title":"loaded","count":7}}"#.utf8)
+    try contents.write(to: url)
+
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path)
+    }
+
+    let file = VersionedJSONFile(fileURL: url, defaultContent: defaultContent, now: { fixedDate })
+
+    guard case .readOnly(.unreadable(let reason)) = file.mode else {
+        Issue.record("Expected an unsearchable parent directory to open read-only")
+        return
+    }
+    #expect(!reason.isEmpty)
+    #expect(file.outcome == .unreadable)
+    #expect(file.content == defaultContent)
+
+    do {
+        try file.save()
+        Issue.record("Expected saving inside an unsearchable directory to fail")
+    } catch let error as VersionedJSONFile<TestContent>.SaveError {
+        guard case .readOnly(.unreadable) = error else {
+            Issue.record("Expected the save error to be read-only unreadable")
+            return
+        }
+    }
+
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path)
+    #expect(try Data(contentsOf: url) == contents)
+    #expect(try fileNames(in: locked) == ["notes.json"])
+}
+
+@Test func missingFileInExistingDirectoryIsMissingAndWritable() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let file = VersionedJSONFile(fileURL: url, defaultContent: defaultContent, now: { fixedDate })
+
+    #expect(file.mode == .writable)
+    #expect(file.outcome == .missing)
+    #expect(file.content == defaultContent)
+    #expect(!FileManager.default.fileExists(atPath: url.path))
+    #expect(try fileNames(in: root).isEmpty)
+}
+
 @Test func unreadableFileIsReadOnlyAndByteIdentical() throws {
     guard geteuid() != 0 else { return }
 
