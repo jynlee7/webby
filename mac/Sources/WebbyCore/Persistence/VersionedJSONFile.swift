@@ -150,7 +150,10 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
 
     /// Writes `version` beside the content at `contentKey`, so existing shapes like `{"version": 1, "notes": []}` are preserved.
     private static func encodedEnvelope(version: Int, content: Content, contentKey: String) throws -> Data {
-        let contentObject = try JSONSerialization.jsonObject(with: encoder.encode(content))
+        let contentObject = try JSONSerialization.jsonObject(
+            with: encoder.encode(content),
+            options: [.fragmentsAllowed]
+        )
         return try JSONSerialization.data(
             withJSONObject: ["version": version, contentKey: contentObject],
             options: [.prettyPrinted, .sortedKeys]

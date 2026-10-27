@@ -400,3 +400,17 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(reloaded.content == loadedContent)
     #expect(reloaded.outcome == .loaded)
 }
+
+@Test func scalarContentRoundTrips() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("scalar.json")
+    let file = VersionedJSONFile(fileURL: url, defaultContent: 42, now: { fixedDate })
+
+    try file.save()
+
+    let reloaded = VersionedJSONFile(fileURL: url, defaultContent: 0, now: { fixedDate })
+    #expect(reloaded.content == 42)
+    #expect(reloaded.outcome == .loaded)
+}
