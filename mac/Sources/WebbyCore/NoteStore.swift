@@ -1,27 +1,44 @@
 import Foundation
 
+/// The notes file.
+///
+/// `NoteStore` is not `Sendable`. Create and use it from the main actor.
 public final class NoteStore {
-    public static let currentVersion = 1
+    public static let currentVersion = VersionedJSONFile<[Note]>.currentVersion
 
     public enum Mode: Equatable {
         case writable
-        case readOnly(newerVersion: Int)
+        case readOnly(FileLoadProblem)
     }
 
     public enum StoreError: Error, LocalizedError, Equatable {
-        case readOnly(newerVersion: Int)
+        case readOnly(FileLoadProblem)
 
         public var errorDescription: String? {
             switch self {
-            case .readOnly(let newerVersion):
-                return "This notes file was created by a newer version of Webby (format \(newerVersion)). Saving is disabled; update Webby to edit notes."
+            case .readOnly(.newerVersion(let found, let supported)):
+                return "This notes file was created by a newer version of Webby (format \(found), supported \(supported)). Saving is disabled; update Webby to edit notes."
+            case .readOnly(.unreadable(let reason)):
+                return "This notes file could not be read, so saving is disabled: \(reason)"
             }
         }
     }
 
     public let fileURL: URL
     public private(set) var notes: [Note]
-    public private(set) var mode: Mode
+
+    public var mode: Mode {
+        switch file.mode {
+        case .writable:
+            return .writable
+        case .readOnly(let problem):
+            return .readOnly(problem)
+        }
+    }
+
+    public var outcome: FileLoadOutcome {
+        file.outcome
+    }
 
     public static var defaultFileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -31,62 +48,18 @@ public final class NoteStore {
             .appendingPathComponent("notes.json")
     }
 
-    private struct VersionProbe: Decodable {
-        let version: Int
-    }
+    private var file: VersionedJSONFile<[Note]>
 
-    private struct Envelope: Codable {
-        let version: Int
-        let notes: [Note]
-    }
-
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .deferredToDate
-        return decoder
-    }()
-
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .deferredToDate
-        return encoder
-    }()
-
-    public init(fileURL: URL = NoteStore.defaultFileURL, now: Date = Date()) throws {
+    public init(fileURL: URL = NoteStore.defaultFileURL, now: Date = Date()) {
+        let file = VersionedJSONFile<[Note]>(
+            fileURL: fileURL,
+            defaultContent: [],
+            contentKey: "notes",
+            now: { now }
+        )
         self.fileURL = fileURL
-        self.notes = []
-        self.mode = .writable
-
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-
-        // Read the bytes once so the version probe and full decode see the same file.
-        let data = try Data(contentsOf: fileURL)
-
-        let probe: VersionProbe
-        do {
-            probe = try Self.decoder.decode(VersionProbe.self, from: data)
-        } catch {
-            try moveAsideCorruptFile(now: now)
-            return
-        }
-
-        if probe.version > Self.currentVersion {
-            mode = .readOnly(newerVersion: probe.version)
-            return
-        }
-
-        guard probe.version == Self.currentVersion else {
-            try moveAsideCorruptFile(now: now)
-            return
-        }
-
-        do {
-            let envelope = try Self.decoder.decode(Envelope.self, from: data)
-            notes = envelope.notes
-        } catch {
-            try moveAsideCorruptFile(now: now)
-        }
+        self.notes = file.content
+        self.file = file
     }
 
     public func note(id: UUID) -> Note? {
@@ -117,26 +90,14 @@ public final class NoteStore {
     }
 
     public func save() throws {
-        if case .readOnly(let newerVersion) = mode {
-            throw StoreError.readOnly(newerVersion: newerVersion)
+        file.updateContent(notes)
+        do {
+            try file.save()
+        } catch let error as VersionedJSONFile<[Note]>.SaveError {
+            switch error {
+            case .readOnly(let problem):
+                throw StoreError.readOnly(problem)
+            }
         }
-
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let data = try Self.encoder.encode(Envelope(version: Self.currentVersion, notes: notes))
-        try data.write(to: fileURL, options: .atomic)
-    }
-
-    // Only a successful move leaves an empty writable store; a failed move propagates.
-    private func moveAsideCorruptFile(now: Date) throws {
-        let timestamp = Int(now.timeIntervalSince1970)
-        let destination = fileURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("notes.corrupt-\(timestamp).json")
-        try FileManager.default.moveItem(at: fileURL, to: destination)
-        notes = []
-        mode = .writable
     }
 }

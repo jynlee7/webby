@@ -2,7 +2,14 @@ import Foundation
 import Testing
 @testable import WebbyCore
 
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
+
 private let baseDate = Date(timeIntervalSince1970: 1_700_000_000.789)
+private let baseDateStamp = "20231114-221320-789"
 
 private func makeTempDirectory() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
@@ -32,16 +39,21 @@ private func makeNote(
     )
 }
 
+@Test func currentVersionMatchesSharedLoader() {
+    #expect(NoteStore.currentVersion == VersionedJSONFile<[Note]>.currentVersion)
+}
+
 @Test func missingFileOpensEmptyWritableStoreAndCreatesNothing() throws {
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }
 
     let url = root.appendingPathComponent("nested", isDirectory: true).appendingPathComponent("notes.json")
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
 
     #expect(store.fileURL == url)
     #expect(store.notes.isEmpty)
     #expect(store.mode == .writable)
+    #expect(store.outcome == .missing)
     #expect(!FileManager.default.fileExists(atPath: url.path))
     #expect(!FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path))
 }
@@ -50,7 +62,7 @@ private func makeNote(
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }
 
-    let store = try NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
+    let store = NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
     let appNote = makeNote(text: "App note")
     let siteNote = makeNote(anchor: .web(page: PageURL(host: "example.com", path: "/"), scope: .site))
     let pageNote = makeNote(anchor: .web(page: PageURL(host: "example.com", path: "/docs"), scope: .page))
@@ -80,7 +92,7 @@ private func makeNote(
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }
 
-    let store = try NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
+    let store = NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
 
     #expect(!store.update(id: UUID(), now: baseDate) { $0.text = "No note" })
     #expect(!store.remove(id: UUID()))
@@ -95,7 +107,7 @@ private func makeNote(
         .appendingPathComponent("deep", isDirectory: true)
         .appendingPathComponent("nested", isDirectory: true)
         .appendingPathComponent("notes.json")
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
     let notes = [
         makeNote(text: "One", createdAt: baseDate),
         makeNote(
@@ -114,9 +126,11 @@ private func makeNote(
     let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     #expect(object["version"] as? Int == NoteStore.currentVersion)
     #expect((object["notes"] as? [[String: Any]])?.count == notes.count)
+    #expect(object["content"] == nil)
 
-    let reloaded = try NoteStore(fileURL: url)
+    let reloaded = NoteStore(fileURL: url)
     #expect(reloaded.mode == .writable)
+    #expect(reloaded.outcome == .loaded)
     #expect(reloaded.notes == notes)
 }
 
@@ -127,14 +141,18 @@ private func expectCorruption(contents: Data) throws {
     let url = root.appendingPathComponent("notes.json")
     try contents.write(to: url)
 
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
 
     #expect(store.mode == .writable)
     #expect(store.notes.isEmpty)
     #expect(!FileManager.default.fileExists(atPath: url.path))
 
-    let sibling = root.appendingPathComponent("notes.corrupt-\(Int(baseDate.timeIntervalSince1970)).json")
-    #expect(FileManager.default.fileExists(atPath: sibling.path))
+    guard case .recovered(let sibling) = store.outcome else {
+        Issue.record("Expected the corrupt file to be moved aside")
+        return
+    }
+    #expect(sibling.lastPathComponent.hasPrefix("notes.corrupt-\(baseDateStamp)-"))
+    #expect(sibling.lastPathComponent.hasSuffix(".json"))
     let moved = try Data(contentsOf: sibling)
     #expect(moved == contents)
     let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
@@ -157,9 +175,10 @@ private func expectCorruption(contents: Data) throws {
     let contents = Data(#"{"version":99,"unrecognized":"payload without notes"}"#.utf8)
     try contents.write(to: url)
 
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
 
-    #expect(store.mode == .readOnly(newerVersion: 99))
+    #expect(store.mode == .readOnly(.newerVersion(found: 99, supported: NoteStore.currentVersion)))
+    #expect(store.outcome == .newer(version: 99))
     #expect(store.notes.isEmpty)
     #expect(try Data(contentsOf: url) == contents)
     let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
@@ -169,12 +188,100 @@ private func expectCorruption(contents: Data) throws {
         try store.save()
         Issue.record("Expected saving a newer notes file to fail")
     } catch let error as NoteStore.StoreError {
-        #expect(error == .readOnly(newerVersion: 99))
+        #expect(error == .readOnly(.newerVersion(found: 99, supported: NoteStore.currentVersion)))
         #expect(error.localizedDescription.contains("newer version of Webby"))
         #expect(error.localizedDescription.contains("Saving is disabled"))
     }
     #expect(try Data(contentsOf: url) == contents)
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["notes.json"])
+}
+
+@Test func noteStoreUnreadableFileIsReadOnlyAndByteIdentical() throws {
+    guard geteuid() != 0 else { return }
+
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let contents = Data(#"{"version":1,"notes":[]}"#.utf8)
+    try contents.write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    let store = NoteStore(fileURL: url, now: baseDate)
+
+    guard case .readOnly(.unreadable(let reason)) = store.mode else {
+        Issue.record("Expected an unreadable file to open read-only")
+        return
+    }
+    #expect(!reason.isEmpty)
+    #expect(store.outcome == .unreadable)
+    #expect(store.notes.isEmpty)
+
+    do {
+        try store.save()
+        Issue.record("Expected saving an unreadable file to fail")
+    } catch let error as NoteStore.StoreError {
+        guard case .readOnly(.unreadable) = error else {
+            Issue.record("Expected the save error to be read-only unreadable")
+            return
+        }
+    }
+
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    #expect(try Data(contentsOf: url) == contents)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["notes.json"])
+}
+
+@Test func noteStoreNonRegularFileIsReadOnlyAndUntouched() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json", isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+
+    let store = NoteStore(fileURL: url, now: baseDate)
+
+    guard case .readOnly(.unreadable(let reason)) = store.mode else {
+        Issue.record("Expected a non-regular file to open read-only")
+        return
+    }
+    #expect(!reason.isEmpty)
+    #expect(store.outcome == .unreadable)
+    #expect(store.notes.isEmpty)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["notes.json"])
+}
+
+@Test func saveAfterRecoveryWritesFreshValidFile() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    try Data("{broken".utf8).write(to: url)
+
+    let store = NoteStore(fileURL: url, now: baseDate)
+    guard case .recovered = store.outcome else {
+        Issue.record("Expected the corrupt file to be moved aside")
+        return
+    }
+    #expect(store.mode == .writable)
+    #expect(store.notes.isEmpty)
+
+    let note = makeNote(text: "Recovered")
+    store.add(note)
+    try store.save()
+
+    let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    #expect(object["version"] as? Int == NoteStore.currentVersion)
+    #expect((object["notes"] as? [[String: Any]])?.count == 1)
+    #expect(object["content"] == nil)
+
+    let reloaded = NoteStore(fileURL: url)
+    #expect(reloaded.mode == .writable)
+    #expect(reloaded.outcome == .loaded)
+    #expect(reloaded.notes == [note])
 }
 
 @Test func saveAndReloadPreserveDoubleWwwHostIdentity() throws {
@@ -184,11 +291,11 @@ private func expectCorruption(contents: Data) throws {
     let url = root.appendingPathComponent("notes.json")
     let page = try #require(PageURL(string: "https://www.www.example.com/a"))
     let note = makeNote(anchor: .web(page: page, scope: .page))
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
     store.add(note)
 
     try store.save()
-    let reloaded = try NoteStore(fileURL: url)
+    let reloaded = NoteStore(fileURL: url)
 
     #expect(reloaded.notes == [note])
     #expect(reloaded.notes.first?.anchor.matches(.web(page)) == true)
@@ -200,11 +307,11 @@ private func expectCorruption(contents: Data) throws {
 
     let url = root.appendingPathComponent("notes.json")
     let note = makeNote(createdAt: Date(timeIntervalSinceReferenceDate: 123_456.789))
-    let store = try NoteStore(fileURL: url, now: baseDate)
+    let store = NoteStore(fileURL: url, now: baseDate)
     store.add(note)
 
     try store.save()
-    let reloaded = try NoteStore(fileURL: url)
+    let reloaded = NoteStore(fileURL: url)
 
     #expect(reloaded.notes == [note])
 }
