@@ -1366,12 +1366,14 @@ These rules follow Apple's guidance; how they are enforced is Webby's design.
 
 | Target | Kind | Depends on | Contents | Allowed imports |
 | --- | --- | --- | --- | --- |
-| `WebbyCore` | library | — | Models, `NoteStore`, migrations, `VersionedJSONFile`, `SettingsStore` model, workspace resolver, visibility, query rules, Library queries/search cache/page tree/compiled documents, bridge protocol, framing and constants, skin manifest/pure validator/resolver/contrast, `SkinAssetChecking` protocol, `CredentialProvider` protocol | Foundation, CoreGraphics |
+| `WebbyCore` | library | — | Models, `NoteStore`, migrations, `VersionedJSONFile`, `SettingsStore` model, workspace resolver, visibility, query rules, Library queries/search cache/page tree/compiled documents, bridge protocol, framing and constants, `BridgeServer` (the app's socket), `BridgeRelay` (the bridge process's logic), `NativeHostInstaller`, skin manifest/pure validator/resolver/contrast, `SkinAssetChecking` protocol, `CredentialProvider` protocol | Foundation, CoreGraphics |
 | `WebbySkinArchive` | library | `WebbyCore`, ZIPFoundation | `.webbyskin` extraction and export; `SkinAssetChecker` (decode-level image and sound checks) | + ZIPFoundation, ImageIO, AVFAudio |
 | `WebbyVoice` | library | `WebbyCore` | `AudioEngineHost` (capture and playback facets on one engine), `PCMRingBuffer`, `CartesiaSTTClient`, `CartesiaTTSClient`, `LocalSpeech`, WebSocket transport protocol | + AVFoundation, Speech |
 | `WebbyAgent` | library | `WebbyCore`, `WebbyVoice` | `ContextAssembler`, `ClaudeClient` (SSE, tool loop), `SpeechChunker`, `TurnController`, `ConversationStore`, `CitationValidator` | Foundation |
-| `Webby` | executable | all libraries | AppKit/SwiftUI UI, Keychain, ScreenCaptureKit, FSEvents, global hotkeys, `BridgeServer`, `BrowserMonitor`, `NativeHostInstaller` | + AppKit, SwiftUI, WebKit, Security, ScreenCaptureKit |
-| `WebbyBridge` | executable | `WebbyCore` | Native-messaging stdio ↔ Unix socket | Foundation |
+| `Webby` | executable | all libraries | AppKit/SwiftUI UI, Keychain, ScreenCaptureKit, FSEvents, global hotkeys, `ChromeBridge` (bridge wiring and debug log), `BrowserMonitor` | + AppKit, SwiftUI, WebKit, Security, ScreenCaptureKit, OSLog |
+| `WebbyBridge` | executable | `WebbyCore` | Native-messaging stdio ↔ Unix socket (`main.swift` runs `BridgeRelay`) | Foundation |
+
+- **Why `OSLog` in `Webby`:** `Logger` is the only logging API with privacy markers, so URLs and titles stay `<private>` in the unified log (SECURITY.md). Libraries don't import it: they report through return values, event streams or an injected log closure.
 
 - **Test targets:** `WebbyCoreTests`, `WebbySkinArchiveTests`, `WebbyVoiceTests` and `WebbyAgentTests`. All use Swift Testing and run through `scripts/test.sh`.
 - **Import and macro check:** `scripts/check-imports.sh`, added in Step 2a and run in CI:
@@ -1744,7 +1746,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
     - `connectNative`, with reconnect.
     - Protocol v1 as in §5.1.7, including `tabCreated` and `openerTabId`, so Step 7b needs no protocol change.
   - **Bridge:** `WebbyBridge` handles native-messaging framing (a 32-bit length in native byte order, then UTF-8 JSON), checks the caller origin, forwards to `bridge.sock`, keeps only the latest `active` and inventory while the app is down, and exits on EOF.
-  - **App:** `BridgeServer` (socket, `getpeereid`, frames → `AsyncStream`) with a debug log and no UI.
+  - **App:** `BridgeServer` (socket, `getpeereid`, frames → `AsyncStream`) with a debug log and no UI. `BridgeServer`, `BridgeRelay` and `NativeHostInstaller` live in `WebbyCore` so `WebbyCoreTests` can cover them; the app keeps only `ChromeBridge`.
   - **Host manifest:** `NativeHostInstaller` generates the manifest in code from `BridgeConstants` (host name, extension ID for `allowed_origins`, the bridge path inside the bundle), so the bundle needs no template file.
     - It creates `NativeMessagingHosts` only if `~/Library/Application Support/Google/Chrome` exists.
     - If the bundle path contains `/AppTranslocation/`, it installs nothing and asks the user to move Webby to Applications. A translocated path is a temporary mount, and web notes would break when it disappears.
@@ -1752,8 +1754,8 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Key files:**
   - `extension/background.js`, `extension/protocol.js`, `extension/manifest.json`, `extension/package.json` (type module, for Node tooling only; excluded from the packaged extension), `extension/tests/protocol.test.js`
   - `mac/Sources/WebbyBridge/main.swift`
-  - In `mac/Sources/WebbyCore/`: `Bridge/NativeMessageFramer.swift`, `Bridge/BridgeMessage.swift`, `Bridge/BridgeConstants.swift`
-  - In `mac/Sources/Webby/`: `Browser/BridgeServer.swift`, `Browser/NativeHostInstaller.swift`
+  - In `mac/Sources/WebbyCore/`: `Bridge/NativeMessageFramer.swift`, `Bridge/BridgeMessage.swift`, `Bridge/BridgeConstants.swift`, `Bridge/UnixSocket.swift`, `Bridge/BridgeServer.swift`, `Bridge/BridgeRelay.swift`, `Bridge/NativeHostInstaller.swift`
+  - In `mac/Sources/Webby/`: `Browser/ChromeBridge.swift`
   - `scripts/check-extension.sh`, which now also runs `node --test extension/tests/` and checks that `BridgeConstants.swift`, `native-host.template.json` and the ID derived from `key` agree
 - **Acceptance (manual checklist):**
   - With the extension loaded unpacked, switching tabs logs `active` messages in the app's debug log.
