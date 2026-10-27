@@ -749,6 +749,31 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(try fileNames(in: root) == ["notes.json", backup.lastPathComponent])
 }
 
+@Test func migrationBackupIsOwnerOnly() throws {
+    guard geteuid() != 0 else { return }
+
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+    let url = root.appendingPathComponent("notes.json")
+    try Data(#"{"version":1,"notes":["private"],"workspaces":[]}"#.utf8).write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    let previous = umask(0o022)
+    defer { umask(previous) }
+
+    var file = VersionedJSONFile(
+        fileURL: url, defaultContent: defaultCodecDocument, supportedVersion: 2,
+        decode: decodeCodecDocument, encode: encodeCodecDocument, backupBeforeUpgrade: true,
+        now: { fixedDate }, randomSuffix: fixedSuffix
+    )
+    file.updateContent(CodecDocument(notes: ["converted"], workspaces: []))
+    try file.save()
+
+    let backup = try #require(file.migrationBackupURL)
+    let attributes = try FileManager.default.attributesOfItem(atPath: backup.path)
+    #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+    #expect(try fileNames(in: root).filter { $0.hasSuffix(".tmp") }.isEmpty)
+}
+
 @Test func migrationBackupRetriesCollisionsWithoutOverwriting() throws {
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }

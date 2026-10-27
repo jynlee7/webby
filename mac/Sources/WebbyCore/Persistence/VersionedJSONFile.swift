@@ -251,15 +251,32 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         let timestamp = Self.timestamp(from: now())
         let directory = resolvedFileURL.deletingLastPathComponent()
 
+        // The backup holds note contents, so it is created owner-only rather than
+        // inheriting a possibly permissive umask. Staging then moving keeps the
+        // name exclusive without ever widening the file's mode.
         for attempt in 0..<1_024 {
+            let suffix = randomSuffix(attempt)
             let destination = directory.appendingPathComponent(
-                "\(baseName).v\(sourceVersion)-\(timestamp)-\(randomSuffix(attempt)).\(fileExtension)"
+                "\(baseName).v\(sourceVersion)-\(timestamp)-\(suffix).\(fileExtension)"
             )
+            let staging = directory.appendingPathComponent(".\(baseName).backup-\(suffix).tmp")
+
+            guard FileManager.default.createFile(
+                atPath: staging.path,
+                contents: sourceData,
+                attributes: [.posixPermissions: 0o600]
+            ) else {
+                try? FileManager.default.removeItem(at: staging)
+                try sourceData.write(to: staging, options: [.withoutOverwriting])
+                try? FileManager.default.removeItem(at: staging)
+                throw SaveError.backupNameUnavailable
+            }
 
             do {
-                try sourceData.write(to: destination, options: [.withoutOverwriting])
+                try FileManager.default.moveItem(at: staging, to: destination)
                 return destination
             } catch {
+                try? FileManager.default.removeItem(at: staging)
                 if Self.isFileExistsError(error) {
                     continue
                 }
