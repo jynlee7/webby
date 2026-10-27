@@ -227,6 +227,18 @@ import Testing
         }
     }
 
+    @Test func migrationConflictUsesThePublicStoreError() throws {
+        try withStore { _, url in
+            try Data(#"{"version":1,"notes":[]}"#.utf8).write(to: url)
+            let store = NoteStore(fileURL: url)
+            let external = Data(#"{"version":99,"future":"updated by another writer"}"#.utf8)
+            try external.write(to: url)
+            #expect(throws: NoteStore.StoreError.sourceChanged) { try store.save() }
+            #expect(try Data(contentsOf: url) == external)
+            #expect(store.migrationBackupURL == nil)
+        }
+    }
+
     @Test func v1LoadsWithoutWritingThenCreatesOneExactBackup() throws {
         try withStore { _, url in
             let original = Data(#" { "version":1, "notes":[{"id":"11111111-1111-1111-1111-111111111111","anchor":{"web":{"page":{"host":"www.example.com","path":"/a"},"scope":{"page":{}}}},"text":"old","frame":{"x":1.25,"y":2,"width":300,"height":200},"placement":"window","collapsed":true,"createdAt":123456.789,"updatedAt":123500.125}] } "#.utf8)

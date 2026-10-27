@@ -11,6 +11,9 @@ public final class NoteStore {
 
     public enum StoreError: Error, LocalizedError, Equatable {
         case readOnly(FileLoadProblem)
+        case sourceChanged
+        case backupChanged
+        case backupNameUnavailable
 
         public var errorDescription: String? {
             switch self {
@@ -18,6 +21,12 @@ public final class NoteStore {
                 return "This notes file was created by a newer version of Webby (format \(found), supported \(supported)). Saving is disabled; update Webby to edit notes."
             case .readOnly(.unreadable(let reason)):
                 return "This notes file could not be read, so saving is disabled: \(reason)"
+            case .sourceChanged:
+                return "The notes file changed on disk after loading. Reload it before saving."
+            case .backupChanged:
+                return "The migration backup is missing or changed. The original notes were not overwritten."
+            case .backupNameUnavailable:
+                return "No unused name was available for the migration backup. The original notes were not overwritten."
             }
         }
     }
@@ -190,7 +199,9 @@ public final class NoteStore {
         } catch let error as VersionedJSONFile<NotesDocument>.SaveError {
             switch error {
             case .readOnly(let problem): throw StoreError.readOnly(problem)
-            default: throw error
+            case .sourceChanged: throw StoreError.sourceChanged
+            case .backupChanged: throw StoreError.backupChanged
+            case .backupNameUnavailable: throw StoreError.backupNameUnavailable
             }
         }
     }
