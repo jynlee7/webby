@@ -3,6 +3,7 @@ import Testing
 @testable import WebbyCore
 
 @Test func noteDefaults() {
+    let beforeCreation = Date()
     let note = Note(
         anchor: .app(bundleID: "com.example.Notes"),
         frame: NoteFrame(x: 10, y: 20, width: 300, height: 200),
@@ -13,11 +14,13 @@ import Testing
         frame: NoteFrame(x: 10, y: 20, width: 300, height: 200),
         placement: .window
     )
+    let afterCreation = Date()
 
     #expect(note.text == "")
     #expect(note.collapsed == false)
     #expect(note.updatedAt == note.createdAt)
-    #expect(abs(note.createdAt.timeIntervalSinceNow) < 1)
+    #expect(note.createdAt >= beforeCreation)
+    #expect(note.createdAt <= afterCreation)
     #expect(note.id != other.id)
 }
 

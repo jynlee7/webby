@@ -106,3 +106,18 @@ import Testing
 
     #expect(decoded == page)
 }
+
+@Test func decodingNormalizesIdentity() throws {
+    let data = Data(#"{"host":"WWW.Example.COM","path":"a//b/"}"#.utf8)
+    let decoded = try JSONDecoder().decode(PageURL.self, from: data)
+
+    #expect(decoded == PageURL(host: "example.com", path: "/a/b"))
+}
+
+@Test func decodingRejectsAnEmptyHost() {
+    let data = Data(#"{"host":"","path":"/a"}"#.utf8)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(PageURL.self, from: data)
+    }
+}

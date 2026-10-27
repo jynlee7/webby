@@ -93,6 +93,21 @@ private let anchor = Anchor.app(bundleID: "com.example.Notes")
     )
 }
 
+@Test func movingWindowMovesAbsoluteFrameBySameDelta() {
+    let note = Note(
+        anchor: anchor,
+        frame: NoteFrame(x: 10, y: 20, width: 100, height: 50),
+        placement: .window
+    )
+    let firstWindow = CGRect(x: 50, y: 60, width: 800, height: 600)
+    let movedWindow = firstWindow.offsetBy(dx: 15.5, dy: -7.25)
+    let firstAbsolute = Geometry.absoluteFrame(for: note, window: firstWindow)
+    let movedAbsolute = Geometry.absoluteFrame(for: note, window: movedWindow)
+
+    #expect(movedAbsolute == firstAbsolute.offsetBy(dx: 15.5, dy: -7.25))
+    #expect(note.frame == NoteFrame(x: 10, y: 20, width: 100, height: 50))
+}
+
 @Test func movingAbsoluteFrameMovesStoredFrameBySameDelta() {
     let window = CGRect(x: 50, y: 60, width: 800, height: 600)
     let note = Note(

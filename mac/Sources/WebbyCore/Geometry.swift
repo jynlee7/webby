@@ -19,6 +19,7 @@ public enum Geometry {
         )
     }
 
+    /// `window` uses the same top-left coordinate space as the stored note frame.
     public static func absoluteFrame(for note: Note, window: CGRect?) -> CGRect {
         let origin = windowOrigin(for: note.placement, window: window)
         return CGRect(
@@ -29,6 +30,7 @@ public enum Geometry {
         )
     }
 
+    /// `absolute` and `window` use top-left coordinates.
     public static func storedFrame(absolute: CGRect, placement: Placement, window: CGRect?) -> NoteFrame {
         let origin = windowOrigin(for: placement, window: window)
         return NoteFrame(

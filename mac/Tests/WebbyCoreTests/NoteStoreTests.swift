@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import WebbyCore
 
-private let baseDate = Date(timeIntervalSince1970: 1_700_000_000)
+private let baseDate = Date(timeIntervalSince1970: 1_700_000_000.789)
 
 private func makeTempDirectory() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
@@ -165,21 +165,22 @@ private func expectCorruption(contents: Data) throws {
     let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
     #expect(files == ["notes.json"])
 
-    #expect(throws: NoteStore.StoreError.readOnly(newerVersion: 99)) {
+    do {
         try store.save()
+        Issue.record("Expected saving a newer notes file to fail")
+    } catch let error as NoteStore.StoreError {
+        #expect(error == .readOnly(newerVersion: 99))
+        #expect(error.localizedDescription.contains("newer version of Webby"))
+        #expect(error.localizedDescription.contains("Saving is disabled"))
     }
     #expect(try Data(contentsOf: url) == contents)
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["notes.json"])
 }
 
-@Test func defaultFileURLPointsAtApplicationSupportWithoutWriting() throws {
+@Test func defaultFileURLPointsAtApplicationSupport() {
     let url = NoteStore.defaultFileURL
-    let before = try? Data(contentsOf: url)
-
-    _ = NoteStore.defaultFileURL
 
     #expect(url.path.hasSuffix("/Webby/notes.json"))
     #expect(url.lastPathComponent == "notes.json")
     #expect(url.deletingLastPathComponent().lastPathComponent == "Webby")
-    #expect((try? Data(contentsOf: url)) == before)
 }

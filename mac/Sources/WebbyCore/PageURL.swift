@@ -31,8 +31,36 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     }
 
     public init(host: String, path: String) {
-        self.host = Self.normalizeHost(host)
+        let normalizedHost = Self.normalizeHost(host)
+        precondition(!normalizedHost.isEmpty, "PageURL host must not be empty")
+        self.host = normalizedHost
         self.path = Self.normalizePath(path)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case host
+        case path
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawHost = try container.decode(String.self, forKey: .host)
+        let normalizedHost = Self.normalizeHost(rawHost)
+        guard !normalizedHost.isEmpty else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .host,
+                in: container,
+                debugDescription: "PageURL host must not be empty"
+            )
+        }
+        host = normalizedHost
+        path = Self.normalizePath(try container.decode(String.self, forKey: .path))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(host, forKey: .host)
+        try container.encode(path, forKey: .path)
     }
 
     public var segments: [String] {
