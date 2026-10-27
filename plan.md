@@ -711,9 +711,9 @@ Snapshots are Step 7b, after Milestone A.
 
 - **Message size:** extension-to-host messages may be up to 64 MiB, so an inventory of hundreds of tabs is fine.
 - **Service worker:**
-  - Listeners are registered at the top level. The worker connects lazily and reconnects on the next event after a disconnect.
+  - Listeners are registered at the top level. The worker connects lazily and retries after a disconnect, first after one second and then backing off to a minute while the host keeps failing; a browser event reconnects immediately.
   - An open `connectNative` port keeps the worker alive (Chrome 105+).
-  - No essential state lives in globals. `chrome.storage.session` holds only the dedupe state for the last value sent.
+  - The profile key persists in `chrome.storage.local`. Dedupe state stays in worker memory and is rebuilt from a fresh snapshot on every connection, avoiding session-storage quota failures. Events already covered by that snapshot are skipped.
 - **Incognito windows before Step 7b:** if `hello.incognitoAllowed` is true and an `active` message comes from an `incognito` window, the app ignores its page and tab and uses the app context, so no web note is created or shown there until ephemeral notes exist (§5.1.8).
 - **Not used:**
   - `webNavigation`, which adds nothing the core needs.
@@ -1767,7 +1767,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
   - `NativeMessageFramerTests`: round trips, split reads, the 1 MB host→Chrome cap, oversize rejection.
   - `BridgeMessageTests`: fixture JSON for every message, including `tabCreated`.
   - `NativeHostInstallerTests`: manifest JSON, a translocated path is skipped, a missing Chrome folder is not created.
-  - Node `protocol.test.js`: URL dedupe, message shapes.
+  - Node `protocol.test.js` and `background.test.js`: URL dedupe, message shapes, reconnects, snapshot ordering and failure recovery.
   - `check-extension.sh` still checks the pinned ID.
 - **Cut line:** the translocation prompt can be a log line plus a menu item until Step 10.
 

@@ -1,7 +1,7 @@
 // Webby extension service worker. Reports tabs to the Webby Mac app over native messaging
 // and carries out the app's commands. Listeners are registered at the top level so Chrome
 // can wake the worker for them, and the open native port keeps the worker alive. No
-// essential state lives in globals: after a restart the worker reconnects on the next
+// persistent identity lives in globals: after a restart the worker reconnects on the next
 // event and sends a fresh hello, inventory and active tab.
 import {
   HOST_NAME,
@@ -17,12 +17,28 @@ import {
   tabUpdatedMessage,
 } from "./protocol.js";
 
+const MIN_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 60_000;
+// A connection that stays up this long was working, so the next retry starts over.
+const HEALTHY_CONNECTION = 10_000;
+
 let port = null;
 let queue = Promise.resolve();
+let sent = {};
+let reconnectTimer = null;
+let reconnectDelay = MIN_RECONNECT_DELAY;
+let eventSerial = 0;
+let snapshotThrough = 0;
 
 // Runs tasks one at a time, so messages reach the app in event order.
 function enqueue(task) {
   queue = queue.then(task).catch((error) => console.warn("Webby:", error));
+}
+
+// Events already represented by a snapshot must not replay older captured fields.
+function enqueueBrowserEvent(task) {
+  const serial = ++eventSerial;
+  enqueue(() => serial > snapshotThrough ? task() : undefined);
 }
 
 // A random key per Chrome profile, kept across restarts, so the app can tell profiles apart.
@@ -34,36 +50,60 @@ async function profileKey() {
   return key;
 }
 
+// Retries a dropped connection, waiting longer each time it keeps failing (for example
+// while Webby isn't installed), so a missing host doesn't keep the worker busy.
+function scheduleReconnect() {
+  reconnectTimer = setTimeout(() => enqueue(ensureConnected), reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+}
+
 async function connect() {
+  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
   const next = chrome.runtime.connectNative(HOST_NAME);
+  const openedAt = Date.now();
   next.onMessage.addListener((message) => enqueue(() => runCommand(message)));
   next.onDisconnect.addListener(() => {
-    if (port === next) port = null;
+    if (port === next) {
+      port = null;
+      if (Date.now() - openedAt >= HEALTHY_CONNECTION) reconnectDelay = MIN_RECONNECT_DELAY;
+      scheduleReconnect();
+    }
     console.warn("Webby: native host disconnected:", chrome.runtime.lastError?.message ?? "no error");
   });
   port = next;
-  await sendSnapshot();
+  try {
+    await sendSnapshot();
+  } catch (error) {
+    if (port === next) port = null;
+    next.disconnect();
+    scheduleReconnect();
+    throw error;
+  }
 }
 
 async function ensureConnected() {
-  if (!port) await connect();
+  if (port) return false;
+  await connect();
+  return true;
 }
 
-// Posts on the current port and records what was sent for dedupe. If the port is gone,
-// the message is dropped: the next event reconnects and sends a fresh snapshot.
+// Dedupe is scoped to this worker and rebuilt by every snapshot. Keeping it in memory
+// avoids storage.session quota failures interrupting delivery for large inventories.
 async function post(message) {
   if (!port) return;
   port.postMessage(message);
-  const { sent = {} } = await chrome.storage.session.get("sent");
-  await chrome.storage.session.set({ sent: recordSent(sent, message) });
+  sent = recordSent(sent, message);
 }
 
 async function send(message) {
-  await ensureConnected();
+  // A new snapshot already includes this event and may include newer changes.
+  if (await ensureConnected()) return;
   await post(message);
 }
 
 async function sendSnapshot() {
+  const through = eventSerial;
   const [profile, incognitoAllowed, windows] = await Promise.all([
     profileKey(),
     chrome.extension.isAllowedIncognitoAccess(),
@@ -73,6 +113,7 @@ async function sendSnapshot() {
   await post(inventoryMessage(windows));
   const tab = windows.find((win) => win.focused)?.tabs?.find((t) => t.active);
   if (tab) await post(activeMessage(tab));
+  if (port) snapshotThrough = through;
 }
 
 async function runCommand(value) {
@@ -99,43 +140,47 @@ async function runCommand(value) {
 chrome.runtime.onStartup.addListener(() => enqueue(ensureConnected));
 chrome.runtime.onInstalled.addListener(() => enqueue(ensureConnected));
 
-chrome.tabs.onActivated.addListener(({ tabId }) => {
-  enqueue(async () => send(activeMessage(await chrome.tabs.get(tabId))));
+chrome.tabs.onActivated.addListener(({ windowId }) => {
+  enqueueBrowserEvent(async () => {
+    // The originally activated tab may already be closed or inactive by queue time.
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    if (tab) await send(activeMessage(tab));
+  });
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-  enqueue(async () => {
+  enqueueBrowserEvent(async () => {
     const [tab] = await chrome.tabs.query({ active: true, windowId });
     if (tab) await send(activeMessage(tab));
   });
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
-  enqueue(() => send(tabCreatedMessage(tab)));
+  enqueueBrowserEvent(() => send(tabCreatedMessage(tab)));
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (!("url" in changeInfo) && !("title" in changeInfo)) return;
-  enqueue(async () => {
-    const { sent = {} } = await chrome.storage.session.get("sent");
+  enqueueBrowserEvent(async () => {
+    if (await ensureConnected()) return;
     const message = tabUpdatedMessage(tabId, changeInfo, sent[tabId]);
-    if (message) await send(message);
+    if (message) await post(message);
   });
 });
 
 chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
-  enqueue(() => send(tabClosedMessage(tabId, isWindowClosing)));
+  enqueueBrowserEvent(() => send(tabClosedMessage(tabId, isWindowClosing)));
 });
 
 chrome.tabs.onMoved.addListener((tabId, { windowId, toIndex }) => {
-  enqueue(() => send(tabMovedMessage(tabId, windowId, toIndex)));
+  enqueueBrowserEvent(() => send(tabMovedMessage(tabId, windowId, toIndex)));
 });
 
 chrome.tabs.onAttached.addListener((tabId, { newWindowId, newPosition }) => {
-  enqueue(() => send(tabMovedMessage(tabId, newWindowId, newPosition)));
+  enqueueBrowserEvent(() => send(tabMovedMessage(tabId, newWindowId, newPosition)));
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
-  enqueue(() => send(tabReplacedMessage(addedTabId, removedTabId)));
+  enqueueBrowserEvent(() => send(tabReplacedMessage(addedTabId, removedTabId)));
 });
