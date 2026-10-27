@@ -73,6 +73,37 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(try fileNames(in: root) == ["notes.json"])
 }
 
+@Test func symlinkToValidFileLoadsAndSavesThroughTarget() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let target = root.appendingPathComponent("real-notes.json")
+    let url = root.appendingPathComponent("notes.json")
+    let originalContents = Data(#"{"version":1,"content":{"title":"loaded","count":7}}"#.utf8)
+    try originalContents.write(to: target)
+    try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+
+    var file = VersionedJSONFile(fileURL: url, defaultContent: defaultContent, now: { fixedDate })
+
+    #expect(file.mode == .writable)
+    #expect(file.outcome == .loaded)
+    #expect(file.content == loadedContent)
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+
+    let savedContent = TestContent(title: "saved", count: 11)
+    file.updateContent(savedContent)
+    try file.save()
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+    #expect(try Data(contentsOf: target) != originalContents)
+    let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: target)) as? [String: Any])
+    #expect(object["version"] as? Int == VersionedJSONFile<TestContent>.currentVersion)
+    let encodedContent = try #require(object["content"] as? [String: Any])
+    #expect(encodedContent["title"] as? String == savedContent.title)
+    #expect(encodedContent["count"] as? Int == savedContent.count)
+    #expect(try fileNames(in: root) == ["notes.json", "real-notes.json"])
+}
+
 @Test func olderVersionLoadsContentWritable() throws {
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }
@@ -269,6 +300,28 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(file.outcome == .unreadable)
     #expect(file.content == defaultContent)
     #expect(try fileNames(in: root) == ["notes.json"])
+}
+
+@Test func symlinkToDirectoryIsReadOnlyAndUntouched() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let target = root.appendingPathComponent("target", isDirectory: true)
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+    let url = root.appendingPathComponent("notes.json")
+    try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+
+    let file = VersionedJSONFile(fileURL: url, defaultContent: defaultContent, now: { fixedDate })
+
+    guard case .readOnly(.unreadable(let reason)) = file.mode else {
+        Issue.record("Expected a symlink to a directory to open read-only")
+        return
+    }
+    #expect(!reason.isEmpty)
+    #expect(file.outcome == .unreadable)
+    #expect(file.content == defaultContent)
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: url.path) == target.path)
+    #expect(try fileNames(in: root) == ["notes.json", "target"])
 }
 
 @Test func danglingSymlinkIsReadOnlyAndUntouched() throws {

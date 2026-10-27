@@ -39,6 +39,10 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     public private(set) var content: Content
     public private(set) var outcome: FileLoadOutcome
 
+    /// The path reads and writes actually use. A leading symlink is resolved so
+    /// Darwin's `lstat`-based attributes see the target, and atomic writes do not
+    /// replace the user's link with a regular file.
+    private let resolvedFileURL: URL
     private let now: @Sendable () -> Date
     private let randomSuffix: @Sendable (Int) -> String
     /// Top-level key holding `content`, so existing file shapes such as `notes` stay unchanged.
@@ -71,6 +75,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         }
     ) {
         self.fileURL = fileURL
+        self.resolvedFileURL = Self.resolveLeadingSymlink(fileURL)
         self.mode = .writable
         self.content = defaultContent
         self.outcome = .missing
@@ -92,16 +97,16 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
 
         let data = try Self.encodedEnvelope(version: Self.currentVersion, content: content, contentKey: contentKey)
         try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
+            at: resolvedFileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: fileURL, options: .atomic)
+        try data.write(to: resolvedFileURL, options: .atomic)
     }
 
     private mutating func load() {
         let attributes: [FileAttributeKey: Any]
         do {
-            attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            attributes = try FileManager.default.attributesOfItem(atPath: resolvedFileURL.path)
         } catch {
             // `fileExists` hides permissions and dangling links, so use the
             // attribute lookup's error to decide whether the path is absent.
@@ -120,7 +125,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
 
         let data: Data
         do {
-            data = try Data(contentsOf: fileURL)
+            data = try Data(contentsOf: resolvedFileURL)
         } catch {
             markUnreadable(error.localizedDescription)
             return
@@ -173,12 +178,12 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     }
 
     private mutating func recoverFromCorruptFile() {
-        let baseName = fileURL.deletingPathExtension().lastPathComponent
-        let fileExtension = fileURL.pathExtension.isEmpty ? "json" : fileURL.pathExtension
+        let baseName = resolvedFileURL.deletingPathExtension().lastPathComponent
+        let fileExtension = resolvedFileURL.pathExtension.isEmpty ? "json" : resolvedFileURL.pathExtension
         let timestamp = Self.timestamp(from: now())
 
         for attempt in 0..<1_024 {
-            let destination = fileURL
+            let destination = resolvedFileURL
                 .deletingLastPathComponent()
                 .appendingPathComponent(
                     "\(baseName).corrupt-\(timestamp)-\(randomSuffix(attempt)).\(fileExtension)"
@@ -189,7 +194,7 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
             }
 
             do {
-                try FileManager.default.moveItem(at: fileURL, to: destination)
+                try FileManager.default.moveItem(at: resolvedFileURL, to: destination)
                 mode = .writable
                 outcome = .recovered(at: destination)
                 return
@@ -203,6 +208,15 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         }
 
         markUnreadable("No unused name was available for the corrupt file.")
+    }
+
+    /// Resolves a symlink at the path itself. Missing or non-link paths are left
+    /// alone so plain-file behavior and its error reporting stay unchanged.
+    private static func resolveLeadingSymlink(_ url: URL) -> URL {
+        guard (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil else {
+            return url
+        }
+        return url.resolvingSymlinksInPath()
     }
 
     /// Called when `attributesOfItem` reports `ENOENT`: the entry is absent, or a
