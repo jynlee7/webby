@@ -22,8 +22,6 @@ public actor DiskWriter<Content: Codable & Sendable> {
 
     private let gate: SaveGate<Content>
     private let streamContinuation: AsyncStream<Snapshot>.Continuation
-    /// Blocking encode-and-write work runs here, never on a cooperative-pool thread.
-    private let commitQueue = DispatchQueue(label: "com.webby.disk-writer", qos: .utility)
 
     /// Newest generation submitted through `enqueue` or `flush(_:)`.
     private var newestSubmittedGeneration: UInt64 = 0
@@ -42,7 +40,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
         gate: SaveGate<Content>,
         onFailure: @escaping @Sendable (any Error) -> Void = { _ in }
     ) {
-        self.init(gate: gate, onFailure: onFailure, commit: { try gate.commit($0) })
+        self.init(gate: gate, onFailure: onFailure, commit: { try await gate.commitAsync($0) })
     }
 
     /// Test seam: same signature as `SaveGate.commit`, so tests can observe and
@@ -50,7 +48,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
     init(
         gate: SaveGate<Content>,
         onFailure: @escaping @Sendable (any Error) -> Void = { _ in },
-        commit: @escaping @Sendable (Snapshot) throws -> Acknowledgement
+        commit: @escaping @Sendable (Snapshot) async throws -> Acknowledgement
     ) {
         self.gate = gate
 
@@ -65,7 +63,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
                 guard let self else { return }
                 await self.beginCommit(snapshot.generation)
                 do {
-                    let ack = try await Self.runOnCommitQueue(commitQueue, commit, snapshot)
+                    let ack = try await commit(snapshot)
                     await self.recordSuccess(ack, handled: snapshot.generation)
                 } catch {
                     let surfaced = Self.surface(error)
@@ -205,18 +203,6 @@ public actor DiskWriter<Content: Codable & Sendable> {
             }
         }
         waiters = remaining
-    }
-
-    private static func runOnCommitQueue(
-        _ queue: DispatchQueue,
-        _ commit: @escaping @Sendable (Snapshot) throws -> Acknowledgement,
-        _ snapshot: Snapshot
-    ) async throws -> Acknowledgement {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                continuation.resume(with: Result { try commit(snapshot) })
-            }
-        }
     }
 
     /// `SaveGate` forwards the file layer's `SaveError`; callers of this writer use

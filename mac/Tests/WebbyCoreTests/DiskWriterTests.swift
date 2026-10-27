@@ -71,39 +71,56 @@ private final class Counter: @unchecked Sendable {
     }
 }
 
-/// Blocks a commit inside the writer's consumer task until the test releases it.
-private final class CommitBlock: @unchecked Sendable {
-    private let condition = NSCondition()
+/// Suspends a commit inside the writer's consumer without parking a thread.
+private final class CommitGate: @unchecked Sendable {
+    private let lock = NSLock()
     private var started = false
     private var released = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
 
-    func block() {
-        condition.lock()
-        started = true
-        condition.broadcast()
-        while !released {
-            condition.wait()
-        }
-        condition.unlock()
-    }
-
-    func waitUntilStarted(timeout: TimeInterval) -> Bool {
-        let deadline = Date(timeIntervalSinceNow: timeout)
-        condition.lock()
-        defer { condition.unlock() }
-        while !started {
-            if !condition.wait(until: deadline) {
-                return false
+    func suspend() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            started = true
+            if let waiter = startWaiter {
+                startWaiter = nil
+                lock.unlock()
+                waiter.resume()
+            } else {
+                lock.unlock()
+            }
+            lock.lock()
+            if released {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                releaseWaiter = continuation
+                lock.unlock()
             }
         }
-        return true
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if started {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                startWaiter = continuation
+                lock.unlock()
+            }
+        }
     }
 
     func release() {
-        condition.lock()
+        lock.lock()
         released = true
-        condition.broadcast()
-        condition.unlock()
+        let waiter = releaseWaiter
+        releaseWaiter = nil
+        lock.unlock()
+        waiter?.resume()
     }
 }
 
@@ -158,24 +175,20 @@ private final class ConditionFlag: @unchecked Sendable {
     let url = root.appendingPathComponent("notes.json")
     let gate = makeGate(at: url)
     let recorder = CommitRecorder()
-    let firstCommit = CommitBlock()
+    let firstCommit = CommitGate()
     let writer = DiskWriter(
         gate: gate,
         commit: { snapshot in
             let attempt = recorder.record(snapshot.generation)
             if attempt == 1 {
-                firstCommit.block()
+                await firstCommit.suspend()
             }
             return try gate.commit(snapshot)
         }
     )
 
     await writer.enqueue(snapshot(1, "v1"))
-    guard firstCommit.waitUntilStarted(timeout: 10) else {
-        firstCommit.release()
-        Issue.record("The first commit never started")
-        return
-    }
+    await firstCommit.waitUntilStarted()
 
     for generation in UInt64(2)...100 {
         await writer.enqueue(snapshot(generation, "v\(generation)"))
@@ -216,8 +229,8 @@ private final class ConditionFlag: @unchecked Sendable {
     let url = root.appendingPathComponent("notes.json")
     let gate = makeGate(at: url)
     let recorder = CommitRecorder()
-    let blockFive = CommitBlock()
-    let blockSix = CommitBlock()
+    let blockFive = CommitGate()
+    let blockSix = CommitGate()
     let flushFinished = ConditionFlag()
 
     let writer = DiskWriter(
@@ -225,21 +238,17 @@ private final class ConditionFlag: @unchecked Sendable {
         commit: { snapshot in
             recorder.record(snapshot.generation)
             if snapshot.generation == 5 {
-                blockFive.block()
+                await blockFive.suspend()
             }
             if snapshot.generation == 6 {
-                blockSix.block()
+                await blockSix.suspend()
             }
             return try gate.commit(snapshot)
         }
     )
 
     await writer.enqueue(snapshot(5, "v5"))
-    guard blockFive.waitUntilStarted(timeout: 10) else {
-        blockFive.release()
-        Issue.record("The generation 5 commit never started")
-        return
-    }
+    await blockFive.waitUntilStarted()
 
     let flushTask = Task {
         try await writer.flush()
@@ -259,12 +268,7 @@ private final class ConditionFlag: @unchecked Sendable {
     await writer.enqueue(snapshot(6, "v6"))
     blockFive.release()
 
-    guard blockSix.waitUntilStarted(timeout: 10) else {
-        blockSix.release()
-        Issue.record("The generation 6 commit never started")
-        try? await flushTask.value
-        return
-    }
+    await blockSix.waitUntilStarted()
 
     // The consumer is now blocked writing generation 6. A flush that is still
     // waiting for it cannot have finished.
@@ -358,22 +362,18 @@ private final class ConditionFlag: @unchecked Sendable {
     let url = root.appendingPathComponent("notes.json")
     let gate = makeGate(at: url)
     let recorder = CommitRecorder()
-    let blockTwo = CommitBlock()
+    let blockTwo = CommitGate()
     let writer = DiskWriter(
         gate: gate,
         commit: { snapshot in
             recorder.record(snapshot.generation)
-            if snapshot.generation == 2 { blockTwo.block() }
+            if snapshot.generation == 2 { await blockTwo.suspend() }
             return try gate.commit(snapshot)
         }
     )
 
     await writer.enqueue(snapshot(2, "v2"))
-    guard blockTwo.waitUntilStarted(timeout: 10) else {
-        blockTwo.release()
-        Issue.record("The generation 2 commit never started")
-        return
-    }
+    await blockTwo.waitUntilStarted()
 
     let flushTask = Task { try await writer.flush() }
     var spins = 0
