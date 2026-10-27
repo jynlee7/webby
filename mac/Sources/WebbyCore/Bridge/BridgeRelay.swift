@@ -9,9 +9,12 @@ import Foundation
 /// through a `SocketWriter`, so an app that stops reading can't stall that queue: the relay
 /// keeps reading Chrome, and exits as soon as Chrome closes stdin.
 public final class BridgeRelay: @unchecked Sendable {
-    /// Messages for the app that may wait unwritten. Past this the app isn't keeping up,
-    /// so the relay drops the connection, reconnects and asks the extension to resend.
-    static let maxQueuedToApp = 8 * 1024 * 1024
+    /// Messages for the app that may wait unwritten: room for an inventory as large as Chrome
+    /// sends, plus 8 MiB for the hello and active around it and the messages after it. The
+    /// replay queues a whole snapshot at once, so this must hold one, or a large inventory
+    /// alone would look like a stalled app. Past this the app isn't keeping up, so the relay
+    /// drops the connection, reconnects and asks the extension to resend.
+    static let maxQueuedToApp = BridgeConstants.maxMessageFromChrome + 8 * 1024 * 1024
 
     private let input: Int32
     private let output: Int32

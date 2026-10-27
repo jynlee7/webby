@@ -85,6 +85,51 @@ private final class RelayHarness {
     #expect(await chrome.closeInput())
 }
 
+/// An inventory over 8 MiB: five tabs with URLs close to Chrome's 2 MiB limit.
+private func largeInventoryPayload() throws -> Data {
+    let url = "https://example.com/" + String(repeating: "a", count: 2_000_000)
+    let tabs = (0..<5).map { BridgeTab(id: 20 + $0, index: $0, active: $0 == 0, url: url, title: "Tab \(20 + $0)") }
+    return try ExtensionMessage.inventory(windows: [
+        BridgeWindow(id: 1, focused: true, incognito: false, tabs: tabs),
+    ]).encoded()
+}
+
+@Test func relayDeliversALargeSnapshotToAReadingAppWithoutReconnecting() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let socketURL = directory.appendingPathComponent("bridge.sock")
+    let chrome = try RelayHarness(socketURL: socketURL)
+    let inventory = try largeInventoryPayload()
+    #expect(inventory.count > 8 * 1024 * 1024)
+    let snapshot = try [helloPayload(), inventory, activePayload(tab: 20)].map(ExtensionMessage.decode)
+
+    // Chrome sends a snapshot while Webby isn't running, so the relay replays it on connecting.
+    try chrome.fromChrome(helloPayload(), inventory, activePayload(tab: 20))
+    try await Task.sleep(nanoseconds: 300_000_000)
+    let server = BridgeServer(socketURL: socketURL)
+    let log = EventLog(server)
+    try server.start()
+    defer { server.stop() }
+    #expect(await eventually { log.messages.count == 3 })
+    // Contents are compared as a Bool, so a failure doesn't print the inventory.
+    let replayed = log.messages.map(\.message) == snapshot
+    #expect(log.messages.map(\.message.type) == ["hello", "inventory", "active"])
+    #expect(replayed)
+
+    // The extension sends a fresh snapshot to the connected app, and an event right after it.
+    let closed = ExtensionMessage.tabClosed(tabId: 21, windowClosing: false)
+    try chrome.fromChrome(helloPayload(), inventory, activePayload(tab: 20), closed.encoded())
+    #expect(await eventually { log.messages.count == 7 })
+    let resent = Array(log.messages.dropFirst(3).map(\.message)) == snapshot + [closed]
+    #expect(log.messages.dropFirst(3).map(\.message.type) == ["hello", "inventory", "active", "tabClosed"])
+    #expect(resent)
+
+    // Webby kept reading, so the relay never dropped the connection or asked for a resend.
+    #expect(log.disconnections == 0)
+    #expect(try await chrome.toChrome.staysQuiet())
+    #expect(await chrome.closeInput())
+}
+
 @Test func relayForwardsOnlyValidMessagesAfterHello() async throws {
     let directory = try makeSocketDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
