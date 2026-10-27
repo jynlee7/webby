@@ -6,8 +6,6 @@
 
 Webby is a macOS menu-bar app with a Chrome extension. Users write clear, skinnable sticky notes that attach to a Mac app, a web page, or a single Chrome tab. Notes come back when the user returns to that place, and every note can be found in a Library window, organized by site or app and then by page. An optional voice agent answers questions about the notes for the current page or workspace. Cartesia Ink-2 transcribes speech. Claude writes a text answer from the notes, which are passed directly in the request. Cartesia Sonic 3.6 reads the answer aloud and can be interrupted.
 
-There is no second brain. Notes are the only stored knowledge. Library groupings, compiled documents, the Library search cache and the agent's context are all computed from notes when needed. Note-taking, the Library and skins work offline and without any API key. The plan builds them first (Steps 2a–10, with a dogfood build after Step 5c and a notes-only release after Step 10) and adds voice and AI afterwards (Steps 11a–14).
-
 **Terms.** "Workspace" means a Webby tab: one Library sidebar entry per website or app. "Chrome tab" means a browser tab. "Proposed" marks something designed but not yet validated. "TBD" marks something not yet decided. External facts carry an "as of" date. Anything the research could not verify is marked *(unverified)*.
 
 ---
@@ -16,34 +14,12 @@ There is no second brain. Notes are the only stored knowledge. Library groupings
 
 Legend: **Keep** = same behavior. **Change** = kept, with new behavior. **Remove** = gone, with no equivalent.
 
-### 1.1 The second-brain removal
-
-Webby has no second brain anywhere. None of these exist:
-- a processing job after save
-- retrievable pieces or chunks
-- embeddings
-- a retrieval or vector index
-- derived workspace overviews or summaries
-- a "context updating", pending, ready or failed state
-- a published context version
-- invalidation of derived data when a note is deleted
-
-`notes.json` is the only place knowledge is stored. Four things are computed from it, and none of them is a knowledge base:
-
-| Computed thing | What it is | Stored? |
-| --- | --- | --- |
-| Library groupings | Sidebar sections, page tree, Open Tabs, tags | No. Pure functions over the notes, run when the view is drawn. |
-| Compiled view | A Markdown/HTML document for one workspace or one page | No. Rendered on demand. Export writes a file only when the user asks. |
-| **Library search cache** | Each note's text, case- and diacritic-folded, held in memory | No (v1). Rebuilt at launch and updated synchronously on every edit. Deleting it loses nothing. If the thresholds in §5.2 are ever crossed, the cache moves to a standalone SQLite FTS5 table in `~/Library/Caches`, filled from the in-memory notes. `notes.json` stays the only store. It is still a cache, not a knowledge base. |
-| Agent context | The notes in scope, in a fixed order, passed directly in the Claude request | Only as the record of each turn in the local conversation log ("What the agent saw"). |
-
 ### 1.2 Confirmed rules
 
 | FigJam rule | Status | New rule |
 | --- | --- | --- |
 | Users create notes from a browser/app or inside Webby, by typing or voice | Keep | Typing never needs the network. Dictation uses Cartesia Ink-2, with Apple's on-device speech recognition as the fallback. |
 | Each Webby tab is a website/app workspace, with pages inside | Keep | A workspace is identified by its normalized host, its app bundle ID, or "Local files". The user can merge and split workspaces (§5.1.6). |
-| Anchor controls where a note appears; workspace membership controls which second brain it belongs to | Change | The anchor controls where a note appears. The workspace controls Library grouping, the workspace skin and the agent's default scope. There is no second brain. |
 | Hidden, occluded and minimized notes stay available in Webby and in agent context | Keep | Also added: a per-note "Keep away from AI" switch (`excludedFromAgent`). Hiding a note and excluding it are separate. |
 | Each workspace exposes its notes and a context-rich voice agent | Change | Each workspace exposes its notes in the Library (list and compiled view) and an agent scoped to it. "Context-rich" means the workspace's own notes are passed directly. Nothing is derived. |
 | The agent uses relevant notes, plus the current screen when asked with screen access on; no continuous capture | Keep | "Relevant" means a fixed order by tier (tab, page, path, site, rest of workspace), not retrieval. Screen capture is Step 14 (Proposed). |
@@ -67,7 +43,6 @@ Webby has no second brain anywhere. None of these exist:
 | Note saved | Keep | |
 | "Independent next steps" (subgraph) | Change | Renamed "Immediately after saving". It contains only: show at anchor, and list in the Library (search cache updated in memory). The dictation audio buffer is deleted when dictation stops (accepted or cancelled), not on save. |
 | Show note at anchor | Keep | |
-| Queue second-brain update | **Remove** | Nothing runs in the background after a save. The Library search cache is updated synchronously in memory. |
 | List in Webby workspace | Keep | Shown in the Library. |
 | Optional richer structure: TBD | Change (resolved) | A small fixed set: inline tags, pin, palette color. |
 
@@ -85,25 +60,8 @@ Webby has no second brain anywhere. None of these exist:
 | Show all workspace notes → Select individual note → Read or edit inside Webby | Keep | The Library page tree and note list, with an editor in the detail pane. |
 | Reopen at original anchor | Keep | For a page note, asks the extension to focus or open the source URL. For an app note, activates the app. A tab note offers "Reattach to current tab". Reopening never duplicates a note. |
 | Anchor available? → Proposed: keep Webby view | Keep (resolved) | If the anchor is unavailable, the note stays in the Library with "Attach to current page/app/tab". Notes for missing apps are listed under "Unavailable apps". |
-| Show second-brain overview | **Remove** | Replaced by "Open compiled view", which is rendered from the notes on demand and never stored. |
 | Ask workspace agent | Keep | Leads to diagram (d). |
-| Update second brain | **Remove** | Editing a note only increments its revision. |
 | Agent context remains available | Change | "Still in agent scope unless excluded". |
-
-### 1.5 Diagram 3, Second-brain processing: removed entirely
-
-| FigJam element | Status | What happens instead |
-| --- | --- | --- |
-| Note saved or changed → Store original and revision | Change | `Note.revision` in `notes.json`. There is no separate pipeline. |
-| Resolve owner and workspace | Change | `WorkspaceResolver` computes it whenever it is read. Nothing is stored. |
-| Mark context updating | **Remove** | No pending state exists. |
-| Process note revision; Split into retrievable pieces; Attach note and source references; Update retrieval index; Refresh derived workspace overview | **Remove** | Nothing is derived. |
-| Revision still current? → Publish context version / Process newest revision | **Remove** | The agent reads the current notes at request time. |
-| Context ready / Available to workspace agent | **Remove** | Replaced by request-time context assembly in diagram (d). |
-| Processing failure → Show update failure → Retry processing; Original note stays usable | **Remove** | Nothing can fail after a save. Save failures are handled in diagram (a). |
-| Inspect overview and source notes | Change | Replaced by the Library's compiled view and the agent's "What the agent saw" panel. |
-| Note deleted or moved → Invalidate old retrieval pieces → Refresh affected workspace overview | **Remove** | Deleting moves the note to Trash. The next request simply leaves it out. Purging it from Trash also removes its text from snapshots and conversation records (decision 7). |
-| Note minimized or occluded → No context removal | Keep (as a rule) | Stated in diagram (b): collapsed and hidden notes stay in agent scope. |
 
 ### 1.6 Diagram 4, Agent request and context collection
 
@@ -145,7 +103,6 @@ Webby has no second brain anywhere. None of these exist:
 | Concept | Status | New meaning and boundary |
 | --- | --- | --- |
 | User | Keep | One local user. The agent sees only notes in the chosen scope, minus excluded notes. |
-| Workspace | Change | Identified by host, bundle ID or Local files. The user can merge or split workspaces and give each its own skin. No second-brain role. |
 | Source | Change | Page identity is `PageURL`: host, path and significant query keys. `NoteSource` keeps the full URL and title on this Mac only. |
 | Note | Keep | New fields: `revision`, `trashedAt`, `pinnedAt`, `hidden`, `excludedFromAgent`. A note belongs to exactly one workspace, or to the Inbox. |
 | Anchor | Keep | May now be `nil` (Inbox or workspace-only). `.appDocument` is planned for a later schema. |
@@ -194,7 +151,6 @@ Each of the nine FigJam decisions is resolved in §8.1, including decision 7's d
 
 ### Non-goals (for this plan)
 
-- **Any second brain.** That includes derived summaries, overviews, embeddings, chunking, retrieval or vector indexes, and background processing of notes.
 - **Cartesia Managed Agents, or any hosted agent loop.** See decision 10.
 - **Accounts or hosted services.** No accounts, cloud sync, hosted web platform or Webby-run backend. The hosted credential proxy is a seam only.
 - **Agent actions.** No continuous screen capture. The agent does not click, type, submit forms or decide eligibility.
@@ -205,10 +161,6 @@ Each of the nine FigJam decisions is resolved in §8.1, including decision 7's d
 
 ### Later (not scheduled)
 
-- **From `docs/ai-social-impact-research.md`:**
-  - *Pause/Resume* as a Goal/Done/Next/Blocker note template, which needs no AI. That matches the research's "template with dictation" comparison condition.
-  - *Explain my next step*, built on Step 14 plus selected text.
-  - *Help me ask a person*, as an export of selected notes, which reuses Step 6 export.
 - **Library additions:** iCloud sync (CKSyncEngine), a Chrome side panel, opt-in Spotlight, Public Suffix List grouping, and `.appDocument` anchors.
 - **Skins after v1:**
   - Skins v1.1: bundled fonts, a published JSON Schema, and two more built-ins, `webby.paper` (opaque 9-slice paper with tape) and `webby.graphite` (dark), which need commissioned @2x artwork.
