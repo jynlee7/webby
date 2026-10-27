@@ -194,6 +194,21 @@ private func expectCorruption(contents: Data) throws {
     #expect(reloaded.notes.first?.anchor.matches(.web(page)) == true)
 }
 
+@Test func saveAndReloadPreserveReferenceDatePrecision() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let note = makeNote(createdAt: Date(timeIntervalSinceReferenceDate: 123_456.789))
+    let store = try NoteStore(fileURL: url, now: baseDate)
+    store.add(note)
+
+    try store.save()
+    let reloaded = try NoteStore(fileURL: url)
+
+    #expect(reloaded.notes == [note])
+}
+
 @Test func defaultFileURLPointsAtApplicationSupport() {
     let url = NoteStore.defaultFileURL
 
