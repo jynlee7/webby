@@ -61,7 +61,6 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     private let encodeContent: @Sendable (Content, Int) throws -> Data
     private let atomicWrite: @Sendable (Data, URL) throws -> Void
     private let backupBeforeUpgrade: Bool
-    /// Retained after loading an older file until the first migrated write succeeds.
     private var pendingUpgrade: PendingUpgrade?
 
     private struct PendingUpgrade {

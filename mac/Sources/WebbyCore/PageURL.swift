@@ -14,7 +14,6 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
               ["http", "https", "file"].contains(scheme)
         else { return nil }
 
-        // Query handling is not enabled until issue #7.
         query = nil
 
         if scheme == "file" {
