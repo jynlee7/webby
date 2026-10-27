@@ -18,9 +18,14 @@ commitment.
 - The core stores notes as JSON at
   `~/Library/Application Support/Webby/notes.json`. It does not implement
   application-level encryption. Corrupt-file backups can also contain note data.
-- The Chrome extension requests `tabs` and `nativeMessaging`. Its service worker
-  and the native messaging executable currently contain startup stubs.
-- The native host template restricts `allowed_origins` to the extension's ID.
+- The Chrome extension requests `tabs`, `nativeMessaging` and `storage`. It sends
+  tab URLs and titles to the native messaging executable, which checks the caller
+  origin and relays them to the app over a Unix socket at
+  `~/Library/Application Support/Webby/bridge.sock` (mode 0600; the app accepts
+  only peers with the current user's uid). URLs and titles are kept in memory and
+  logged only as private values; nothing writes them to disk yet.
+- The app writes Chrome's native host manifest, and the template documents it. Both
+  restrict `allowed_origins` to the extension's ID.
   The manifest's `key` is a public key used to derive that ID, not a private secret.
 - Local packaging produces an ad-hoc signed app, not a notarized distribution.
 
