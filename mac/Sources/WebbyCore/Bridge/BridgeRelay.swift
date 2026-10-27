@@ -45,6 +45,12 @@ public final class BridgeRelay: @unchecked Sendable {
 
     public func start() {
         queue.async { [self] in
+            do {
+                try UnixSocket.setNonBlocking(output, true)
+            } catch {
+                finish("can't configure Chrome output")
+                return
+            }
             let source = DispatchSource.makeReadSource(fileDescriptor: input, queue: queue)
             source.setEventHandler { [weak self] in self?.readFromChrome() }
             inputSource = source

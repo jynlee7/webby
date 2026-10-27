@@ -141,3 +141,46 @@ private final class RelayHarness {
     try UnixSocket.send(withUnsafeBytes(of: &length) { Data($0) }, to: chrome.chromeIn.write)
     #expect(await eventually { chrome.hasEnded })
 }
+
+@Test func relayStopsWhenChromeStopsReadingCommands() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("bridge.sock").path
+    let listener = try UnixSocket.makeListener(path: path)
+    defer { close(listener) }
+    let chrome = try RelayHarness(socketURL: URL(fileURLWithPath: path))
+    var app: Int32 = -1
+    #expect(await eventually {
+        app = UnixSocket.acceptConnection(listener) ?? -1
+        return app >= 0
+    })
+    defer { close(app) }
+    let command = AppCommand.openTabs(urls: ["https://example.com/" + String(repeating: "a", count: 900_000)])
+    try UnixSocket.send(frame(command.encoded()), to: app)
+    // Nothing consumes Chrome stdout. The relay must time out, not block forever.
+    #expect(await eventually { chrome.hasEnded })
+}
+
+@Test func relayStopsWhenChromeQuitsWhileWebbyIsNotReading() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appendingPathComponent("bridge.sock").path
+    // A raw listener whose connections are never read, like a stalled app.
+    let listener = try UnixSocket.makeListener(path: path)
+    defer { close(listener) }
+    let chrome = try RelayHarness(socketURL: URL(fileURLWithPath: path))
+    var app: Int32 = -1
+    #expect(await eventually {
+        app = UnixSocket.acceptConnection(listener) ?? -1
+        return app >= 0
+    })
+    defer { close(app) }
+
+    // Larger than the socket buffers, so writing it to Webby stalls.
+    let url = "https://example.com/" + String(repeating: "a", count: 300_000)
+    let tab = BridgeTab(id: 1, index: 0, active: true, url: url, title: "Long")
+    try chrome.fromChrome(helloPayload(), ExtensionMessage.active(windowId: 1, incognito: false, tab: tab).encoded())
+    // Each stalled write gives up within seconds, so the relay still sees stdin close.
+    chrome.chromeIn.closeWrite()
+    #expect(await eventually(timeout: 15) { chrome.hasEnded })
+}

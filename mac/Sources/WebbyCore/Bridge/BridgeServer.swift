@@ -120,8 +120,16 @@ public final class BridgeServer: @unchecked Sendable {
                 return
             }
             let fd = connection.fd
-            // A failed write shows up as EOF on the read side, which disconnects.
-            connection.writeQueue.async { try? UnixSocket.send(frame, to: fd) }
+            let id = connection.id
+            connection.writeQueue.async { [weak self] in
+                do {
+                    try UnixSocket.send(frame, to: fd)
+                } catch {
+                    // A partial frame cannot be retried on this stream. A write failure
+                    // need not produce read EOF, so explicitly retire the connection.
+                    self?.queue.async { [weak self] in self?.disconnect(id) }
+                }
+            }
         }
     }
 

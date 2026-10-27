@@ -175,6 +175,20 @@ private func startServer(in directory: URL, allowedUID: uid_t = getuid()) throws
     #expect(try Data(contentsOf: url) == Data("keep me".utf8))
 }
 
+@Test func stalledCommandReaderIsDisconnected() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (server, log) = try startServer(in: directory)
+    defer { server.stop() }
+    let client = try TestClient(path: server.socketURL.path)
+    try client.send(helloPayload())
+    #expect(await eventually { log.messages.count == 1 })
+    // Larger than the socket buffer, but within the native messaging command limit.
+    let url = "https://example.com/" + String(repeating: "a", count: 900_000)
+    server.send(.openTabs(urls: [url]), toProfile: testProfile)
+    #expect(await eventually { log.disconnections == 1 })
+}
+
 @Test func invalidPayloadContentsAreNotIncludedInDiagnostics() async throws {
     let directory = try makeSocketDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

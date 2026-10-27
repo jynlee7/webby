@@ -69,7 +69,7 @@ enum UnixSocket {
         return (info.st_mode & S_IFMT) == S_IFSOCK
     }
 
-    /// Writes all of `data`, retrying short writes.
+    /// Writes all of `data`, retrying short writes. Socket writes have a bounded timeout.
     static func send(_ data: Data, to fd: Int32) throws {
         try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let base = raw.baseAddress else { return }
@@ -80,6 +80,11 @@ enum UnixSocket {
                     offset += written
                 } else if written < 0 && errno == EINTR {
                     continue
+                } else if written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                    guard poll(&descriptor, 1, 1000) > 0 else {
+                        throw Failure(operation: "write timeout", code: ETIMEDOUT)
+                    }
                 } else {
                     throw Failure(operation: "write", code: errno)
                 }
@@ -107,11 +112,14 @@ enum UnixSocket {
 
     private static func configure(_ fd: Int32) {
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        // A stalled peer must not hold the relay queue indefinitely (including EOF handling).
+        var timeout = timeval(tv_sec: 1, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         var on: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
     }
 
-    private static func setNonBlocking(_ fd: Int32, _ enabled: Bool) throws {
+    static func setNonBlocking(_ fd: Int32, _ enabled: Bool) throws {
         let flags = fcntl(fd, F_GETFL)
         guard flags >= 0 else { throw Failure(operation: "fcntl", code: errno) }
         let updated = enabled ? flags | O_NONBLOCK : flags & ~O_NONBLOCK
