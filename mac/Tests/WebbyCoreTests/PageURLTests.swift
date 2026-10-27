@@ -23,6 +23,8 @@ import Testing
     #expect(PageURL(string: "mailto:me@example.com") == nil)
     #expect(PageURL(string: "javascript:alert(1)") == nil)
     #expect(PageURL(string: "example.com/a") == nil)
+    #expect(PageURL(string: "https://www./a") == nil)
+    #expect(PageURL(string: "https://www.:8443/a") == nil)
 }
 
 @Test func trimsSurroundingWhitespace() throws {
@@ -89,10 +91,10 @@ import Testing
     #expect(try #require(PageURL(string: "https://example.com/")).segments == [])
 }
 
-@Test func hostPathInitializerNormalizesBothParts() throws {
+@Test func hostPathInitializerNormalizesStoredIdentity() throws {
     let page = PageURL(host: "WWW.Example.COM", path: "problems//two-sum/")
 
-    #expect(page.host == "example.com")
+    #expect(page.host == "www.example.com")
     #expect(page.path == "/problems/two-sum")
     #expect(page.segments == ["problems", "two-sum"])
     #expect(PageURL(host: "example.com", path: "").path == "")
@@ -107,11 +109,11 @@ import Testing
     #expect(decoded == page)
 }
 
-@Test func decodingNormalizesIdentity() throws {
+@Test func decodingNormalizesStoredIdentityWithoutStrippingAnotherWww() throws {
     let data = Data(#"{"host":"WWW.Example.COM","path":"a//b/"}"#.utf8)
     let decoded = try JSONDecoder().decode(PageURL.self, from: data)
 
-    #expect(decoded == PageURL(host: "example.com", path: "/a/b"))
+    #expect(decoded == PageURL(host: "www.example.com", path: "/a/b"))
 }
 
 @Test func decodingRejectsAnEmptyHost() {

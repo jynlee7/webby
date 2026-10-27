@@ -177,6 +177,23 @@ private func expectCorruption(contents: Data) throws {
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["notes.json"])
 }
 
+@Test func saveAndReloadPreserveDoubleWwwHostIdentity() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let page = try #require(PageURL(string: "https://www.www.example.com/a"))
+    let note = makeNote(anchor: .web(page: page, scope: .page))
+    let store = try NoteStore(fileURL: url, now: baseDate)
+    store.add(note)
+
+    try store.save()
+    let reloaded = try NoteStore(fileURL: url)
+
+    #expect(reloaded.notes == [note])
+    #expect(reloaded.notes.first?.anchor.matches(.web(page)) == true)
+}
+
 @Test func defaultFileURLPointsAtApplicationSupport() {
     let url = NoteStore.defaultFileURL
 

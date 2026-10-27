@@ -1,6 +1,7 @@
 import Foundation
 
 /// The durable identity of a web page: a normalized host and path.
+/// URL parsing strips one leading `www.`; stored identities preserve their host on decode.
 public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     public let host: String
     public let path: String
@@ -19,7 +20,10 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
         }
 
         guard let rawHost = components.host, !rawHost.isEmpty else { return nil }
-        var normalizedHost = Self.normalizeHost(rawHost)
+        var normalizedHost = Self.normalizeStoredHost(rawHost)
+        if normalizedHost.hasPrefix("www.") {
+            normalizedHost.removeFirst(4)
+        }
         guard !normalizedHost.isEmpty else { return nil }
 
         if let port = components.port, port != Self.defaultPort(for: scheme) {
@@ -30,8 +34,9 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
         path = Self.normalizePath(components.percentEncodedPath)
     }
 
+    /// Creates an identity from an already selected stored host rather than a raw URL host.
     public init(host: String, path: String) {
-        let normalizedHost = Self.normalizeHost(host)
+        let normalizedHost = Self.normalizeStoredHost(host)
         precondition(!normalizedHost.isEmpty, "PageURL host must not be empty")
         self.host = normalizedHost
         self.path = Self.normalizePath(path)
@@ -45,7 +50,7 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let rawHost = try container.decode(String.self, forKey: .host)
-        let normalizedHost = Self.normalizeHost(rawHost)
+        let normalizedHost = Self.normalizeStoredHost(rawHost)
         guard !normalizedHost.isEmpty else {
             throw DecodingError.dataCorruptedError(
                 forKey: .host,
@@ -71,12 +76,8 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
         host + path
     }
 
-    private static func normalizeHost(_ rawHost: String) -> String {
-        var host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if host.hasPrefix("www.") {
-            host.removeFirst(4)
-        }
-        return host
+    private static func normalizeStoredHost(_ rawHost: String) -> String {
+        rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private static func defaultPort(for scheme: String) -> Int? {
