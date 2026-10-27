@@ -21,6 +21,9 @@ public enum FileLoadOutcome: Equatable, Sendable {
 public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     public enum SaveError: Error, LocalizedError, Equatable {
         case readOnly(FileLoadProblem)
+        case sourceChanged
+        case backupChanged
+        case backupNameUnavailable
 
         public var errorDescription: String? {
             switch self {
@@ -28,6 +31,12 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
                 return "This file uses format \(found), but this version of Webby supports \(supported). Saving is disabled."
             case .readOnly(.unreadable(let reason)):
                 return "This file could not be read, so saving is disabled: \(reason)"
+            case .sourceChanged:
+                return "The file changed on disk after it was loaded, so it was not overwritten."
+            case .backupChanged:
+                return "The migration backup is missing or changed, so the original file was not overwritten."
+            case .backupNameUnavailable:
+                return "No unused name was available for the migration backup."
             }
         }
     }
@@ -35,9 +44,12 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     public static var currentVersion: Int { 1 }
 
     public let fileURL: URL
+    public let supportedVersion: Int
     public private(set) var mode: FileLoadMode
     public private(set) var content: Content
     public private(set) var outcome: FileLoadOutcome
+    /// Set once a migration backup has been created, so callers can locate it.
+    public private(set) var migrationBackupURL: URL?
 
     /// The path reads and writes actually use. A leading symlink is resolved so
     /// Darwin's `lstat`-based attributes see the target, and atomic writes do not
@@ -45,8 +57,18 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     private let resolvedFileURL: URL
     private let now: @Sendable () -> Date
     private let randomSuffix: @Sendable (Int) -> String
-    /// Top-level key holding `content`, so existing file shapes such as `notes` stay unchanged.
-    private let contentKey: String
+    private let decodeContent: @Sendable (Data, Int) throws -> Content
+    private let encodeContent: @Sendable (Content, Int) throws -> Data
+    private let atomicWrite: @Sendable (Data, URL) throws -> Void
+    private let backupBeforeUpgrade: Bool
+    /// Retained after loading an older file until the first migrated write succeeds.
+    private var pendingUpgrade: PendingUpgrade?
+
+    private struct PendingUpgrade {
+        let sourceVersion: Int
+        let sourceData: Data
+        var backupURL: URL?
+    }
 
     private struct VersionProbe: Decodable {
         let version: Int
@@ -74,14 +96,48 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
             String(UUID().uuidString.lowercased().prefix(8))
         }
     ) {
+        self.init(
+            fileURL: fileURL,
+            defaultContent: defaultContent,
+            supportedVersion: Self.currentVersion,
+            decode: { data, _ in try Self.decodedContent(from: data, contentKey: contentKey) },
+            encode: { content, version in
+                try Self.encodedEnvelope(version: version, content: content, contentKey: contentKey)
+            },
+            now: now,
+            randomSuffix: randomSuffix
+        )
+    }
+
+    public init(
+        fileURL: URL,
+        defaultContent: Content,
+        supportedVersion: Int,
+        decode: @escaping @Sendable (Data, Int) throws -> Content,
+        encode: @escaping @Sendable (Content, Int) throws -> Data,
+        backupBeforeUpgrade: Bool = false,
+        now: @escaping @Sendable () -> Date = { Date() },
+        randomSuffix: @escaping @Sendable (Int) -> String = { _ in
+            String(UUID().uuidString.lowercased().prefix(8))
+        },
+        atomicWrite: @escaping @Sendable (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
+    ) {
         self.fileURL = fileURL
+        self.supportedVersion = supportedVersion
         self.resolvedFileURL = Self.resolveLeadingSymlink(fileURL)
         self.mode = .writable
         self.content = defaultContent
         self.outcome = .missing
         self.now = now
         self.randomSuffix = randomSuffix
-        self.contentKey = contentKey
+        self.decodeContent = decode
+        self.encodeContent = encode
+        self.atomicWrite = atomicWrite
+        self.backupBeforeUpgrade = backupBeforeUpgrade
+        self.migrationBackupURL = nil
+        self.pendingUpgrade = nil
 
         load()
     }
@@ -90,17 +146,46 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
         content = newContent
     }
 
-    public func save() throws {
+    public mutating func save() throws {
         if case .readOnly(let problem) = mode {
             throw SaveError.readOnly(problem)
         }
 
-        let data = try Self.encodedEnvelope(version: Self.currentVersion, content: content, contentKey: contentKey)
+        let data = try encodeContent(content, supportedVersion)
+
+        if var pending = pendingUpgrade {
+            guard let current = try? Data(contentsOf: resolvedFileURL), current == pending.sourceData else {
+                throw SaveError.sourceChanged
+            }
+            if let backup = pending.backupURL {
+                guard let attributes = try? FileManager.default.attributesOfItem(atPath: backup.path),
+                      attributes[.type] as? FileAttributeType == .typeRegular,
+                      let bytes = try? Data(contentsOf: backup), bytes == pending.sourceData else {
+                    throw SaveError.backupChanged
+                }
+            } else {
+                pending.backupURL = try createMigrationBackup(
+                    sourceVersion: pending.sourceVersion,
+                    sourceData: pending.sourceData
+                )
+                pendingUpgrade = pending
+                migrationBackupURL = pending.backupURL
+            }
+
+            try FileManager.default.createDirectory(
+                at: resolvedFileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try atomicWrite(data, resolvedFileURL)
+            pendingUpgrade = nil
+            return
+        }
+
         try FileManager.default.createDirectory(
             at: resolvedFileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: resolvedFileURL, options: .atomic)
+        try atomicWrite(data, resolvedFileURL)
     }
 
     private mutating func load() {
@@ -139,19 +224,51 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
             return
         }
 
-        if probe.version > Self.currentVersion {
-            mode = .readOnly(.newerVersion(found: probe.version, supported: Self.currentVersion))
+        if probe.version > supportedVersion {
+            mode = .readOnly(.newerVersion(found: probe.version, supported: supportedVersion))
             outcome = .newer(version: probe.version)
             return
         }
 
         do {
-            content = try Self.decodedContent(from: data, contentKey: contentKey)
+            content = try decodeContent(data, probe.version)
+            if backupBeforeUpgrade && probe.version < supportedVersion {
+                pendingUpgrade = PendingUpgrade(
+                    sourceVersion: probe.version,
+                    sourceData: data,
+                    backupURL: nil
+                )
+            }
             mode = .writable
             outcome = .loaded
         } catch {
             recoverFromCorruptFile()
         }
+    }
+
+    private func createMigrationBackup(sourceVersion: Int, sourceData: Data) throws -> URL {
+        let baseName = resolvedFileURL.deletingPathExtension().lastPathComponent
+        let fileExtension = resolvedFileURL.pathExtension.isEmpty ? "json" : resolvedFileURL.pathExtension
+        let timestamp = Self.timestamp(from: now())
+        let directory = resolvedFileURL.deletingLastPathComponent()
+
+        for attempt in 0..<1_024 {
+            let destination = directory.appendingPathComponent(
+                "\(baseName).v\(sourceVersion)-\(timestamp)-\(randomSuffix(attempt)).\(fileExtension)"
+            )
+
+            do {
+                try sourceData.write(to: destination, options: [.withoutOverwriting])
+                return destination
+            } catch {
+                if Self.isFileExistsError(error) {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        throw SaveError.backupNameUnavailable
     }
 
     /// Writes `version` beside the content at `contentKey`, so existing shapes like `{"version": 1, "notes": []}` are preserved.
