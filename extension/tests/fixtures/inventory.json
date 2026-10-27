@@ -1,0 +1,39 @@
+{
+  "type": "inventory",
+  "windows": [
+    {
+      "id": 1,
+      "focused": true,
+      "incognito": false,
+      "bounds": { "left": 0, "top": 25, "width": 1440, "height": 875 },
+      "tabs": [
+        {
+          "id": 11,
+          "index": 0,
+          "active": false,
+          "url": "https://example.com/docs",
+          "title": "Docs",
+          "groupId": 3,
+          "lastAccessed": 1761580800000.5
+        },
+        {
+          "id": 12,
+          "index": 1,
+          "active": true,
+          "url": "https://example.com/docs/intro",
+          "title": "Intro",
+          "openerTabId": 11,
+          "lastAccessed": 1761580900000
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "focused": false,
+      "incognito": true,
+      "tabs": [
+        { "id": 21, "index": 0, "active": true, "url": "chrome://newtab/", "title": "New Tab" }
+      ]
+    }
+  ]
+}

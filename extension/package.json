@@ -1,0 +1,9 @@
+{
+  "name": "webby-extension",
+  "private": true,
+  "description": "Node tooling only (tests and syntax checks); not part of the packaged extension.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}
