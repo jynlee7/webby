@@ -24,7 +24,7 @@ private func removeTempDirectory(_ directory: URL) {
 
 private func makeNote(
     id: UUID = UUID(),
-    anchor: Anchor = .app(bundleID: "com.example.Notes"),
+    anchor: Anchor? = .app(bundleID: "com.example.Notes"),
     text: String = "",
     createdAt: Date = baseDate
 ) -> Note {
@@ -39,8 +39,9 @@ private func makeNote(
     )
 }
 
-@Test func currentVersionMatchesSharedLoader() {
-    #expect(NoteStore.currentVersion == VersionedJSONFile<[Note]>.currentVersion)
+@Test func notesFormatVersionIsIndependentOfOtherFiles() {
+    #expect(NoteStore.currentVersion == 2)
+    #expect(VersionedJSONFile<[String]>.currentVersion == 1)
 }
 
 @Test func missingFileOpensEmptyWritableStoreAndCreatesNothing() throws {
@@ -79,23 +80,25 @@ private func makeNote(
     #expect(store.notes(matching: .web(PageURL(host: "example.com", path: "/other"))).map(\.id) == [siteNote.id])
 
     let updatedAt = baseDate.addingTimeInterval(120)
-    #expect(store.update(id: appNote.id, now: updatedAt) { $0.text = "Changed" })
+    #expect(store.updateContent(id: appNote.id, change: .text("Changed"), now: updatedAt))
     #expect(store.note(id: appNote.id)?.text == "Changed")
     #expect(store.note(id: appNote.id)?.updatedAt == updatedAt)
 
-    #expect(store.remove(id: siteNote.id))
-    #expect(store.note(id: siteNote.id) == nil)
-    #expect(store.notes.count == 2)
+    #expect(store.trash(id: siteNote.id, now: updatedAt))
+    #expect(store.note(id: siteNote.id)?.trashedAt == updatedAt)
+    #expect(store.notes.count == 3)
+    #expect(store.notes(matching: .web(PageURL(host: "example.com", path: "/other"))).isEmpty)
 }
 
-@Test func updateAndRemoveMissingIDsReturnFalse() throws {
+@Test func updateAndTrashMissingIDsReturnFalse() throws {
     let root = try makeTempDirectory()
     defer { removeTempDirectory(root) }
 
     let store = NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
 
-    #expect(!store.update(id: UUID(), now: baseDate) { $0.text = "No note" })
-    #expect(!store.remove(id: UUID()))
+    #expect(!store.updateContent(id: UUID(), change: .text("No note"), now: baseDate))
+    #expect(!store.trash(id: UUID()))
+    #expect(!store.restore(id: UUID()))
     #expect(store.notes.isEmpty)
 }
 
@@ -116,7 +119,7 @@ private func makeNote(
             createdAt: baseDate.addingTimeInterval(-60)
         ),
     ]
-    notes.forEach(store.add)
+    notes.forEach { store.add($0) }
 
     try store.save()
 
@@ -298,7 +301,7 @@ private func expectCorruption(contents: Data) throws {
     let reloaded = NoteStore(fileURL: url)
 
     #expect(reloaded.notes == [note])
-    #expect(reloaded.notes.first?.anchor.matches(.web(page)) == true)
+    #expect(reloaded.notes.first?.anchor?.matches(.web(page)) == true)
 }
 
 @Test func saveAndReloadPreserveReferenceDatePrecision() throws {

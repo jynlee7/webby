@@ -1,10 +1,11 @@
 import Foundation
 
-/// The durable identity of a web page: a normalized host and path.
+/// The durable identity of a web page: a normalized host, path and optional query.
 /// URL parsing strips one leading `www.`; stored identities preserve their host on decode.
 public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     public let host: String
     public let path: String
+    public let query: String?
 
     public init?(string: String) {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -12,6 +13,9 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
               let scheme = components.scheme?.lowercased(),
               ["http", "https", "file"].contains(scheme)
         else { return nil }
+
+        // Query handling is not enabled until issue #7.
+        query = nil
 
         if scheme == "file" {
             host = "file"
@@ -35,16 +39,18 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     }
 
     /// Creates an identity from an already selected stored host rather than a raw URL host.
-    public init(host: String, path: String) {
+    public init(host: String, path: String, query: String? = nil) {
         let normalizedHost = Self.normalizeStoredHost(host)
         precondition(!normalizedHost.isEmpty, "PageURL host must not be empty")
         self.host = normalizedHost
         self.path = Self.normalizePath(path)
+        self.query = query
     }
 
     private enum CodingKeys: String, CodingKey {
         case host
         case path
+        case query
     }
 
     public init(from decoder: Decoder) throws {
@@ -60,12 +66,14 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
         }
         host = normalizedHost
         path = Self.normalizePath(try container.decode(String.self, forKey: .path))
+        query = try container.decodeIfPresent(String.self, forKey: .query)
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(host, forKey: .host)
         try container.encode(path, forKey: .path)
+        try container.encodeIfPresent(query, forKey: .query)
     }
 
     public var segments: [String] {
