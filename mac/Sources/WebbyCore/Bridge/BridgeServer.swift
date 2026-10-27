@@ -199,7 +199,7 @@ public final class BridgeServer: @unchecked Sendable {
         do {
             message = try ExtensionMessage.decode(payload)
         } catch {
-            emit(.dropped(connection: connection.id, reason: "invalid message: \(error)"))
+            emit(.dropped(connection: connection.id, reason: "invalid message"))
             return
         }
         if case .hello(let hello) = message {

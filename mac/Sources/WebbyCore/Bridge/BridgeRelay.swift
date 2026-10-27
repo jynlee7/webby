@@ -95,7 +95,7 @@ public final class BridgeRelay: @unchecked Sendable {
         do {
             message = try ExtensionMessage.decode(payload)
         } catch {
-            log("dropping an invalid message from Chrome: \(error)")
+            log("dropping an invalid message from Chrome")
             return
         }
 
@@ -197,7 +197,7 @@ public final class BridgeRelay: @unchecked Sendable {
             do {
                 sendToChrome(try AppCommand.decode(payload))
             } catch {
-                log("dropping an invalid command from Webby: \(error)")
+                log("dropping an invalid command from Webby")
             }
         }
     }

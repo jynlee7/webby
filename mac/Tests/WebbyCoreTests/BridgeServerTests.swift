@@ -175,3 +175,13 @@ private func startServer(in directory: URL, allowedUID: uid_t = getuid()) throws
     #expect(try Data(contentsOf: url) == Data("keep me".utf8))
 }
 
+@Test func invalidPayloadContentsAreNotIncludedInDiagnostics() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let (server, log) = try startServer(in: directory)
+    defer { server.stop() }
+    let client = try TestClient(path: server.socketURL.path)
+    try client.send(Data(#"{"type":"https://example.com/private"}"#.utf8))
+    #expect(await eventually { log.dropped.count == 1 })
+    #expect(log.dropped == ["invalid message"])
+}
