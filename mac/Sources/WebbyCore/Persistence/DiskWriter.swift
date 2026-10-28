@@ -34,6 +34,9 @@ public actor DiskWriter<Content: Codable & Sendable> {
     /// Generation currently being committed; used to avoid queueing a duplicate.
     private var inFlightGeneration: UInt64?
     private var acknowledgement: Acknowledgement?
+    /// False until a commit has actually completed, so generation 0 is not mistaken
+    /// for an already-finished write.
+    private var hasAcknowledged = false
     private var waiters: [Waiter] = []
 
     public init(
@@ -143,7 +146,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
     }
 
     private func isSatisfied(target: UInt64, watermark: UInt64) -> Bool {
-        committedGeneration >= target && newestHandledGeneration >= watermark
+        hasAcknowledged && committedGeneration >= target && newestHandledGeneration >= watermark
     }
 
     private var committedGeneration: UInt64 {
@@ -156,6 +159,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
 
     private func recordSuccess(_ ack: Acknowledgement, handled generation: UInt64) {
         inFlightGeneration = nil
+        hasAcknowledged = true
         if acknowledgement.map({ ack.generation > $0.generation }) ?? true {
             acknowledgement = ack
         }

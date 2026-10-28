@@ -128,8 +128,18 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         candidate.updateContent(snapshot.content)
         do {
             try candidate.save()
-        } catch let error as VersionedJSONFile<Content>.SaveError {
-            switch error {
+        } catch {
+            // A failed final write can still have created and remembered a migration
+            // backup. Publish that bookkeeping so a retry reuses the same backup, but
+            // leave the committed generation alone because nothing reached disk.
+            lock.lock()
+            file = candidate
+            lock.unlock()
+
+            guard let saveError = error as? VersionedJSONFile<Content>.SaveError else {
+                throw error
+            }
+            switch saveError {
             case .readOnly(let problem): throw SaveFailure.readOnly(problem)
             case .sourceChanged: throw SaveFailure.sourceChanged
             case .backupChanged: throw SaveFailure.backupChanged

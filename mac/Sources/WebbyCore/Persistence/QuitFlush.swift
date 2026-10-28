@@ -148,15 +148,36 @@ public final class QuitFlushCoordinator {
             return true
         }
 
-        let event = await raceFlushAgainstTimeout()
-        switch event {
-        case .flushed(let generation):
-            noteCommitted(generation: generation)
-            finish(.flushed(generation: generation), terminate: true)
-            return true
-        case .failed, .cancelled, .timedOut:
-            return runFallback()
+        // A mutation can arrive while the flush is suspended. Loop so the newest
+        // generation is written before termination is allowed, bounded so a writer
+        // that keeps falling behind cannot hang the quit path forever.
+        for attempt in 0..<3 {
+            let event = await raceFlushAgainstTimeout()
+            switch event {
+            case .flushed(let generation):
+                noteCommitted(generation: generation)
+                guard currentIsDirty else {
+                    finish(.flushed(generation: generation), terminate: true)
+                    return true
+                }
+                if attempt == 2 { break }
+            case .failed, .cancelled, .timedOut:
+                // A failed flush is not retried here; the fallback decides.
+                return runFallbackChecked()
+            }
         }
+
+        return runFallbackChecked()
+    }
+
+    /// Applies the same post-write dirtiness check to the synchronous fallback.
+    private func runFallbackChecked() -> Bool {
+        guard runFallback() else { return false }
+        guard !currentIsDirty else {
+            finish(.failed(QuitFailure(description: "The newest changes could not be saved.")), terminate: false)
+            return false
+        }
+        return true
     }
 
     /// Records a new mutation. A stale or repeated generation is ignored.

@@ -356,3 +356,67 @@ private let immediateSleep: QuitFlushCoordinator.Sleep = { _ in }
     coordinator.noteCommitted(generation: 2)
     #expect(recorder.suddenStates == [true, false])
 }
+
+/// Small thread-safe model of a store's dirty state for termination tests.
+private final class QuitState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var newestMutation: UInt64 = 0
+    private var committed: UInt64 = 0
+
+    func noteMutation(generation: UInt64) {
+        lock.lock()
+        newestMutation = max(newestMutation, generation)
+        lock.unlock()
+    }
+
+    func noteCommitted(generation: UInt64) {
+        lock.lock()
+        committed = max(committed, generation)
+        lock.unlock()
+    }
+
+    var isDirty: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return newestMutation > committed
+    }
+}
+
+@Test func newerEditDuringFlushBlocksTermination() async throws {
+    let state = QuitState()
+    state.noteMutation(generation: 1)
+    let coordinator = QuitFlushCoordinator(
+        sleep: { _ in try await Task.sleep(for: .seconds(30)) },
+        flush: {
+            // A newer edit lands while the flush is in flight.
+            state.noteMutation(generation: 2)
+            state.noteCommitted(generation: 1)
+            return 1
+        },
+        fallback: {
+            state.noteCommitted(generation: 2)
+            return 2
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { state.isDirty }
+    )
+
+    let mayTerminate = await coordinator.handleTermination()
+    #expect(mayTerminate)
+    #expect(!state.isDirty)
+}
+
+@Test func unsavedEditAfterFailedFallbackCancelsTermination() async throws {
+    let state = QuitState()
+    state.noteMutation(generation: 2)
+    let coordinator = QuitFlushCoordinator(
+        flush: { throw SaveFailure.sourceChanged },
+        fallback: { throw SaveFailure.sourceChanged },
+        isReadOnly: { false },
+        hasUnsavedChanges: { state.isDirty }
+    )
+
+    let mayTerminate = await coordinator.handleTermination()
+    #expect(!mayTerminate)
+    #expect(state.isDirty)
+}

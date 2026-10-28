@@ -401,3 +401,26 @@ private final class ConditionFlag: @unchecked Sendable {
     let acknowledgement = await writer.lastAcknowledgement
     #expect(acknowledgement?.generation == 2)
 }
+
+@Test func generationZeroFlushWaitsForTheFirstCommit() async throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let gate = makeGate(at: url)
+    let gateBlock = CommitGate()
+    let writer = DiskWriter(
+        gate: gate,
+        commit: { snapshot in
+            await gateBlock.suspend()
+            return try gate.commit(snapshot)
+        }
+    )
+
+    let flush = Task { try await writer.flush(SaveGate<TestContent>.Snapshot(generation: 0, content: defaultContent)) }
+    await gateBlock.waitUntilStarted()
+    #expect(!FileManager.default.fileExists(atPath: url.path))
+    gateBlock.release()
+    try await flush.value
+    #expect(FileManager.default.fileExists(atPath: url.path))
+}
