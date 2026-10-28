@@ -795,12 +795,21 @@ public enum SkinFolderLoader {
                 bytesPerPacket = uint32BE(bytes, start + 16)
                 framesPerPacket = uint32BE(bytes, start + 20)
             } else if chunkName == "data" {
+                // The data chunk begins with a four-byte edit count that is not audio.
                 let available = max(0, bytes.count - start)
+                let payload: Int
                 if chunkSize < 0 {
-                    dataBytes = available
+                    payload = available
+                } else {
+                    payload = min(Int(chunkSize), available)
+                }
+                guard payload >= 4 else {
+                    return .invalid(code: "CAF data chunk is truncated")
+                }
+                dataBytes = payload - 4
+                if chunkSize < 0 {
                     break
                 }
-                dataBytes = min(Int(chunkSize), available)
             }
 
             guard chunkSize >= 0 else {
@@ -828,7 +837,9 @@ public enum SkinFolderLoader {
             return .invalid(code: "CAF desc has no usable packet size")
         }
 
-        let isPCM = formatID == "lpcm" && (formatFlags & 0x1) == 0
+        // Bit 0 of the LPCM flags marks floating-point rather than integer samples;
+        // both are uncompressed PCM, which is what the format requires.
+        let isPCM = formatID == "lpcm"
         let frames = (Double(dataBytes) / Double(bytesPerPacket)) * Double(framesPerPacket)
 
         return .available(SoundAssetMetadata(

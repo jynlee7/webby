@@ -638,18 +638,21 @@ private func makeCAF(
     sampleRate: Double,
     bytesPerPacket: UInt32,
     framesPerPacket: UInt32,
-    frames: Int
+    frames: Int,
+    formatFlags: UInt32 = 0
 ) -> Data {
     var desc = Data()
     appendUInt64BE(sampleRate.bitPattern, to: &desc)
     appendASCII("lpcm", to: &desc)
-    appendUInt32BE(0, to: &desc)
+    appendUInt32BE(formatFlags, to: &desc)
     appendUInt32BE(bytesPerPacket, to: &desc)
     appendUInt32BE(framesPerPacket, to: &desc)
     appendUInt32BE(1, to: &desc)
     appendUInt32BE(16, to: &desc)
 
-    let dataBytes = frames * Int(bytesPerPacket)
+    // The data chunk carries a four-byte edit count before the audio samples.
+    let audioBytes = frames * Int(bytesPerPacket)
+    let dataBytes = audioBytes + 4
 
     var data = Data()
     appendASCII("caff", to: &data)
@@ -660,6 +663,43 @@ private func makeCAF(
     data.append(desc)
     appendASCII("data", to: &data)
     appendUInt64BE(UInt64(dataBytes), to: &data)
-    data.append(contentsOf: [UInt8](repeating: 0, count: dataBytes))
+    appendUInt32BE(0, to: &data)
+    data.append(contentsOf: [UInt8](repeating: 0, count: audioBytes))
     return data
+}
+
+@Test func floatingPointCAFIsStillPCM() throws {
+    let folder = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try write(minimalManifest(), to: folder.appendingPathComponent("skin.json"))
+    let sound = makeCAF(
+        sampleRate: 8_000,
+        bytesPerPacket: 4,
+        framesPerPacket: 1,
+        frames: 8_000,
+        formatFlags: 1
+    )
+    try write(sound, to: folder.appendingPathComponent("sounds/note-create.caf"))
+
+    guard case .available(let metadata) = load(folder).assetChecker.sound("sounds/note-create.caf") else {
+        Issue.record("expected CAF metadata")
+        return
+    }
+    #expect(metadata.isPCM)
+    #expect(abs(metadata.duration - 1.0) < 0.001)
+}
+
+@Test func cafAtTheDurationLimitDoesNotExceedIt() throws {
+    let folder = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try write(minimalManifest(), to: folder.appendingPathComponent("skin.json"))
+    let sound = makeCAF(sampleRate: 8_000, bytesPerPacket: 2, framesPerPacket: 1, frames: 24_000)
+    try write(sound, to: folder.appendingPathComponent("sounds/note-create.caf"))
+
+    guard case .available(let metadata) = load(folder).assetChecker.sound("sounds/note-create.caf") else {
+        Issue.record("expected CAF metadata")
+        return
+    }
+    #expect(abs(metadata.duration - 3.0) < 0.001)
+    #expect(metadata.duration <= 3.0)
 }
