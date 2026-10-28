@@ -1077,3 +1077,37 @@ private func fileNames(in directory: URL) throws -> [String] {
     #expect(try Data(contentsOf: url) == external)
     #expect(try fileNames(in: root) == ["notes.json"])
 }
+
+@Test func saveGateKeepsOneMigrationBackupAcrossFailedWrite() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let source = Data(#"{"version":1,"notes":["alpha"],"workspaces":[]}"#.utf8)
+    try source.write(to: url)
+    let marker = root.appendingPathComponent("allow-write")
+    let file = VersionedJSONFile(
+        fileURL: url, defaultContent: defaultCodecDocument, supportedVersion: 2,
+        decode: decodeCodecDocument, encode: encodeCodecDocument, backupBeforeUpgrade: true,
+        now: { fixedDate }, randomSuffix: { "backup\($0)" },
+        atomicWrite: { data, destination in
+            guard FileManager.default.fileExists(atPath: marker.path) else { throw InjectedWriteError() }
+            try data.write(to: destination, options: .atomic)
+        }
+    )
+    let gate = SaveGate(file: file, committedGeneration: 0)
+    let snapshot = SaveGate<CodecDocument>.Snapshot(
+        generation: 1,
+        content: CodecDocument(notes: ["beta"], workspaces: [])
+    )
+
+    #expect(throws: InjectedWriteError.self) { try gate.commit(snapshot) }
+    let firstBackup = try #require(gate.migrationBackupURL)
+
+    try Data().write(to: marker)
+    _ = try gate.commit(snapshot)
+
+    #expect(gate.migrationBackupURL == firstBackup)
+    let backups = try fileNames(in: root).filter { $0.hasPrefix("notes.v1-") }
+    #expect(backups == [firstBackup.lastPathComponent])
+}
