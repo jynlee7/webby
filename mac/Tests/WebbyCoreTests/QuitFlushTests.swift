@@ -357,6 +357,40 @@ private let immediateSleep: QuitFlushCoordinator.Sleep = { _ in }
     #expect(recorder.suddenStates == [true, false])
 }
 
+private final class DurationClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Duration.zero
+
+    var elapsed: Duration {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance(_ duration: Duration) {
+        lock.lock()
+        value += duration
+        lock.unlock()
+    }
+}
+
+private final class OutcomeRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [QuitOutcome] = []
+
+    func record(_ outcome: QuitOutcome) {
+        lock.lock()
+        recorded.append(outcome)
+        lock.unlock()
+    }
+
+    var values: [QuitOutcome] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+}
+
 /// Small thread-safe model of a store's dirty state for termination tests.
 private final class QuitState: @unchecked Sendable {
     private let lock = NSLock()
@@ -379,6 +413,12 @@ private final class QuitState: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return newestMutation > committed
+    }
+
+    var newest: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return newestMutation
     }
 }
 
@@ -419,4 +459,53 @@ private final class QuitState: @unchecked Sendable {
     let mayTerminate = await coordinator.handleTermination()
     #expect(!mayTerminate)
     #expect(state.isDirty)
+}
+
+@Test func fallbackPublishesOneOutcomeWhenChangesRemain() async throws {
+    let state = QuitState()
+    state.noteMutation(generation: 2)
+    let outcomes = OutcomeRecorder()
+    let coordinator = QuitFlushCoordinator(
+        flush: { throw SaveFailure.sourceChanged },
+        fallback: {
+            state.noteCommitted(generation: 1)
+            return 1
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { state.isDirty },
+        onOutcome: { outcomes.record($0) }
+    )
+
+    let mayTerminate = await coordinator.handleTermination()
+    #expect(!mayTerminate)
+    #expect(outcomes.values == [.failed(QuitFailure(description: "The newest changes could not be saved."))])
+}
+
+@Test func retriesShareOneTimeoutBudget() async throws {
+    let state = QuitState()
+    state.noteMutation(generation: 1)
+    let clock = DurationClock()
+    let outcomes = OutcomeRecorder()
+    let coordinator = QuitFlushCoordinator(
+        timeout: .seconds(3),
+        now: { clock.elapsed },
+        sleep: { duration in clock.advance(duration) },
+        flush: {
+            // Every attempt makes progress but leaves newer work behind.
+            state.noteMutation(generation: state.newest + 1)
+            state.noteCommitted(generation: state.newest - 1)
+            return state.newest - 1
+        },
+        fallback: {
+            state.noteCommitted(generation: state.newest)
+            return state.newest
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { state.isDirty },
+        onOutcome: { outcomes.record($0) }
+    )
+
+    let mayTerminate = await coordinator.handleTermination()
+    #expect(mayTerminate)
+    #expect(clock.elapsed <= .seconds(3))
 }

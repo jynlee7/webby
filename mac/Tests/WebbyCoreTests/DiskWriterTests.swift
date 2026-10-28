@@ -424,3 +424,36 @@ private final class ConditionFlag: @unchecked Sendable {
     try await flush.value
     #expect(FileManager.default.fileExists(atPath: url.path))
 }
+
+@Test func parameterlessFlushReturnsWhenNothingIsQueued() async throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let gate = makeGate(at: url)
+    let recorder = CommitRecorder()
+    let writer = DiskWriter(
+        gate: gate,
+        commit: { snapshot in
+            recorder.record(snapshot.generation)
+            return try gate.commit(snapshot)
+        }
+    )
+
+    // Nothing was ever submitted, so there is no work that could resolve a waiter.
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { try await writer.flush() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            throw InjectedWriteError()
+        }
+        try await group.next()
+        group.cancelAll()
+    }
+    #expect(recorder.count == 0)
+
+    // A synchronous gate commit is already on disk, so this must also return.
+    _ = try gate.commit(snapshot(1, "direct"))
+    try await writer.flush()
+    #expect(readContent(at: url) == TestContent(value: "direct"))
+}

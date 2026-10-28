@@ -150,9 +150,13 @@ public final class QuitFlushCoordinator {
 
         // A mutation can arrive while the flush is suspended. Loop so the newest
         // generation is written before termination is allowed, bounded so a writer
-        // that keeps falling behind cannot hang the quit path forever.
+        // that keeps falling behind cannot hang the quit path forever. The deadline is
+        // shared across attempts so retries cannot multiply the wait.
+        let started = now()
         for attempt in 0..<3 {
-            let event = await raceFlushAgainstTimeout()
+            let remaining = timeout - (now() - started)
+            guard remaining > .zero else { return runFallbackChecked() }
+            let event = await raceFlushAgainstTimeout(limit: remaining)
             switch event {
             case .flushed(let generation):
                 noteCommitted(generation: generation)
@@ -172,11 +176,21 @@ public final class QuitFlushCoordinator {
 
     /// Applies the same post-write dirtiness check to the synchronous fallback.
     private func runFallbackChecked() -> Bool {
-        guard runFallback() else { return false }
+        let generation: UInt64
+        do {
+            generation = try fallback()
+        } catch {
+            finish(.failed(QuitFailure(error)), terminate: false)
+            return false
+        }
+
+        noteCommitted(generation: generation)
+        // Decide before publishing, so listeners never see success followed by failure.
         guard !currentIsDirty else {
             finish(.failed(QuitFailure(description: "The newest changes could not be saved.")), terminate: false)
             return false
         }
+        finish(.fallback(generation: generation), terminate: true)
         return true
     }
 
@@ -244,7 +258,7 @@ public final class QuitFlushCoordinator {
         }
     }
 
-    private func raceFlushAgainstTimeout() async -> FlushEvent {
+    private func raceFlushAgainstTimeout(limit: Duration) async -> FlushEvent {
         let box = FirstResultBox()
 
         let flushTask = Task { [flush] in
@@ -258,9 +272,9 @@ public final class QuitFlushCoordinator {
             }
         }
 
-        let timeoutTask = Task { [sleep, timeout] in
+        let timeoutTask = Task { [sleep, limit] in
             do {
-                try await sleep(timeout)
+                try await sleep(limit)
                 box.resolve(.timedOut)
             } catch is CancellationError {
                 // The flush resolved first; its result is already recorded.

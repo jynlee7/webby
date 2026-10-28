@@ -91,6 +91,12 @@ public actor DiskWriter<Content: Codable & Sendable> {
     /// on disk. A newer enqueue that arrives during the wait does not extend it.
     public func flush() async throws {
         let target = max(newestSubmittedGeneration, gate.generation)
+        // With no queued or in-flight work the gate is authoritative: whatever it has
+        // committed is already on disk, so there is nothing to wait for.
+        if pendingSnapshot == nil, failedSnapshot == nil, inFlightGeneration == nil,
+           gate.generation >= target {
+            return
+        }
         try await waitUntilCommitted(target: target, watermark: newestSubmittedGeneration)
     }
 
