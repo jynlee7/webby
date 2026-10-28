@@ -100,7 +100,9 @@ public final class QuitFlushCoordinator {
     ///   - onOutcome: Called once for the outcome that resolves termination.
     public init(
         timeout: Duration = .seconds(3),
-        now: @escaping Now = { .zero },
+        now: @escaping Now = {
+            .seconds(Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000)
+        },
         sleep: @escaping Sleep = { try await Task.sleep(for: $0) },
         flush: @escaping @Sendable () async throws -> UInt64,
         fallback: @escaping @Sendable () throws -> UInt64,

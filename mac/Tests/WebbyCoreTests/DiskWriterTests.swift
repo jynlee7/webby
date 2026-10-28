@@ -457,3 +457,38 @@ private final class ConditionFlag: @unchecked Sendable {
     try await writer.flush()
     #expect(readContent(at: url) == TestContent(value: "direct"))
 }
+
+@Test func flushCompletesAfterSynchronousRecoveryOfFailedWrite() async throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let url = root.appendingPathComponent("notes.json")
+    let gate = makeGate(at: url)
+    let writer = DiskWriter(
+        gate: gate,
+        commit: { _ in throw InjectedWriteError() }
+    )
+
+    await writer.enqueue(snapshot(1, "failed"))
+
+    do {
+        try await writer.flush()
+        Issue.record("Expected the failed write to surface")
+    } catch is InjectedWriteError {
+    }
+
+    // A synchronous save succeeds while the writer still holds the failed snapshot.
+    _ = try gate.commit(snapshot(2, "recovered"))
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { try await writer.flush() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            throw InjectedWriteError()
+        }
+        try await group.next()
+        group.cancelAll()
+    }
+
+    #expect(readContent(at: url) == TestContent(value: "recovered"))
+}

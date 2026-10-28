@@ -91,6 +91,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
     /// on disk. A newer enqueue that arrives during the wait does not extend it.
     public func flush() async throws {
         let target = max(newestSubmittedGeneration, gate.generation)
+        reconcileObsoleteState(target: target)
         // With no queued or in-flight work the gate is authoritative: whatever it has
         // committed is already on disk, so there is nothing to wait for.
         if pendingSnapshot == nil, failedSnapshot == nil, inFlightGeneration == nil,
@@ -104,6 +105,7 @@ public actor DiskWriter<Content: Codable & Sendable> {
     /// this to make the final in-memory state durable.
     public func flush(_ snapshot: Snapshot) async throws {
         submit(snapshot)
+        reconcileObsoleteState(target: snapshot.generation)
         try await waitUntilCommitted(target: snapshot.generation, watermark: snapshot.generation)
     }
 
@@ -152,7 +154,23 @@ public actor DiskWriter<Content: Codable & Sendable> {
     }
 
     private func isSatisfied(target: UInt64, watermark: UInt64) -> Bool {
-        hasAcknowledged && committedGeneration >= target && newestHandledGeneration >= watermark
+        // `gate.generation > 0` proves a commit reached disk, including a synchronous
+        // save that recovered a failed writer; the initial zero state proves nothing.
+        let durableTarget = hasAcknowledged || gate.generation > 0
+        return durableTarget && committedGeneration >= target && newestHandledGeneration >= watermark
+    }
+
+    /// Drops queued snapshots the gate has already committed, for example after a
+    /// synchronous save superseded a failed write. Without this the retained snapshot
+    /// blocks the empty-flush fast path and no work remains to resume its waiter.
+    private func reconcileObsoleteState(target: UInt64) {
+        if let pending = pendingSnapshot, pending.generation <= gate.generation {
+            pendingSnapshot = nil
+        }
+        if let failed = failedSnapshot, failed.generation <= gate.generation {
+            failedSnapshot = nil
+        }
+        newestHandledGeneration = max(newestHandledGeneration, min(target, gate.generation))
     }
 
     private var committedGeneration: UInt64 {

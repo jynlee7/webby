@@ -509,3 +509,30 @@ private final class QuitState: @unchecked Sendable {
     #expect(mayTerminate)
     #expect(clock.elapsed <= .seconds(3))
 }
+
+@Test func defaultClockAdvancesSoRetriesShareTheDeadline() async {
+    let state = QuitState()
+    state.noteMutation(generation: 1)
+    let coordinator = QuitFlushCoordinator(
+        timeout: .milliseconds(50),
+        flush: {
+            // Make progress but leave newer work, then burn the whole budget.
+            try await Task.sleep(for: .milliseconds(40))
+            state.noteMutation(generation: state.newest + 1)
+            state.noteCommitted(generation: state.newest - 1)
+            return state.newest - 1
+        },
+        fallback: {
+            state.noteCommitted(generation: state.newest)
+            return state.newest
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { state.isDirty }
+    )
+
+    let started = ProcessInfo.processInfo.systemUptime
+    let mayTerminate = await coordinator.handleTermination()
+    let elapsed = ProcessInfo.processInfo.systemUptime - started
+    #expect(mayTerminate)
+    #expect(elapsed < 0.12)
+}
