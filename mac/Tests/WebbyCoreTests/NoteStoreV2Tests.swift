@@ -136,7 +136,7 @@ import Testing
             #expect(!store.trash(id: boundary.id, now: edited))
             #expect(store.note(id: old.id)?.revision == 5)
             #expect(store.note(id: old.id)?.updatedAt == created)
-            #expect(store.notes(matching: .app(bundleID: "com.apple.TextEdit")).map(\.id) == [active.id])
+            #expect(store.notes(matching: Context(appBundleID: "com.apple.TextEdit")).map(\.id) == [active.id])
             #expect(store.restore(id: old.id))
             #expect(!store.restore(id: old.id))
             #expect(store.note(id: old.id)?.revision == 5)
@@ -181,7 +181,7 @@ import Testing
                                      createdAt: created)
             store.add(inbox)
             store.add(workspaceNote)
-            #expect(store.notes(matching: .app(bundleID: "com.apple.TextEdit")).isEmpty)
+            #expect(store.notes(matching: Context(appBundleID: "com.apple.TextEdit")).isEmpty)
             try store.save()
             let loaded = NoteStore(fileURL: url)
             #expect(loaded.notes == [inbox, workspaceNote])
@@ -309,7 +309,10 @@ import Testing
             #expect(reloaded.notes == store.notes)
             #expect(reloaded.workspaces.isEmpty)
             let expected = PageURL(host: "www.example.com", path: "/a")
-            #expect(reloaded.notes.first?.anchor?.matches(.web(expected)) == true)
+            #expect(reloaded.notes.first?.anchor?.matches(Context(
+                appBundleID: "com.google.Chrome",
+                page: expected
+            )) == true)
             try store.save()
             #expect(store.migrationBackupURL == backup)
             #expect(try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path).count == 2)
