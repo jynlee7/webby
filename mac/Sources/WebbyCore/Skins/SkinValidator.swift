@@ -840,6 +840,34 @@ public enum SkinValidator {
         "header", "collapsed", "icons", "resizeHandle", "library", "voiceOrb",
     ]
 
+    /// Groups that reference an image element, used when a variant file such as
+    /// `images/note-body~dark@2x.png` is invalid: the base name never appears in
+    /// `expectedByPath`, so the owning group has to be recovered from the asset.
+    private static func groupsReferencingImage(path: String) -> [SkinGroup] {
+        guard case .accepted(let entry) = SkinEntryRules.classify(path),
+              let asset = entry.asset
+        else {
+            return []
+        }
+        switch asset.kind {
+        case .image:
+            guard let element = asset.element else { return [] }
+            switch element {
+            case .noteBody: return [.surface]
+            case .noteHeader: return [.header]
+            case .noteCollapsed: return [.collapsed]
+            case .decoration: return [.decoration]
+            case .iconCollapse, .iconExpand, .iconClose, .iconMore: return [.icons]
+            case .resizeHandle: return [.resizeHandle]
+            case .libraryEmpty: return [.library]
+            }
+        case .orb:
+            return [.voiceOrb]
+        case .sound:
+            return [.sounds]
+        }
+    }
+
     private static func validateAssets(
         _ manifest: SkinManifest,
         expectedImages: [ExpectedImage],
@@ -876,7 +904,7 @@ public enum SkinValidator {
 
         for path in allImagePaths {
             let expected = expectedByPath[path] ?? []
-            let groups = orderedGroups(expected.map(\.group))
+            let groups = orderedGroups(expected.map(\.group) + groupsReferencingImage(path: path))
             let check = assets.image(path)
 
             switch check {
@@ -946,10 +974,10 @@ public enum SkinValidator {
                         totalPixels = maximumImagePixels
                         if !pixelBudgetReported {
                             pixelBudgetReported = true
-                            diagnostics.append(groupError(
+                            diagnostics.append(SkinDiagnostic(
                                 code: "pixel-budget-exceeded",
+                                severity: .fatal,
                                 path: [],
-                                group: nil,
                                 assetPath: path,
                                 message: "Decoded skin images exceed \(maximumImagePixels) pixels."
                             ))
@@ -1196,7 +1224,14 @@ public enum SkinValidator {
         diagnostics: [SkinDiagnostic]
     ) -> [SkinGroup: SkinGroupStatus] {
         var statuses: [SkinGroup: SkinGroupStatus] = [:]
+        let isFatal = diagnostics.contains { $0.severity == .fatal }
         for group in SkinGroup.allCases {
+            if isFatal {
+                // A rejected skin exposes nothing usable, even for groups that had
+                // no group-level error of their own.
+                statuses[group] = isPresent(group, in: manifest) ? .invalid : .absent
+                continue
+            }
             if !isPresent(group, in: manifest) {
                 statuses[group] = .absent
                 continue

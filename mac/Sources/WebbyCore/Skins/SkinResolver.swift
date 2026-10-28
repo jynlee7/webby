@@ -5,15 +5,21 @@ public struct InstalledSkin: Sendable, Equatable {
     public let id: String
     public let manifest: SkinManifest
     public let groups: [SkinGroup: SkinGroupStatus]
+    /// Logical image paths the validated folder actually contained. `nil` means the
+    /// caller did not supply an inventory; resolution then assumes the declared
+    /// variants exist, which is only appropriate for in-memory fixture skins.
+    public let availableImagePaths: Set<String>?
 
     public init(
         id: String,
         manifest: SkinManifest,
-        groups: [SkinGroup: SkinGroupStatus]? = nil
+        groups: [SkinGroup: SkinGroupStatus]? = nil,
+        availableImagePaths: Set<String>? = nil
     ) {
         self.id = id
         self.manifest = manifest
         self.groups = groups ?? Self.inferredGroups(for: manifest)
+        self.availableImagePaths = availableImagePaths
     }
 
     private static func inferredGroups(for manifest: SkinManifest) -> [SkinGroup: SkinGroupStatus] {
@@ -105,7 +111,12 @@ public struct SkinResolver: Sendable {
         }
         let surfaceResolution = resolveGroup(.surface, from: selected, appearance: appearance, diagnostics: &diagnostics) {
             manifest, sourceID, appearance in
-            buildSurface(manifest, sourceID: sourceID, appearance: appearance)
+            buildSurface(
+                manifest,
+                sourceID: sourceID,
+                appearance: appearance,
+                inventory: inventory(for: sourceID)
+            )
         }
         let typographyResolution = resolveGroup(.typography, from: selected, appearance: appearance, diagnostics: &diagnostics) {
             manifest, _, appearance in
@@ -175,6 +186,7 @@ public struct SkinResolver: Sendable {
             typography: typography,
             appearance: appearance,
             selected: selected,
+            textScale: textScale,
             provenance: &provenance,
             diagnostics: &diagnostics
         )
@@ -413,6 +425,10 @@ public struct SkinResolver: Sendable {
         )
     }
 
+    private func inventory(for skinID: String) -> Set<String>? {
+        builtIns.first(where: { $0.id == skinID })?.availableImagePaths
+    }
+
     // MARK: - Contrast unit
 
     private func applyContrastUnit(
@@ -421,11 +437,15 @@ public struct SkinResolver: Sendable {
         typography: ResolvedTypography,
         appearance: SkinAppearance,
         selected: InstalledSkin?,
+        textScale: Double,
         provenance: inout [SkinGroup: String],
         diagnostics: inout [SkinDiagnostic]
     ) {
+        let scale = textScale.isFinite ? min(max(textScale, 0.5), 3) : 1
+        // Contrast depends on the size the user will actually read, so apply the
+        // current text scale before choosing the large-text floor.
         let requiredRatio = Contrast.requiredRatio(
-            pointSize: typography.effectiveSize,
+            pointSize: min(max(typography.effectiveSize * scale, 1), 512),
             weight: typography.weight
         )
 
@@ -485,7 +505,12 @@ public struct SkinResolver: Sendable {
 
             let surface = resolveGroup(.surface, from: skin, appearance: appearance, diagnostics: &diagnostics) {
                 manifest, sourceID, appearance in
-                buildSurface(manifest, sourceID: sourceID, appearance: appearance)
+                buildSurface(
+                manifest,
+                sourceID: sourceID,
+                appearance: appearance,
+                inventory: inventory(for: sourceID)
+            )
             }
             let palette = resolveGroup(.palette, from: skin, appearance: appearance, diagnostics: &diagnostics) {
                 manifest, sourceID, appearance in
@@ -585,7 +610,8 @@ public struct SkinResolver: Sendable {
     private func buildSurface(
         _ manifest: SkinManifest,
         sourceID: String,
-        appearance: SkinAppearance
+        appearance: SkinAppearance,
+        inventory: Set<String>?
     ) -> ResolvedSurface? {
         guard let source = manifest.surface else {
             return nil
@@ -612,15 +638,17 @@ public struct SkinResolver: Sendable {
             } else {
                 element = .noteBody
             }
-            let key = ResolvedImageKey(
+            guard let resolved = resolveImage(
                 skinID: sourceID,
                 element: element,
                 appearance: appearance,
-                scale: .two
-            )
+                inventory: inventory
+            ) else {
+                return nil
+            }
             image = ResolvedSurfaceImage(
-                key: key,
-                availableScales: [.one, .two],
+                key: resolved.key,
+                availableScales: Set(resolved.scales),
                 insets: sourceImage.insets ?? SkinInsets(),
                 mode: sourceImage.mode ?? .known(.stretch),
                 tintWithPalette: sourceImage.tintWithPalette ?? false
@@ -629,7 +657,7 @@ public struct SkinResolver: Sendable {
 
         let material = appearanceValue(source.material, appearance: appearance) ?? .known(.none)
         let border = ResolvedBorder(
-            width: source.border?.width ?? 0,
+            width: min(max(source.border?.width ?? 0, 0), 4),
             color: borderColor
         )
 
@@ -641,7 +669,7 @@ public struct SkinResolver: Sendable {
             ),
             material: material,
             image: image,
-            cornerRadius: source.cornerRadius ?? 0,
+            cornerRadius: min(max(source.cornerRadius ?? 0, 0), 32),
             border: border,
             shadow: source.shadow ?? .known(.none),
             padding: source.padding ?? SkinInsets(),
@@ -650,6 +678,50 @@ public struct SkinResolver: Sendable {
             selection: selection,
             caret: caret
         )
+    }
+
+    /// Chooses an image variant that exists: requested appearance, then the base
+    /// appearance; twice the sharpness first, then 1x.
+    private func resolveImage(
+        skinID: String,
+        element: SkinImageElement,
+        appearance: SkinAppearance,
+        inventory: Set<String>?
+    ) -> (key: ResolvedImageKey, scales: [SkinScale])? {
+        // A base image (no `~dark` suffix) is the light appearance, so a dark skin
+        // falls back to it before giving up.
+        let appearances: [SkinAppearance] = appearance == .dark ? [.dark, .light] : [.light]
+        let scales: [SkinScale] = [.two, .one]
+
+        for candidateAppearance in appearances {
+            for scale in scales {
+                let key = ResolvedImageKey(
+                    skinID: skinID,
+                    element: element,
+                    appearance: candidateAppearance,
+                    scale: scale
+                )
+                guard let inventory else {
+                    return (key, [.one, .two])
+                }
+                guard inventory.contains(key.relativeName) else {
+                    continue
+                }
+                let one = ResolvedImageKey(
+                    skinID: skinID,
+                    element: element,
+                    appearance: candidateAppearance,
+                    scale: .one
+                )
+                let available = [one.relativeName, key.relativeName]
+                    .filter { inventory.contains($0) }
+                let availableScales = available.compactMap { path -> SkinScale? in
+                    path.contains("@2x") ? .two : .one
+                }
+                return (key, availableScales.isEmpty ? [scale] : availableScales)
+            }
+        }
+        return nil
     }
 
     private func buildTypography(
@@ -661,9 +733,9 @@ public struct SkinResolver: Sendable {
         }
         return ResolvedTypography(
             family: typography.font?.family,
-            effectiveSize: typography.size ?? 14,
+            effectiveSize: min(max(typography.size ?? 14, 10), 32),
             weight: typography.weight ?? .known(.regular),
-            lineSpacing: typography.lineSpacing ?? 0
+            lineSpacing: min(max(typography.lineSpacing ?? 0, 0), 64)
         )
     }
 
@@ -873,7 +945,7 @@ public struct SkinResolver: Sendable {
                 return nil
             }
 
-            let frameCount = max(0, animation.frames ?? 0)
+            let frameCount = min(max(animation.frames ?? 0, 0), 60)
             let frames = (0..<frameCount).map { frame in
                 ResolvedOrbFrameKey(
                     skinID: sourceID,
@@ -888,7 +960,7 @@ public struct SkinResolver: Sendable {
                 frameKeys: frames,
                 fps: animation.fps ?? 0,
                 loop: animation.loop ?? false,
-                audioReactive: animation.audioReactive ?? 0,
+                audioReactive: min(max(animation.audioReactive ?? 0, 0), 0.3),
                 tint: tint
             )
         }
@@ -909,7 +981,7 @@ public struct SkinResolver: Sendable {
         }
         return ResolvedSounds(
             byEvent: byEvent,
-            volume: sounds.volume ?? 1,
+            volume: min(max(sounds.volume ?? 1, 0), 1),
             muted: Set(sounds.mute ?? [])
         )
     }

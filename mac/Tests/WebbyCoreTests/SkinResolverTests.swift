@@ -458,3 +458,107 @@ private func resolverResolve(
 
     #expect(first == second)
 }
+
+@Test func resolutionClampsAcceptedValuesToTheDocumentedLimits() throws {
+    let manifest = try resolverManifest("io.example.clamp", values: [
+        "surface": ["cornerRadius": 1000, "border": ["width": 99, "color": "#000000"]],
+        "typography": ["size": 500],
+        "voiceOrb": ["states": ["idle": ["frames": 1_000_000_000, "audioReactive": 10]]],
+        "sounds": ["volume": 25],
+    ])
+    let resolver = SkinResolver(
+        builtIns: [resolverSkin(try resolverClearManifest()), resolverSkin(manifest)],
+        availableBaseIDs: ["webby.clear"]
+    )
+    let theme = resolver.resolve(
+        workspaceSkinID: nil,
+        globalSkinID: "io.example.clamp",
+        requested: .light,
+        noteAppearance: nil,
+        accessibility: AccessibilitySettings(),
+        textScale: 1
+    ).theme
+
+    #expect(theme.surface.cornerRadius == 32)
+    #expect(theme.surface.border.width == 4)
+    #expect(theme.typography.effectiveSize == 32)
+    #expect((theme.orb[.idle]?.frameKeys.count ?? 0) <= 60)
+    #expect((theme.orb[.idle]?.audioReactive ?? 0) <= 0.3)
+    #expect(theme.sounds.volume <= 1)
+}
+
+@Test func imageResolutionUsesOnlyAvailableVariants() throws {
+    let manifest = try resolverManifest("io.example.images", values: [
+        "appearances": ["light", "dark"],
+        "surface": [
+            "image": ["element": "note-body", "insets": ["top": 1, "left": 1, "bottom": 1, "right": 1]],
+        ],
+    ])
+    let skin = InstalledSkin(
+        id: "io.example.images",
+        manifest: manifest,
+        availableImagePaths: ["images/note-body.png", "images/note-body~dark@2x.png"]
+    )
+    let resolver = SkinResolver(
+        builtIns: [resolverSkin(try resolverClearManifest()), skin],
+        availableBaseIDs: ["webby.clear"]
+    )
+
+    let light = resolver.resolve(
+        workspaceSkinID: nil, globalSkinID: "io.example.images", requested: .light,
+        noteAppearance: nil, accessibility: AccessibilitySettings(), textScale: 1
+    ).theme
+    #expect(light.surface.image?.key.relativeName == "images/note-body.png")
+    #expect(light.surface.image?.availableScales == [.one])
+
+    let dark = resolver.resolve(
+        workspaceSkinID: nil, globalSkinID: "io.example.images", requested: .dark,
+        noteAppearance: nil, accessibility: AccessibilitySettings(), textScale: 1
+    ).theme
+    #expect(dark.surface.image?.key.relativeName == "images/note-body~dark@2x.png")
+    #expect(dark.surface.image?.availableScales == [.two])
+}
+
+@Test func darkAppearanceFallsBackToTheBaseImage() throws {
+    let manifest = try resolverManifest("io.example.dark", values: [
+        "surface": [
+            "image": ["element": "note-body", "insets": ["top": 1, "left": 1, "bottom": 1, "right": 1]],
+        ],
+    ])
+    let skin = InstalledSkin(
+        id: "io.example.dark",
+        manifest: manifest,
+        availableImagePaths: ["images/note-body@2x.png"]
+    )
+    let resolver = SkinResolver(
+        builtIns: [resolverSkin(try resolverClearManifest()), skin],
+        availableBaseIDs: ["webby.clear"]
+    )
+    let theme = resolver.resolve(
+        workspaceSkinID: nil, globalSkinID: "io.example.dark", requested: .dark,
+        noteAppearance: nil, accessibility: AccessibilitySettings(), textScale: 1
+    ).theme
+
+    #expect(theme.surface.image?.key.relativeName == "images/note-body@2x.png")
+    #expect(theme.surface.image?.availableScales == [.two])
+}
+
+@Test func largerTextUsesTheLargeTextContrastFloor() throws {
+    let manifest = try resolverManifest("io.example.scale", values: [
+        "surface": ["fill": "#808080", "text": ["color": "#333333"]],
+        "typography": ["size": 14, "weight": "regular"],
+    ])
+    let resolver = SkinResolver(
+        builtIns: [resolverSkin(try resolverClearManifest()), resolverSkin(manifest)],
+        availableBaseIDs: ["webby.clear"]
+    )
+
+    let larger = resolver.resolve(
+        workspaceSkinID: nil, globalSkinID: "io.example.scale", requested: .light,
+        noteAppearance: nil, accessibility: AccessibilitySettings(), textScale: 1.5
+    ).theme
+
+    // 21 pt regular is WCAG large text, so the authored pair's 3:1 floor is met and
+    // the surface must not be replaced with the fallback.
+    #expect(larger.surface.fill == (try! RGBAColor(hex: "#808080")))
+}

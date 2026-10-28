@@ -87,6 +87,18 @@ public enum SkinFolderLoader {
         let enumeration = enumerate(folder: folder)
         var loaderDiagnostics = enumeration.diagnostics
 
+        // A fatal folder error means the skin is rejected. Do not read assets or
+        // build a checker for a package that cannot be accepted.
+        if loaderDiagnostics.contains(where: { $0.severity == .fatal }) {
+            return SkinFolderLoadResult(
+                manifest: nil,
+                document: nil,
+                diagnostics: sortedDiagnostics(loaderDiagnostics),
+                assetChecker: FolderSkinAssetChecker(folder: folder, records: [], imageChecks: [:], soundChecks: [:]),
+                entries: []
+            )
+        }
+
         let entries = acceptedEntries(from: enumeration.items, diagnostics: &loaderDiagnostics)
         let records = entries.map { SkinAssetRecord(path: $0.path, bytes: enumeration.bytes(for: $0.path)) }
         let checker = makeChecker(folder: folder, items: enumeration.items, records: records)
@@ -240,7 +252,14 @@ public enum SkinFolderLoader {
             )
         }
 
+        var visitedEntries = 0
+        var exceededEntryCount = false
         for case let url as URL in enumerator {
+            visitedEntries += 1
+            if visitedEntries > maximumEntries {
+                exceededEntryCount = true
+                break
+            }
             let itemPath = url.standardizedFileURL.path
             guard itemPath.hasPrefix(prefix) else {
                 continue
@@ -288,6 +307,15 @@ public enum SkinFolderLoader {
             ))
         }
 
+        if exceededEntryCount {
+            diagnostics.append(SkinDiagnostic(
+                code: "entry-count-exceeded",
+                severity: .fatal,
+                path: [],
+                message: "The folder has more than \(maximumEntries) entries."
+            ))
+        }
+
         if let enumerationError {
             diagnostics.append(SkinDiagnostic(
                 code: "folder-unreadable",
@@ -300,7 +328,7 @@ public enum SkinFolderLoader {
         // Filesystem order is unspecified. Every downstream step uses this order.
         items.sort { pathLess($0.path, $1.path) }
 
-        if items.count > maximumEntries {
+        if !exceededEntryCount && items.count > maximumEntries {
             diagnostics.append(SkinDiagnostic(
                 code: "entry-count-exceeded",
                 severity: .fatal,

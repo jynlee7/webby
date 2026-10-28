@@ -321,11 +321,15 @@ private func codes(_ result: SkinValidationResult) -> Set<String> {
       "icons": {}
     """#), assets: FakeAssets(records: records, images: images))
 
-    #expect(result.isAccepted)
+    // Exceeding the package-wide decoded-pixel budget rejects the skin: it is not
+    // attributable to one group, so leaving groups usable would advertise a limit
+    // that nothing enforces.
+    #expect(!result.isAccepted)
     #expect(result.diagnostics.filter { $0.code == "pixel-budget-exceeded" }.count == 1)
     #expect(result.diagnostics.contains {
-        $0.code == "pixel-budget-exceeded" && $0.severity == .groupError
+        $0.code == "pixel-budget-exceeded" && $0.severity == .fatal
     })
+    #expect(!result.groups.values.contains(.usable))
 }
 
 @Test func oneXOnlyImageWarnsButKeepsTheGroupUsable() {
@@ -483,4 +487,21 @@ private func codes(_ result: SkinValidationResult) -> Set<String> {
     #expect(result.groups[.library] == .absent)
     #expect(result.groups[.voiceOrb] == .absent)
     #expect(result.groups[.sounds] == .absent)
+}
+
+@Test func invalidImageVariantInvalidatesItsOwningGroup() {
+    let path = "images/note-body~dark@2x.png"
+    let assets = FakeAssets(
+        records: [SkinAssetRecord(path: path, bytes: 100)],
+        images: [path: .invalid(code: "bad-crc")]
+    )
+    let result = validate(manifest(extra: #"""
+    ,
+      "surface": { "image": { "element": "note-body", "insets": { "top": 1, "left": 1, "bottom": 1, "right": 1 } } }
+    """#), assets: assets)
+
+    #expect(result.groups[.surface] == .invalid)
+    #expect(result.diagnostics.contains {
+        $0.code == "invalid-asset" && $0.group == SkinGroup.surface.rawValue
+    })
 }

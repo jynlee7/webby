@@ -156,6 +156,12 @@ public enum AccessibilityTransform {
         border: ResolvedBorder? = nil
     ) -> ResolvedSurface {
         let resolvedFill = fill ?? surface.fill
+        // Editing cues sit on the same surface as body text. When the surface or
+        // text changes, an authored caret or placeholder can become invisible, so
+        // repair them against the new fill instead of leaving them untouched.
+        let repairedText = text ?? surface.text
+        let caret = readable(surface.caret, on: resolvedFill, fallback: repairedText)
+        let placeholder = readable(surface.placeholder, on: resolvedFill, fallback: repairedText)
         return ResolvedSurface(
             fill: resolvedFill,
             contrastBacking: ResolvedContrastBacking(
@@ -168,11 +174,26 @@ public enum AccessibilityTransform {
             border: border ?? surface.border,
             shadow: surface.shadow,
             padding: surface.padding,
-            text: text ?? surface.text,
-            placeholder: surface.placeholder,
+            text: repairedText,
+            placeholder: placeholder,
             selection: surface.selection,
-            caret: surface.caret
+            caret: caret
         )
+    }
+
+    /// Keeps an authored colour when it clears 3:1 against the fill, otherwise uses
+    /// the repaired text colour, which the caller has already contrast-checked.
+    private static func readable(
+        _ color: RGBAColor,
+        on fill: RGBAColor,
+        fallback: RGBAColor
+    ) -> RGBAColor {
+        let background = fill.replacingAlpha(1)
+        if let ratio = try? Contrast.contrastRatio(foreground: color, background: background),
+           ratio >= 3 {
+            return color
+        }
+        return fallback
     }
 
     private static func repairContrast(
