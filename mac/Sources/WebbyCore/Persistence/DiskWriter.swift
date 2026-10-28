@@ -171,6 +171,14 @@ public actor DiskWriter<Content: Codable & Sendable> {
             failedSnapshot = nil
         }
         newestHandledGeneration = max(newestHandledGeneration, min(target, gate.generation))
+
+        // A commit that reached the gate by another route is still the newest durable
+        // state, so the acknowledgement must not keep reporting an older generation.
+        let durable = gate.generation
+        if durable > (acknowledgement?.generation ?? 0) {
+            acknowledgement = Acknowledgement(generation: durable, migrationBackupURL: gate.migrationBackupURL)
+            hasAcknowledged = true
+        }
     }
 
     private var committedGeneration: UInt64 {
