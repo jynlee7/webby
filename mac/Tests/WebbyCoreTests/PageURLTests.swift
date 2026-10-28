@@ -253,6 +253,17 @@ import Testing
         == [QueryRule(host: "example.com", key: "关键词")])
 }
 
+@Test func invalidUTF8QueryBytesRemainDistinct() throws {
+    let rules = [QueryRule(host: "example.com", key: "q")]
+    let first = try #require(PageURL(string: "https://example.com/?q=%FF", queryRules: rules))
+    let second = try #require(PageURL(string: "https://example.com/?q=%FE", queryRules: rules))
+
+    #expect(first.query == "q=%FF")
+    #expect(second.query == "q=%FE")
+    #expect(first != second)
+    #expect(!first.matchesPageAnchor(second))
+}
+
 @Test func fileURLsNeverCarryAQuery() throws {
     let page = try #require(PageURL(string: "file:///Users/me/notes.md?v=a&id=1#top"))
 

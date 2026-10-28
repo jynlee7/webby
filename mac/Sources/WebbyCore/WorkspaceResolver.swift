@@ -44,11 +44,15 @@ public enum WorkspaceResolver {
         }
 
         guard let sourceURL = note.source?.url,
-              let page = PageURL(string: sourceURL) else {
+              let page = PageURL(string: sourceURL, queryRules: []) else {
             return .tabsWithoutPage
         }
 
         return workspaceKey(forHost: page.host)
+    }
+
+    public static func isInbox(_ note: Note, workspaces: [WorkspaceRecord]) -> Bool {
+        resolve(note, workspaces: workspaces) == .inbox
     }
 
     private static func workspaceKey(forHost host: String) -> WorkspaceKey {

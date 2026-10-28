@@ -29,8 +29,6 @@ public enum Anchor: Hashable, Codable, Sendable {
     public func matches(_ context: Context) -> Bool {
         switch self {
         case let .app(bundleID):
-            // An app anchor is about the frontmost app. A known browser page does
-            // not make the app identity less true, so "This app" notes still match.
             return bundleID == context.appBundleID
 
         case let .web(page, scope):

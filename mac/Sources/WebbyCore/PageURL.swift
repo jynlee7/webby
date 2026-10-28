@@ -7,7 +7,12 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     public let path: String
     public let query: String?
 
-    public init?(string: String, queryRules: [QueryRule] = QueryRules.builtIns) {
+    init?(string: String) {
+        self.init(string: string, queryRules: QueryRules.builtIns)
+    }
+
+    /// Parses a page using the caller's complete effective significant-query rules.
+    public init?(string: String, queryRules: [QueryRule]) {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(),
@@ -88,17 +93,13 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     }
 
     /// Whether a page-scoped anchor matches this page.
-    ///
-    /// An anchor without a query keeps the v1 wildcard behavior. An anchor with
-    /// a query matches when all its significant pairs are present here, so a
-    /// newly significant key does not strand existing query-bearing notes.
     public func matchesPageAnchor(_ anchor: PageURL) -> Bool {
         guard QueryRules.normalizedHost(host) == QueryRules.normalizedHost(anchor.host),
               path == anchor.path
         else { return false }
 
         guard let anchorQuery = anchor.query else { return true }
-        return QueryRules.query(anchorQuery, isSubsetOf: query)
+        return QueryRules.currentQuery(query, contains: anchorQuery)
     }
 
     private static func normalizeStoredHost(_ rawHost: String) -> String {

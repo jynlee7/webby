@@ -60,6 +60,15 @@ private func webAnchor(_ host: String, scope: WebScope = .page) -> Anchor {
     #expect(WorkspaceResolver.resolve(note(), workspaces: []) == .inbox)
 }
 
+@Test func resolverOwnsTheInboxPredicateIncludingDanglingOverrides() {
+    let workspaces = [record(exampleRecordID, keys: [.host(name: "example.com")])]
+    #expect(WorkspaceResolver.isInbox(note(), workspaces: workspaces))
+    #expect(WorkspaceResolver.isInbox(note(workspaceOverride: missingRecordID), workspaces: workspaces))
+    #expect(!WorkspaceResolver.isInbox(note(workspaceOverride: exampleRecordID), workspaces: workspaces))
+    #expect(!WorkspaceResolver.isInbox(note(anchor: webAnchor("example.com")), workspaces: workspaces))
+    #expect(!WorkspaceResolver.isInbox(note(tab: tab()), workspaces: workspaces))
+}
+
 @Test func sourceURLAloneDoesNotConferMembership() {
     let workspaces = [record(exampleRecordID, keys: [.host(name: "example.com")])]
     let sourceOnly = note(source: NoteSource(url: "https://example.com/a"))

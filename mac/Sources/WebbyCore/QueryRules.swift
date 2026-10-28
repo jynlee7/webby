@@ -36,7 +36,9 @@ public enum QueryRules {
         for anchor in anchors {
             guard case let .web(page, .page) = anchor, let query = page.query else { continue }
             for item in parseQuery(query) {
-                append(host: page.host, key: item.key)
+                if let key = item.decodedKey {
+                    append(host: page.host, key: key)
+                }
             }
         }
 
@@ -55,18 +57,20 @@ public enum QueryRules {
             .map(\.key))
         guard !keys.isEmpty else { return nil }
 
-        let selected = parseQuery(rawQuery).filter { keys.contains($0.key) }
+        let selected = parseQuery(rawQuery).filter { item in
+            item.decodedKey.map(keys.contains) == true
+        }
         guard !selected.isEmpty else { return nil }
 
-        let sorted = selected.enumerated().map { index, item in
-            (index: index, key: encode(item.key), value: item.value.map(encode))
-        }.sorted {
-            if $0.key != $1.key { return $0.key < $1.key }
-            return $0.index < $1.index
+        let sorted = selected.enumerated().sorted {
+            if $0.element.encodedKey != $1.element.encodedKey {
+                return $0.element.encodedKey < $1.element.encodedKey
+            }
+            return $0.offset < $1.offset
         }
 
-        return sorted.map { item in
-            item.key + (item.value.map { "=" + $0 } ?? "")
+        return sorted.map { _, item in
+            item.encodedKey + (item.encodedValue.map { "=" + $0 } ?? "")
         }.joined(separator: "&")
     }
 
@@ -76,21 +80,21 @@ public enum QueryRules {
             .precomposedStringWithCanonicalMapping
     }
 
-    static func query(_ query: String, isSubsetOf currentQuery: String?) -> Bool {
+    static func currentQuery(_ currentQuery: String?, contains requiredQuery: String) -> Bool {
         struct Pair: Hashable {
             let key: String
             let value: String?
         }
 
         var remaining: [Pair: Int] = [:]
-        for item in parseQuery(query) {
-            remaining[Pair(key: item.key, value: item.value), default: 0] += 1
+        for item in parseQuery(requiredQuery) {
+            remaining[Pair(key: item.encodedKey, value: item.encodedValue), default: 0] += 1
         }
         guard !remaining.isEmpty else { return true }
 
         guard let currentQuery else { return false }
         for item in parseQuery(currentQuery) {
-            let pair = Pair(key: item.key, value: item.value)
+            let pair = Pair(key: item.encodedKey, value: item.encodedValue)
             guard let count = remaining[pair] else { continue }
             if count == 1 {
                 remaining.removeValue(forKey: pair)
@@ -104,29 +108,39 @@ public enum QueryRules {
     }
 
     private struct QueryItem {
-        let key: String
-        let value: String?
+        let decodedKey: String?
+        let encodedKey: String
+        let encodedValue: String?
     }
 
     private static func parseQuery(_ query: String) -> [QueryItem] {
         var query = query
-        if query.hasPrefix("?") {
-            query.removeFirst()
-        }
+        if query.hasPrefix("?") { query.removeFirst() }
         guard !query.isEmpty else { return [] }
 
-        return query.split(separator: "&", omittingEmptySubsequences: true).map { component in
-            let component = String(component)
-            guard let separator = component.firstIndex(of: "=") else {
-                return QueryItem(key: decode(component), value: nil)
+        return query.split(separator: "&", omittingEmptySubsequences: true).map { rawComponent in
+            let component = String(rawComponent)
+            let rawKey: String
+            let rawValue: String?
+            if let separator = component.firstIndex(of: "=") {
+                rawKey = String(component[..<separator])
+                rawValue = String(component[component.index(after: separator)...])
+            } else {
+                rawKey = component
+                rawValue = nil
             }
-            let key = String(component[..<separator])
-            let value = String(component[component.index(after: separator)...])
-            return QueryItem(key: decode(key), value: decode(value))
+
+            let keyBytes = percentDecodedBytes(rawKey)
+            let valueBytes = rawValue.map(percentDecodedBytes)
+            return QueryItem(
+                decodedKey: String(bytes: keyBytes, encoding: .utf8),
+                encodedKey: encode(keyBytes),
+                encodedValue: valueBytes.map(encode)
+            )
         }
     }
 
-    private static func decode(_ encoded: String) -> String {
+    private static func percentDecodedBytes(_ encoded: String) -> [UInt8] {
         let bytes = Array(encoded.utf8)
         var decoded: [UInt8] = []
         decoded.reserveCapacity(bytes.count)
@@ -143,17 +157,16 @@ public enum QueryRules {
                 index += 1
             }
         }
-
-        return String(decoding: decoded, as: UTF8.self)
+        return decoded
     }
 
-    private static func encode(_ value: String) -> String {
+    private static func encode(_ bytes: [UInt8]) -> String {
         let hex: [Character] = ["0", "1", "2", "3", "4", "5", "6", "7",
                                 "8", "9", "A", "B", "C", "D", "E", "F"]
         var encoded = ""
-        encoded.reserveCapacity(value.utf8.count)
+        encoded.reserveCapacity(bytes.count)
 
-        for byte in value.utf8 {
+        for byte in bytes {
             if isUnreserved(byte) {
                 encoded.append(Character(UnicodeScalar(byte)))
             } else {
@@ -162,7 +175,6 @@ public enum QueryRules {
                 encoded.append(hex[Int(byte & 0x0F)])
             }
         }
-
         return encoded
     }
 

@@ -25,10 +25,6 @@ public struct TabRef: Hashable, Sendable {
     }
 
     /// Matches a stored binding by browser, profile, session and tab ID.
-    ///
-    /// `windowID` is ignored on purpose. A moved tab stays attached to the same
-    /// note. The binding's `closedAt` and `pendingRestore` are bookkeeping and do
-    /// not affect the identity comparison.
     public func matches(_ binding: TabBinding) -> Bool {
         browser == binding.browser
             && profile == binding.profile
