@@ -136,3 +136,10 @@ private func tagNames(_ text: String) -> [String] {
     #expect(tagNames("x.y.z #real") == ["real"])
     #expect(tagNames("a-b-c:d #real") == ["real"])
 }
+
+@Test func skippedSchemeRunStillSkipsAnEmbeddedWWWURL() {
+    #expect(tagNames("a-www.example.com/?q=#fragment") == [])
+    #expect(tagNames("a-www.example.com/?q=#fragment #real") == ["real"])
+    #expect(tagNames("a.WWW.example.com/x#frag #real") == ["real"])
+    #expect(tagNames("(see www.example.com/a#b) #kept") == ["kept"])
+}

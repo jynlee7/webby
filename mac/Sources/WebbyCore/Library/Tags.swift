@@ -73,11 +73,30 @@ public enum Tags {
             cursor += 1
         }
         guard cursor < scalars.count, scalars[cursor] == ":" else {
-            // Every start inside this run would fail at the same place.
+            // Every start inside this run fails the same way, but a `www.` URL can
+            // still begin inside it, so check that span before skipping it.
+            if let www = wwwStart(in: scalars, from: index + 1, to: cursor) {
+                return .url(end: urlSpanEnd(in: scalars, from: www + 4))
+            }
             return .notURL(stop: max(cursor, index + 1))
         }
 
         return .url(end: urlSpanEnd(in: scalars, from: cursor + 1))
+    }
+
+    private static func wwwStart(
+        in scalars: [Unicode.Scalar],
+        from start: Int,
+        to end: Int
+    ) -> Int? {
+        var index = start
+        while index < end {
+            if isWWW(in: scalars, at: index), isURLBoundary(in: scalars, at: index) {
+                return index
+            }
+            index += 1
+        }
+        return nil
     }
 
     private static func urlSpanEnd(in scalars: [Unicode.Scalar], from start: Int) -> Int {
