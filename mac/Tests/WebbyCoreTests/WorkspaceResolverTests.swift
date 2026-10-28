@@ -266,6 +266,15 @@ private func webAnchor(_ host: String, scope: WebScope = .page) -> Anchor {
     #expect(WorkspaceResolver.resolve(tabNote, workspaces: workspaces) == .record(tabsRecordID))
 }
 
+@Test func duplicateWorkspaceKeysResolveByStableRecordID() {
+    let low = record(exampleRecordID, keys: [.host(name: "example.com")])
+    let high = record(otherRecordID, keys: [.host(name: "example.com")])
+    let anchored = note(anchor: webAnchor("example.com"))
+
+    #expect(WorkspaceResolver.resolve(anchored, workspaces: [high, low]) == .record(exampleRecordID))
+    #expect(WorkspaceResolver.resolve(anchored, workspaces: [low, high]) == .record(exampleRecordID))
+}
+
 @Test func reversedRecordsStillResolveMatchingRecord() {
     let workspaces = [
         record(filesRecordID, keys: [.localFiles]),

@@ -22,8 +22,16 @@ public enum WorkspaceResolver {
             return .inbox
         }
 
-        if let record = workspaces.first(where: { $0.keys.contains(key) }) {
-            return .record(record.id)
+        var matchingRecordID: UUID?
+        for record in workspaces where record.keys.contains(key) {
+            if matchingRecordID.map({
+                record.id.uuidString.lowercased() < $0.uuidString.lowercased()
+            }) ?? true {
+                matchingRecordID = record.id
+            }
+        }
+        if let matchingRecordID {
+            return .record(matchingRecordID)
         }
 
         return .implicit(key)
