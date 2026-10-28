@@ -78,7 +78,8 @@ public struct LibrarySearchCache: Sendable {
         }
         let tagClauses = query.clauses.compactMap { clause -> String? in
             guard case .tag(let value) = clause else { return nil }
-            return SearchRanking.fold(value)
+            let name = value.hasPrefix("#") ? String(value.dropFirst()) : value
+            return SearchRanking.fold(name)
         }
         let stateClauses = query.clauses.compactMap { clause -> SearchQuery.State? in
             guard case .state(let state) = clause else { return nil }
@@ -154,8 +155,14 @@ public struct LibrarySearchCache: Sendable {
 
                     if !siteClauses.allSatisfy({ site in
                         keys.contains { key in
-                            guard case .host(let name) = key else { return false }
-                            return Self.normalizedHost(name) == site
+                            switch key {
+                            case .localFiles:
+                                return site == "file"
+                            case .host(let name):
+                                return Self.normalizedHost(name) == site
+                            case .app, .tabsWithoutPage:
+                                return false
+                            }
                         }
                     }) {
                         continue
@@ -172,21 +179,23 @@ public struct LibrarySearchCache: Sendable {
                 }
             }
 
-            guard let entry = entries[note.id] else { continue }
+            var tier = 0
+            if !textClauses.isEmpty || !tagClauses.isEmpty {
+                let entry = entries[note.id] ?? Self.makeEntry(for: note)
 
-            guard textClauses.allSatisfy({ entry.text.contains($0) }) else {
-                continue
+                guard textClauses.allSatisfy({ entry.text.contains($0) }) else {
+                    continue
+                }
+                guard tagClauses.allSatisfy({ entry.tagKeys.contains($0) }) else {
+                    continue
+                }
+
+                tier = SearchRanking.tier(
+                    foldedTextClauses: textClauses,
+                    foldedFirstLine: entry.firstLine,
+                    foldedFullText: entry.text
+                )
             }
-
-            guard tagClauses.allSatisfy({ entry.tagKeys.contains($0) }) else {
-                continue
-            }
-
-            let tier = SearchRanking.tier(
-                foldedTextClauses: textClauses,
-                foldedFirstLine: entry.firstLine,
-                foldedFullText: entry.text
-            )
             candidates.append(Candidate(note: note, tier: tier))
         }
 

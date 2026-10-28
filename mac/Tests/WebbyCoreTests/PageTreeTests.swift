@@ -414,6 +414,27 @@ private func allNotesForHost(_ host: PageTreeHost) -> [LibraryNote] {
     return notes
 }
 
+@Test func buildsTenThousandDistinctPathsWithoutLosingNotes() {
+    let workspaces = [record(keys: [.host(name: "example.com")])]
+    let notes = (0..<10_000).map { index in
+        Note(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", index))!,
+            anchor: exactPage(String(format: "/pages/%05d", index)),
+            frame: NoteFrame(),
+            placement: .window,
+            createdAt: date(TimeInterval(index))
+        )
+    }
+
+    let tree = PageTree.build(
+        notes: notes,
+        destination: .record(treeRecordID),
+        workspaces: workspaces
+    )
+
+    #expect(allNotes(in: tree).count == 10_000)
+}
+
 @Test func shuffledInputProducesTheSameTree() {
     let workspaces = [
         record(keys: [

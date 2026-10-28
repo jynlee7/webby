@@ -141,7 +141,6 @@ public struct LibraryResult: Equatable, Sendable {
     }
 }
 
-/// Builds the sidebar sections from notes and workspace records.
 public enum LibraryQuery {
     private static let recentInterval: TimeInterval = 14 * 86_400
     private static let recentLimit = 100

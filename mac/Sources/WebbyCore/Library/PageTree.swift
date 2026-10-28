@@ -158,7 +158,14 @@ private struct HostBuilder {
 
     mutating func buildRoot() -> PageTreeNode {
         ensureNode("")
-        return buildNode("")
+        var childrenByParent: [String: [String]] = [:]
+        for path in nodes.keys where !path.isEmpty {
+            childrenByParent[parentPath(path), default: []].append(path)
+        }
+        for parent in Array(childrenByParent.keys) {
+            childrenByParent[parent]?.sort { nodes[$0]!.segment < nodes[$1]!.segment }
+        }
+        return buildNode("", childrenByParent: childrenByParent)
     }
 
     private mutating func ensureNode(_ path: String) {
@@ -175,11 +182,12 @@ private struct HostBuilder {
         }
     }
 
-    private func buildNode(_ path: String) -> PageTreeNode {
+    private func buildNode(
+        _ path: String,
+        childrenByParent: [String: [String]]
+    ) -> PageTreeNode {
         let builder = nodes[path]!
-        let childPaths = nodes.keys
-            .filter { $0 != path && parentPath($0) == path }
-            .sorted { nodes[$0]!.segment < nodes[$1]!.segment }
+        let childPaths = childrenByParent[path] ?? []
 
         let exactPages = builder.exactPages
             .map { page, notes in
@@ -199,7 +207,7 @@ private struct HostBuilder {
                 NoteOrdering.sorted(builder.prefixNotes, by: .updatedDescending)
             ),
             exactPages: exactPages,
-            children: childPaths.map(buildNode)
+            children: childPaths.map { buildNode($0, childrenByParent: childrenByParent) }
         )
     }
 

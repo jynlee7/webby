@@ -101,6 +101,38 @@ private func search(
     #expect(search("tag:RÉSUMÉ", cache, [note]) == [id])
 }
 
+@Test func cacheMissFoldsTheCurrentNoteOnDemand() {
+    let pinned = makeNote(
+        id: makeID(1),
+        text: "Needle #dp",
+        pinnedAt: makeDate(10)
+    )
+    let emptyCache = LibrarySearchCache()
+
+    #expect(search("is:pinned", emptyCache, [pinned]) == [pinned.id])
+    #expect(search("needle", emptyCache, [pinned]) == [pinned.id])
+    #expect(search("tag:dp", emptyCache, [pinned]) == [pinned.id])
+}
+
+@Test func tagFilterAcceptsTheDisplayedHashPrefix() {
+    let note = makeNote(id: makeID(1), text: "#dp")
+    let cache = LibrarySearchCache(notes: [note])
+
+    #expect(search("tag:dp", cache, [note]) == [note.id])
+    #expect(search("tag:#dp", cache, [note]) == [note.id])
+}
+
+@Test func siteFileMatchesLocalFilesWorkspace() {
+    let fileNote = makeNote(
+        id: makeID(1),
+        text: "local",
+        anchor: webAnchor("file", path: "/Users/me/note.md")
+    )
+    let cache = LibrarySearchCache(notes: [fileNote])
+
+    #expect(search("site:file", cache, [fileNote]) == [fileNote.id])
+}
+
 @Test func tagsUseExactFoldedSearchKeysRatherThanPrefixes() {
     let id = makeID(1)
     let note = makeNote(id: id, text: "#Café #dp #a-b")
@@ -432,14 +464,14 @@ private func search(
     #expect(cache.entry(for: third.id)?.text == "third")
 }
 
-@Test func searchIgnoresStaleCacheEntriesAndUnknownNotes() {
+@Test func searchFoldsCacheMissesAndIgnoresEntriesWithoutCurrentNotes() {
     let first = makeNote(id: makeID(1), text: "first")
     let removed = makeNote(id: makeID(2), text: "removed")
     let ghost = makeNote(id: makeID(99), text: "ghost")
     var cache = LibrarySearchCache(notes: [first, removed, ghost])
 
     cache.remove(id: removed.id)
-    #expect(search("removed", cache, [first, removed]).isEmpty)
+    #expect(search("removed", cache, [first, removed]) == [removed.id])
     #expect(search("ghost", cache, [first]).isEmpty)
     #expect(search("first", cache, [first]) == [first.id])
 }

@@ -1,5 +1,26 @@
 import Foundation
 
+private struct BindingIdentity: Hashable {
+    let browser: String
+    let profile: String
+    let session: String
+    let tabID: Int
+
+    init(_ binding: TabBinding) {
+        browser = binding.browser
+        profile = binding.profile
+        session = binding.session
+        tabID = binding.tabID
+    }
+
+    init(_ tab: TabRef) {
+        browser = tab.browser
+        profile = tab.profile
+        session = tab.session
+        tabID = tab.tabID
+    }
+}
+
 /// One open browser tab with the notes attached to it.
 public struct LibraryOpenTabGroup: Equatable, Sendable {
     public let tab: TabRef
@@ -59,8 +80,15 @@ public enum LibraryTabGroups {
             rules: rules,
             anchors: notes.lazy.filter { $0.trashedAt == nil }.compactMap(\.anchor)
         )
-        let candidates = notes.filter { note in
-            note.tab != nil || isWebAnchor(note.anchor)
+        let ordinary = notes.filter(LibraryEligibility.isOrdinary)
+        var boundNotes: [BindingIdentity: [Note]] = [:]
+        var webNotesByHost: [String: [Note]] = [:]
+        for note in ordinary {
+            if let binding = note.tab, binding.closedAt == nil {
+                boundNotes[BindingIdentity(binding), default: []].append(note)
+            } else if case let .web(page, _)? = note.anchor {
+                webNotesByHost[page.host, default: []].append(note)
+            }
         }
 
         var groups: [LibraryOpenTabGroup] = []
@@ -82,8 +110,13 @@ public enum LibraryTabGroups {
                     page: page,
                     tab: tabRef
                 )
+                var candidates = boundNotes[BindingIdentity(tabRef)] ?? []
+                if let page {
+                    candidates.append(contentsOf: webNotesByHost[page.host] ?? [])
+                }
+                var seen: Set<UUID> = []
                 let attached = candidates.filter {
-                    NoteVisibility.isAttached($0, to: context)
+                    seen.insert($0.id).inserted && NoteVisibility.isAttached($0, to: context)
                 }
                 guard !attached.isEmpty else { continue }
 
@@ -105,9 +138,6 @@ public enum LibraryTabGroups {
     }
 
     /// Ordinary notes whose tab binding has a closure date, newest first.
-    ///
-    /// A pending restore alone is not a closure, and inventory absence is not
-    /// considered because the function receives no inventory.
     public static func closedTabs(notes: [Note]) -> [LibraryClosedTabEntry] {
         let closed = notes.filter { note in
             LibraryEligibility.isOrdinary(note) && note.tab?.closedAt != nil
@@ -117,11 +147,6 @@ public enum LibraryTabGroups {
             guard let closedAt = note.tab?.closedAt else { return nil }
             return LibraryClosedTabEntry(note: LibraryNote(note: note), closedAt: closedAt)
         }
-    }
-
-    private static func isWebAnchor(_ anchor: Anchor?) -> Bool {
-        guard case .web = anchor else { return false }
-        return true
     }
 
     private static func isOrderedBefore(
@@ -136,14 +161,16 @@ public enum LibraryTabGroups {
         if lhs.index != rhs.index { return lhs.index < rhs.index }
         if lhs.tab.tabID != rhs.tab.tabID { return lhs.tab.tabID < rhs.tab.tabID }
 
-        // Resolve otherwise identical identities deterministically, without
-        // moving focused or active tabs to the front.
         if lhs.url != rhs.url { return (lhs.url ?? "") < (rhs.url ?? "") }
         if lhs.title != rhs.title { return (lhs.title ?? "") < (rhs.title ?? "") }
         if lhs.windowFocused != rhs.windowFocused {
-            return !lhs.windowFocused && rhs.windowFocused
+            return falseFirst(lhs.windowFocused, rhs.windowFocused)
         }
-        if lhs.active != rhs.active { return !lhs.active && rhs.active }
+        if lhs.active != rhs.active { return falseFirst(lhs.active, rhs.active) }
         return false
+    }
+
+    private static func falseFirst(_ lhs: Bool, _ rhs: Bool) -> Bool {
+        !lhs && rhs
     }
 }
