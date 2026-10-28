@@ -9,17 +9,23 @@ public struct InstalledSkin: Sendable, Equatable {
     /// caller did not supply an inventory; resolution then assumes the declared
     /// variants exist, which is only appropriate for in-memory fixture skins.
     public let availableImagePaths: Set<String>?
+    /// The validator's explicit outcome. Callers must pass `SkinValidationResult.isAccepted`;
+    /// inferring rejection from group status misses a rejected skin whose groups are
+    /// `.absent` because it declared no groups at all.
+    public let isAccepted: Bool
 
     public init(
         id: String,
         manifest: SkinManifest,
         groups: [SkinGroup: SkinGroupStatus]? = nil,
-        availableImagePaths: Set<String>? = nil
+        availableImagePaths: Set<String>? = nil,
+        isAccepted: Bool = true
     ) {
         self.id = id
         self.manifest = manifest
         self.groups = groups ?? Self.inferredGroups(for: manifest)
         self.availableImagePaths = availableImagePaths
+        self.isAccepted = isAccepted
     }
 
     private static func inferredGroups(for manifest: SkinManifest) -> [SkinGroup: SkinGroupStatus] {
@@ -292,12 +298,9 @@ public struct SkinResolver: Sendable {
     }
 
     private func isFatal(_ skin: InstalledSkin) -> Bool {
-        guard skin.manifest.formatVersion == 1 else {
-            return true
-        }
-        guard !skin.groups.isEmpty else {
-            return true
-        }
+        guard skin.isAccepted else { return true }
+        guard skin.manifest.formatVersion == 1 else { return true }
+        guard !skin.groups.isEmpty else { return true }
         return SkinGroup.allCases.allSatisfy { skin.groups[$0] == .invalid }
     }
 

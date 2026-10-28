@@ -571,3 +571,32 @@ private func resolverResolve(
     // the surface must not be replaced with the fallback.
     #expect(larger.surface.fill == (try! RGBAColor(hex: "#808080")))
 }
+
+@Test func explicitlyRejectedSparseSkinDoesNotWinSelection() throws {
+    let sparse = try resolverManifest("io.example.sparse", values: [:])
+    let rejected = InstalledSkin(
+        id: "io.example.sparse",
+        manifest: sparse,
+        groups: Dictionary(uniqueKeysWithValues: SkinGroup.allCases.map { ($0, .absent) }),
+        isAccepted: false
+    )
+    let globalManifest = try resolverManifest("io.example.global", values: [
+        "surface": ["fill": "#EEEEEE", "text": ["color": "#000000"]],
+    ])
+    let resolver = SkinResolver(
+        builtIns: [resolverSkin(try resolverClearManifest()), resolverSkin(globalManifest), rejected],
+        availableBaseIDs: ["webby.clear"]
+    )
+
+    let resolution = resolver.resolve(
+        workspaceSkinID: "io.example.sparse",
+        globalSkinID: "io.example.global",
+        requested: .light,
+        noteAppearance: nil,
+        accessibility: AccessibilitySettings(),
+        textScale: 1
+    )
+
+    #expect(resolution.diagnostics.contains { $0.code == "skin-rejected" })
+    #expect(resolution.theme.surface.fill == (try! RGBAColor(hex: "#EEEEEE")))
+}
