@@ -114,8 +114,6 @@ public enum QueryRules {
     }
 
     private static func parseQuery(_ query: String) -> [QueryItem] {
-        var query = query
-        if query.hasPrefix("?") { query.removeFirst() }
         guard !query.isEmpty else { return [] }
 
         return query.split(separator: "&", omittingEmptySubsequences: true).map { rawComponent in

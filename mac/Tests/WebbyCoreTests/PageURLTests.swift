@@ -253,6 +253,20 @@ import Testing
         == [QueryRule(host: "example.com", key: "关键词")])
 }
 
+@Test func literalLeadingQuestionMarkIsPartOfTheKey() throws {
+    let rules = [QueryRule(host: "example.com", key: "?id")]
+    let literal = try #require(PageURL(string: "https://example.com/item??id=1", queryRules: rules))
+    let encoded = try #require(PageURL(string: "https://example.com/item?%3Fid=1", queryRules: rules))
+
+    #expect(literal.query == "%3Fid=1")
+    #expect(literal == encoded)
+
+    let youtube = try #require(PageURL(string: "https://youtube.com/watch??v=a"))
+    let normal = try #require(PageURL(string: "https://youtube.com/watch?v=a"))
+    #expect(youtube.query == nil)
+    #expect(youtube != normal)
+}
+
 @Test func invalidUTF8QueryBytesRemainDistinct() throws {
     let rules = [QueryRule(host: "example.com", key: "q")]
     let first = try #require(PageURL(string: "https://example.com/?q=%FF", queryRules: rules))
