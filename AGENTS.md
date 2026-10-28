@@ -17,7 +17,10 @@ host. The Swift package requires Swift tools 5.10 and targets macOS 14 or later.
 - `extension/`: Manifest V3 extension, native host manifest template, and Node tests
   whose `tests/fixtures/` are shared with the Swift protocol tests.
 - `scripts/`: test, app packaging, and extension validation commands.
-- `.github/workflows/ci.yml`: CI checks.
+- `site/`: the skin directions moodboard, a static page published to GitHub Pages.
+  It links to posts on X instead of copying their images.
+- `design.md`: proposed design principles for notes and skins.
+- `.github/workflows/ci.yml`: CI checks. `pages.yml` checks and deploys `site/`.
 
 Read the implementation before assuming a feature exists. The extension, bridge and
 app exchange tab messages, but nothing in the app uses them yet. `PLAN.md` and product documents describe
