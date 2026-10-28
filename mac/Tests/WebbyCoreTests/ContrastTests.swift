@@ -19,9 +19,9 @@ private func meetsContrast(
 
     for backdrop in [RGBAColor.black, RGBAColor.white] {
         let surfaceBackground = candidate.composited(over: backdrop)
-        let backgrounds = palette.isEmpty
-            ? [surfaceBackground]
-            : palette.map { $0.composited(over: surfaceBackground) }
+        // The untinted surface is rendered too, so it is part of the requirement.
+        let backgrounds = [surfaceBackground]
+            + palette.map { $0.composited(over: surfaceBackground) }
 
         for background in backgrounds {
             guard let ratio = try? Contrast.contrastRatio(foreground: text, background: background),
@@ -157,8 +157,9 @@ private func meetsContrast(
         return
     }
 
-    #expect(alpha > 0.3)
-    #expect(alpha < 0.34)
+    // The untinted surface must also pass, which sets the floor near 0.455.
+    #expect(alpha > 0.45)
+    #expect(alpha < 0.46)
     #expect(meetsContrast(alpha, surface: surface, palette: palette, text: .black, required: 4.5))
     #expect(!meetsContrast(alpha - 1e-4, surface: surface, palette: palette, text: .black, required: 4.5))
 }

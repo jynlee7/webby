@@ -164,9 +164,12 @@ public enum Contrast {
         let overBlack = candidate.composited(over: .black)
         let overWhite = candidate.composited(over: .white)
 
-        guard !palette.isEmpty else {
-            return passes(text: text, background: overBlack, requiredRatio: requiredRatio)
-                && passes(text: text, background: overWhite, requiredRatio: requiredRatio)
+        // The untinted surface is a real rendering too, so it has to pass on its own
+        // before any palette fill is composited over it.
+        guard passes(text: text, background: overBlack, requiredRatio: requiredRatio),
+              passes(text: text, background: overWhite, requiredRatio: requiredRatio)
+        else {
+            return false
         }
 
         for fill in palette {

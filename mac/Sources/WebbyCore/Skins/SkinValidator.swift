@@ -646,6 +646,32 @@ public enum SkinValidator {
         )
     }
 
+    /// The accent identifies the Library's selected state, so it must stay visible
+    /// against the background at 3:1 in every appearance the skin declares.
+    private static func checkLibraryAccentContrast(
+        _ library: SkinLibrary,
+        diagnostics: inout [SkinDiagnostic]
+    ) {
+        for appearance in [SkinAppearance.light, .dark] {
+            guard let accent = colorValue(library.accent, appearance: appearance),
+                  let background = colorValue(library.background, appearance: appearance)
+            else {
+                continue
+            }
+            let ratio = (try? Contrast.contrastRatio(
+                foreground: accent,
+                background: background.replacingAlpha(1)
+            )) ?? 0
+            guard ratio < 3 else { continue }
+            diagnostics.append(groupError(
+                code: "library-accent-contrast",
+                path: [.key("library"), .key("accent")],
+                group: .library,
+                message: "The Library accent has \(ratio):1 contrast against its background in \(appearance.rawValue); 3:1 is required."
+            ))
+        }
+    }
+
     private static func validateLibrary(
         _ manifest: SkinManifest,
         diagnostics: inout [SkinDiagnostic],
@@ -667,6 +693,8 @@ public enum SkinValidator {
             group: .library,
             diagnostics: &diagnostics
         )
+
+        checkLibraryAccentContrast(library, diagnostics: &diagnostics)
 
         if let material = library.sidebarMaterial {
             checkKnown(
@@ -1298,6 +1326,17 @@ public enum SkinValidator {
         case .paired(let light, let dark):
             checkHex(light, path: path + [.key("light")], group: group, diagnostics: &diagnostics)
             checkHex(dark, path: path + [.key("dark")], group: group, diagnostics: &diagnostics)
+        }
+    }
+
+    /// The authored colour for one appearance, or nil when absent or invalid.
+    private static func colorValue(_ color: SkinColor?, appearance: SkinAppearance) -> RGBAColor? {
+        guard let color else { return nil }
+        switch color {
+        case .bare(let hex):
+            return try? RGBAColor(hex: hex)
+        case .paired(let light, let dark):
+            return try? RGBAColor(hex: appearance == .dark ? dark : light)
         }
     }
 

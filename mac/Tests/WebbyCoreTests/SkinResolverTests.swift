@@ -461,7 +461,12 @@ private func resolverResolve(
 
 @Test func resolutionClampsAcceptedValuesToTheDocumentedLimits() throws {
     let manifest = try resolverManifest("io.example.clamp", values: [
-        "surface": ["cornerRadius": 1000, "border": ["width": 99, "color": "#000000"]],
+        "surface": [
+            "fill": "#FFFFFF",
+            "text": ["color": "#000000"],
+            "cornerRadius": 1000,
+            "border": ["width": 99, "color": "#000000"],
+        ],
         "typography": ["size": 500],
         "voiceOrb": ["states": ["idle": ["frames": 1_000_000_000, "audioReactive": 10]]],
         "sounds": ["volume": 25],
@@ -491,6 +496,8 @@ private func resolverResolve(
     let manifest = try resolverManifest("io.example.images", values: [
         "appearances": ["light", "dark"],
         "surface": [
+            "fill": "#FFFFFF",
+            "text": ["color": "#000000"],
             "image": ["element": "note-body", "insets": ["top": 1, "left": 1, "bottom": 1, "right": 1]],
         ],
     ])
@@ -522,6 +529,8 @@ private func resolverResolve(
 @Test func darkAppearanceFallsBackToTheBaseImage() throws {
     let manifest = try resolverManifest("io.example.dark", values: [
         "surface": [
+            "fill": "#FFFFFF",
+            "text": ["color": "#000000"],
             "image": ["element": "note-body", "insets": ["top": 1, "left": 1, "bottom": 1, "right": 1]],
         ],
     ])

@@ -164,9 +164,11 @@ public enum AccessibilityTransform {
         let placeholder = readable(surface.placeholder, on: resolvedFill, fallback: repairedText)
         return ResolvedSurface(
             fill: resolvedFill,
+            // The backing has to match the fills the contrast checks used, so a
+            // translucent override over a black page is grey, not white.
             contrastBacking: ResolvedContrastBacking(
-                overBlack: resolvedFill.replacingAlpha(1),
-                overWhite: resolvedFill.replacingAlpha(1)
+                overBlack: resolvedFill.composited(over: .black),
+                overWhite: resolvedFill.composited(over: .white)
             ),
             material: material ?? surface.material,
             image: surface.image,
