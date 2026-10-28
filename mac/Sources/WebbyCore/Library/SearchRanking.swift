@@ -12,12 +12,8 @@ public enum SearchRanking {
 
     /// The note title: its first physical line, without trimming.
     public static func firstLine(of text: String) -> String {
-        guard let newline = text.firstIndex(of: "\n") else { return text }
-        var line = String(text[..<newline])
-        if line.hasSuffix("\r") {
-            line.removeLast()
-        }
-        return line
+        guard let newline = text.firstIndex(where: { $0.isNewline }) else { return text }
+        return String(text[..<newline])
     }
 
     /// Calculates a result tier from unfolded values.

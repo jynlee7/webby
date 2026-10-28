@@ -21,6 +21,22 @@ public enum LibraryEligibility {
     }
 }
 
+extension WorkspaceKey {
+    /// The name a person recognizes for this key.
+    public var displayName: String {
+        switch self {
+        case .host(let name):
+            return name
+        case .app(let bundleID):
+            return bundleID
+        case .localFiles:
+            return "Local files"
+        case .tabsWithoutPage:
+            return "Tabs without a page"
+        }
+    }
+}
+
 public struct LibraryTag: Hashable, Sendable {
     public let name: String
     public let searchKey: String

@@ -1,6 +1,13 @@
 import Foundation
 
 public enum Tags {
+    private enum URLScan {
+        case url(end: Int)
+        /// No URL here; `stop` is the first position that cannot belong to the same
+        /// scheme run, so the caller can skip the span it already examined.
+        case notURL(stop: Int)
+    }
+
     public static func parse(_ text: String) -> [LibraryTag] {
         let scalars = Array(text.unicodeScalars)
         var result: [LibraryTag] = []
@@ -8,9 +15,15 @@ public enum Tags {
         var index = 0
 
         while index < scalars.count {
-            if let end = urlEnd(in: scalars, at: index) {
+            switch scanURL(in: scalars, at: index) {
+            case .url(let end):
                 index = end
                 continue
+            case .notURL(let stop):
+                if stop > index {
+                    index = stop
+                    continue
+                }
             }
 
             guard scalars[index] == "#", isTagBoundary(in: scalars, at: index) else {
@@ -46,22 +59,25 @@ public enum Tags {
         return result
     }
 
-    private static func urlEnd(in scalars: [Unicode.Scalar], at index: Int) -> Int? {
-        guard isURLBoundary(in: scalars, at: index) else { return nil }
+    private static func scanURL(in scalars: [Unicode.Scalar], at index: Int) -> URLScan {
+        guard isURLBoundary(in: scalars, at: index) else { return .notURL(stop: index) }
 
         if isWWW(in: scalars, at: index) {
-            return urlSpanEnd(in: scalars, from: index + 4)
+            return .url(end: urlSpanEnd(in: scalars, from: index + 4))
         }
 
-        guard isASCIIAlpha(scalars[index]) else { return nil }
+        guard isASCIIAlpha(scalars[index]) else { return .notURL(stop: index) }
 
         var cursor = index + 1
         while cursor < scalars.count, isSchemeCharacter(scalars[cursor]) {
             cursor += 1
         }
-        guard cursor < scalars.count, scalars[cursor] == ":" else { return nil }
+        guard cursor < scalars.count, scalars[cursor] == ":" else {
+            // Every start inside this run would fail at the same place.
+            return .notURL(stop: max(cursor, index + 1))
+        }
 
-        return urlSpanEnd(in: scalars, from: cursor + 1)
+        return .url(end: urlSpanEnd(in: scalars, from: cursor + 1))
     }
 
     private static func urlSpanEnd(in scalars: [Unicode.Scalar], from start: Int) -> Int {

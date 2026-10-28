@@ -30,6 +30,25 @@ public struct LibraryWorkspaceGroup: Equatable, Sendable {
         Set(notes.map(\.id)).count
     }
 
+    /// The visible sidebar name: a custom title, else the record's first key.
+    public var displayName: String {
+        if let title = record?.title {
+            let normalized = title.precomposedStringWithCanonicalMapping
+            if !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return normalized
+            }
+        }
+        if let record, let key = record.keys.map(\.displayName).min() {
+            return key
+        }
+        switch destination {
+        case .implicit(let key):
+            return key.displayName
+        case .inbox, .record:
+            return "Workspace"
+        }
+    }
+
     public init(
         destination: WorkspaceDestination,
         record: WorkspaceRecord?,
@@ -282,10 +301,19 @@ public enum LibraryQuery {
                 break
             }
         case .alphabetical:
-            let lhsKey = workspaceDisplayKey(lhs)
-            let rhsKey = workspaceDisplayKey(rhs)
+            let folded = { (group: LibraryWorkspaceGroup) in
+                group.displayName.folding(
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    locale: nil
+                )
+            }
+            let lhsKey = folded(lhs)
+            let rhsKey = folded(rhs)
             if lhsKey != rhsKey {
                 return lhsKey < rhsKey
+            }
+            if lhs.displayName != rhs.displayName {
+                return lhs.displayName < rhs.displayName
             }
         }
 
@@ -293,13 +321,7 @@ public enum LibraryQuery {
     }
 
     private static func workspaceDisplayKey(_ group: LibraryWorkspaceGroup) -> String {
-        if let title = group.record?.title {
-            let normalized = title.precomposedStringWithCanonicalMapping
-            if !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return normalized
-            }
-        }
-        return destinationSortKey(group.destination)
+        group.displayName
     }
 
     private static func destinationSortKey(_ destination: WorkspaceDestination) -> String {

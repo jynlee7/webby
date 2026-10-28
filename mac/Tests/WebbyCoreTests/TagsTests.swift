@@ -123,3 +123,16 @@ private func tagNames(_ text: String) -> [String] {
     #expect(tags.map(\.name) == ["alpha", "beta"])
     #expect(text == "#alpha #beta")
 }
+
+@Test func longDashSeparatedTextIsScannedLinearly() {
+    let text = String(repeating: "a-", count: 40_000) + "#kept"
+    let tags = Tags.parse(text)
+
+    #expect(tags.map(\.name) == ["kept"])
+}
+
+@Test func dashesCannotHideALaterTag() {
+    #expect(tagNames("a-b-c #real") == ["real"])
+    #expect(tagNames("x.y.z #real") == ["real"])
+    #expect(tagNames("a-b-c:d #real") == ["real"])
+}

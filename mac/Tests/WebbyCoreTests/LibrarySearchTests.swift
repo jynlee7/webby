@@ -475,3 +475,32 @@ private func search(
     #expect(search("ghost", cache, [first]).isEmpty)
     #expect(search("first", cache, [first]) == [first.id])
 }
+
+@Test func crlfFirstLineDoesNotSwallowTheBody() {
+    let note = makeNote(id: makeID(1), text: "Title\r\nneedle")
+    let cache = LibrarySearchCache(notes: [note])
+
+    #expect(cache.entry(for: note.id)?.firstLine == "title")
+    let ids = cache.search(
+        SearchQuery.parse("needle"),
+        notes: [note],
+        workspaces: []
+    )
+    #expect(ids == [note.id])
+    let text = "Title\r\nneedle"
+    #expect(SearchRanking.tier(
+        textClauses: ["needle"],
+        firstLine: SearchRanking.firstLine(of: text),
+        fullText: text
+    ) == 2)
+    #expect(SearchRanking.firstLine(of: "Lone\rcarriage") == "Lone")
+}
+
+@Test func bodyOnlyMatchesRankBelowTitleMatchesWithCRLF() {
+    let titleMatch = makeNote(id: makeID(1), text: "needle\r\nbody", updatedAt: makeDate(1))
+    let bodyMatch = makeNote(id: makeID(2), text: "title\r\nneedle", updatedAt: makeDate(2))
+    let cache = LibrarySearchCache(notes: [titleMatch, bodyMatch])
+    let results = cache.search(SearchQuery.parse("needle"), notes: [titleMatch, bodyMatch], workspaces: [])
+
+    #expect(results == [titleMatch.id, bodyMatch.id])
+}

@@ -398,10 +398,10 @@ private func lqDestinations(_ groups: [LibraryWorkspaceGroup]) -> [WorkspaceDest
         .record(lqUUID(901)),
         .record(lqUUID(903)),
         .record(lqUUID(904)),
-        .record(lqUUID(902)),
         .implicit(.host(name: "beta.com")),
-        .implicit(.host(name: "zeta.com")),
         .record(lqUUID(905)),
+        .record(lqUUID(902)),
+        .implicit(.host(name: "zeta.com")),
     ])
 }
 
@@ -424,4 +424,41 @@ private func lqDestinations(_ groups: [LibraryWorkspaceGroup]) -> [WorkspaceDest
     #expect(!result.tags.contains { group in
         group.notes.contains { $0.id == lqUUID(4) }
     })
+}
+
+@Test func untitledWorkspacesSortAlphabeticallyByVisibleKeyName() {
+    let alpha = lqRecord(1, keys: [.host(name: "alpha.com")])
+    let zulu = lqRecord(2, keys: [.host(name: "zulu.com")])
+    let implicit = lqNote(3, anchor: lqWebAnchor("mike.com"))
+    let alphaNote = lqNote(4, override: alpha.id)
+    let zuluNote = lqNote(5, override: zulu.id)
+
+    let result = LibraryQuery.evaluate(
+        notes: [implicit, alphaNote, zuluNote],
+        workspaces: [zulu, alpha],
+        now: lqDate(0),
+        workspaceOrder: .alphabetical
+    )
+
+    #expect(result.workspaces.map(\.displayName) == [
+        "alpha.com", "mike.com", "zulu.com",
+    ])
+}
+
+@Test func localFilesAndTabsWithoutPageUseReadableAlphabeticalNames() {
+    let files = lqRecord(1, keys: [.localFiles])
+    let tabs = lqRecord(2, keys: [.tabsWithoutPage])
+    let fileNote = lqNote(3, override: files.id)
+    let tabNote = lqNote(2, tab: lqTab(), override: tabs.id)
+
+    let result = LibraryQuery.evaluate(
+        notes: [fileNote, tabNote],
+        workspaces: [tabs, files],
+        now: lqDate(0),
+        workspaceOrder: .alphabetical
+    )
+
+    #expect(result.workspaces.map(\.displayName) == [
+        "Local files", "Tabs without a page",
+    ])
 }

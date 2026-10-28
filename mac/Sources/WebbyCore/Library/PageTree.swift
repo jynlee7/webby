@@ -37,20 +37,23 @@ public struct PageTree: Equatable, Sendable {
                 notAttached.append(note)
 
             case let .web(page, scope):
-                var host = hostBuilders[page.host] ?? HostBuilder(host: page.host)
+                // The default subscript gives an in-place `inout` access. Copying the
+                // builder out and back would trigger dictionary copy-on-write per note.
                 switch scope {
                 case .site:
-                    host.siteWide.append(note)
+                    hostBuilders[page.host, default: HostBuilder(host: page.host)]
+                        .siteWide.append(note)
 
                 case let .prefix(scopePath):
                     let path = PageURL(host: page.host, path: scopePath).path
-                    host.addPrefix(note, at: path)
+                    hostBuilders[page.host, default: HostBuilder(host: page.host)]
+                        .addPrefix(note, at: path)
 
                 case .page:
                     let path = PageURL(host: page.host, path: page.path).path
-                    host.addExactPage(note, page: page, at: path)
+                    hostBuilders[page.host, default: HostBuilder(host: page.host)]
+                        .addExactPage(note, page: page, at: path)
                 }
-                hostBuilders[page.host] = host
             }
         }
 
