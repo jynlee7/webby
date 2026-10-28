@@ -408,7 +408,10 @@ public enum SkinFolderLoader {
         lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
     }
 
-    private static func normalizedName(_ path: String) -> String {
+    /// The collision key used for two entries that a case-insensitive, normalizing
+    /// filesystem would treat as one file. Exposed internally so the rule can be
+    /// tested without depending on the test volume's case behaviour.
+    static func normalizedName(_ path: String) -> String {
         path.precomposedStringWithCanonicalMapping
             .folding(
                 options: [.caseInsensitive],

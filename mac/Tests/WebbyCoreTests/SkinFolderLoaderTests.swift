@@ -304,10 +304,23 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
         return
     }
 
+    // APFS may silently keep one file instead of failing the second write.
+    let entries = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("images").path)
+    guard entries.count == 2 else { return }
+
     let result = load(folder)
 
     #expect(!result.isAccepted)
     #expect(hasCode(result, "duplicate-entry", severity: .fatal))
+}
+
+@Test func collisionRuleNormalizesCaseAndComposition() {
+    #expect(SkinFolderLoader.normalizedName("images/Note-Body.png")
+        == SkinFolderLoader.normalizedName("images/note-body.png"))
+    #expect(SkinFolderLoader.normalizedName("images/caf\u{00E9}.png")
+        == SkinFolderLoader.normalizedName("images/cafe\u{0301}.png"))
+    #expect(SkinFolderLoader.normalizedName("images/note-body.png")
+        != SkinFolderLoader.normalizedName("images/note-body@2x.png"))
 }
 
 @Test func canonicallyEquivalentNamesAreFatal() throws {
@@ -322,6 +335,9 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
         // A normalizing filesystem cannot represent this collision.
         return
     }
+
+    let entries = try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("images").path)
+    guard entries.count == 2 else { return }
 
     let result = load(folder)
 
