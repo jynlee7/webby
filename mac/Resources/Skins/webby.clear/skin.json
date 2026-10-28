@@ -1,0 +1,43 @@
+{
+  "formatVersion": 1,
+  "id": "webby.clear",
+  "name": "Clear Glass",
+  "author": "Webby",
+  "version": "1.0.0",
+  "description": "Translucent glass with a frosted layer that keeps text readable.",
+  "license": "MIT",
+  "credits": [
+    { "name": "Webby", "role": "original token design" }
+  ],
+  "tags": ["glass", "translucent", "default"],
+  "appearances": ["light", "dark"],
+  "palette": [
+    { "light": "#FFFFFF00", "dark": "#16181D00" },
+    { "light": "#FFC86BE6", "dark": "#5C4316E6" },
+    { "light": "#FF9DB5E6", "dark": "#5C2A36E6" },
+    { "light": "#8FE3B8E6", "dark": "#1D4A35E6" },
+    { "light": "#93C5FFE6", "dark": "#24405CE6" },
+    { "light": "#C3AEFFE6", "dark": "#3B3160E6" }
+  ],
+  "surface": {
+    "fill": { "light": "#FFFFFFE6", "dark": "#16181DE6" },
+    "material": { "light": "popover", "dark": "popover" },
+    "cornerRadius": 16,
+    "shadow": "soft",
+    "padding": { "top": 12, "left": 14, "bottom": 14, "right": 14 },
+    "text": { "color": { "light": "#0B0C0F", "dark": "#F1F2F4" } },
+    "placeholderColor": { "light": "#555B66", "dark": "#B9BFCA" },
+    "selection": { "light": "#0B0C0F26", "dark": "#F1F2F426" },
+    "caret": { "light": "#0B0C0F", "dark": "#F1F2F4" }
+  },
+  "typography": { "size": 14, "weight": "regular", "lineSpacing": 3 },
+  "header": { "height": 0, "showsTitle": false },
+  "collapsed": { "height": 32, "showsFirstLine": true },
+  "decoration": { "hidden": true },
+  "icons": { "template": true, "tint": { "light": "#0B0C0F", "dark": "#F1F2F4" } },
+  "resizeHandle": { "visibility": "hover" },
+  "highContrast": {
+    "surface.fill": { "light": "#FFFFFF", "dark": "#000000" },
+    "surface.text.color": { "light": "#000000", "dark": "#FFFFFF" }
+  }
+}

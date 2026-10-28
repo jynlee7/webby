@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jynlee7.github.io/webby/schemas/webbyskin-1.json",
+  "title": "Webby skin manifest (formatVersion 1)",
+  "description": "Draft JSON Schema for a Webby skin.json. Published in v1.1.",
+  "$comment": "Unknown keys are allowed at every object because SkinManifest ignores them and the validator reports a warning. Enum values list the decoder's known cases; unknown values are preserved by the model and warned about by the validator.",
+  "type": "object",
+  "required": ["formatVersion", "id", "name", "author", "version"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "formatVersion": { "const": 1 },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "author": { "type": "string" },
+    "version": { "type": "string" },
+    "description": { "type": "string" },
+    "license": { "type": "string" },
+    "basedOn": { "type": ["string", "null"] },
+    "base": { "type": ["string", "null"] },
+    "credits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "appearances": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/appearance" }
+    },
+    "palette": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/colorToken" }
+    },
+    "surface": {
+      "type": "object",
+      "properties": {
+        "fill": { "$ref": "#/$defs/colorToken" },
+        "material": { "$ref": "#/$defs/appearanceMaterial" },
+        "image": {
+          "type": "object",
+          "properties": {
+            "element": { "type": "string" },
+            "insets": { "$ref": "#/$defs/insets" },
+            "mode": { "$ref": "#/$defs/imageMode" },
+            "tintWithPalette": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 32 },
+        "border": {
+          "type": "object",
+          "properties": {
+            "width": { "type": "number", "minimum": 0, "maximum": 4 },
+            "color": { "$ref": "#/$defs/colorToken" }
+          },
+          "additionalProperties": true
+        },
+        "shadow": { "$ref": "#/$defs/shadow" },
+        "padding": { "$ref": "#/$defs/insets" },
+        "text": {
+          "type": "object",
+          "properties": {
+            "color": { "$ref": "#/$defs/colorToken" }
+          },
+          "additionalProperties": true
+        },
+        "placeholderColor": { "$ref": "#/$defs/colorToken" },
+        "selection": { "$ref": "#/$defs/colorToken" },
+        "caret": { "$ref": "#/$defs/colorToken" }
+      },
+      "additionalProperties": true
+    },
+    "typography": {
+      "type": "object",
+      "properties": {
+        "font": {
+          "type": "object",
+          "properties": {
+            "family": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "size": { "type": "number", "minimum": 10, "maximum": 32 },
+        "weight": { "$ref": "#/$defs/fontWeight" },
+        "lineSpacing": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "header": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "anyOf": [
+            { "const": 0 },
+            { "type": "number", "minimum": 16, "maximum": 36 }
+          ]
+        },
+        "fill": { "$ref": "#/$defs/colorToken" },
+        "showsTitle": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "collapsed": {
+      "type": "object",
+      "properties": {
+        "height": { "type": "number" },
+        "showsFirstLine": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "decoration": {
+      "type": "object",
+      "properties": {
+        "element": { "type": "string" },
+        "anchor": { "$ref": "#/$defs/alignment" },
+        "origin": { "$ref": "#/$defs/alignment" },
+        "offset": {
+          "type": "object",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          },
+          "additionalProperties": true
+        },
+        "rotation": { "type": "number" },
+        "hidden": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "icons": {
+      "type": "object",
+      "properties": {
+        "tint": { "$ref": "#/$defs/colorToken" },
+        "template": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "resizeHandle": {
+      "type": "object",
+      "properties": {
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "tint": { "$ref": "#/$defs/colorToken" }
+      },
+      "additionalProperties": true
+    },
+    "library": {
+      "type": "object",
+      "properties": {
+        "accent": { "$ref": "#/$defs/colorToken" },
+        "sidebarMaterial": { "$ref": "#/$defs/material" },
+        "cardStyle": { "$ref": "#/$defs/cardStyle" },
+        "background": { "$ref": "#/$defs/colorToken" }
+      },
+      "additionalProperties": true
+    },
+    "voiceOrb": {
+      "type": "object",
+      "properties": {
+        "states": {
+          "type": "object",
+          "properties": {
+            "idle": { "$ref": "#/$defs/orbAnimation" },
+            "listening": { "$ref": "#/$defs/orbAnimation" },
+            "thinking": { "$ref": "#/$defs/orbAnimation" },
+            "speaking": { "$ref": "#/$defs/orbAnimation" },
+            "error": { "$ref": "#/$defs/orbAnimation" }
+          },
+          "additionalProperties": { "$ref": "#/$defs/orbAnimation" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "sounds": {
+      "type": "object",
+      "properties": {
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mute": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/soundEvent" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "highContrast": {
+      "type": "object",
+      "properties": {
+        "surface.fill": { "$ref": "#/$defs/colorToken" },
+        "surface.text.color": { "$ref": "#/$defs/colorToken" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+    },
+    "colorToken": {
+      "oneOf": [
+        { "$ref": "#/$defs/color" },
+        {
+          "type": "object",
+          "properties": {
+            "light": { "$ref": "#/$defs/color" },
+            "dark": { "$ref": "#/$defs/color" }
+          },
+          "required": ["light", "dark"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "insets": {
+      "type": "object",
+      "properties": {
+        "top": { "type": "number" },
+        "left": { "type": "number" },
+        "bottom": { "type": "number" },
+        "right": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "material": {
+      "type": "string",
+      "enum": [
+        "none",
+        "titlebar",
+        "selection",
+        "menu",
+        "popover",
+        "sidebar",
+        "headerView",
+        "sheet",
+        "windowBackground",
+        "hudWindow",
+        "fullScreenUI",
+        "toolTip",
+        "contentBackground",
+        "underWindowBackground",
+        "underPageBackground"
+      ]
+    },
+    "appearanceMaterial": {
+      "oneOf": [
+        { "$ref": "#/$defs/material" },
+        {
+          "type": "object",
+          "properties": {
+            "light": { "$ref": "#/$defs/material" },
+            "dark": { "$ref": "#/$defs/material" }
+          },
+          "required": ["light", "dark"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "shadow": {
+      "type": "string",
+      "enum": ["system", "none", "soft"]
+    },
+    "imageMode": {
+      "type": "string",
+      "enum": ["stretch", "tile"]
+    },
+    "fontWeight": {
+      "type": "string",
+      "enum": [
+        "ultraLight",
+        "thin",
+        "light",
+        "regular",
+        "medium",
+        "semibold",
+        "bold",
+        "heavy",
+        "black"
+      ]
+    },
+    "alignment": {
+      "type": "string",
+      "enum": [
+        "topLeft",
+        "topCenter",
+        "topRight",
+        "centerLeft",
+        "center",
+        "centerRight",
+        "bottomLeft",
+        "bottomCenter",
+        "bottomRight"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "enum": ["always", "hover", "never"]
+    },
+    "cardStyle": {
+      "type": "string",
+      "enum": ["note", "uniform"]
+    },
+    "soundEvent": {
+      "type": "string",
+      "enum": [
+        "note-create",
+        "note-save",
+        "note-delete",
+        "note-collapse",
+        "voice-start",
+        "voice-stop",
+        "voice-error"
+      ]
+    },
+    "appearance": {
+      "type": "string",
+      "enum": ["light", "dark"]
+    },
+    "orbAnimation": {
+      "type": "object",
+      "properties": {
+        "frames": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "fps": { "type": "number" },
+        "loop": { "type": "boolean" },
+        "audioReactive": { "type": "number", "minimum": 0, "maximum": 0.3 },
+        "tint": { "$ref": "#/$defs/colorToken" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "id": "webby.mono",
+  "name": "Mono",
+  "author": "Webby",
+  "version": "1.0.0",
+  "description": "Opaque monochrome surface with one hairline border.",
+  "license": "MIT",
+  "credits": [
+    { "name": "Webby", "role": "original token design" }
+  ],
+  "base": "webby.clear",
+  "tags": ["monochrome", "minimal", "high-contrast"],
+  "appearances": ["light", "dark"],
+  "palette": [
+    { "light": "#FFFFFF", "dark": "#0E1013" },
+    { "light": "#F4F4F5", "dark": "#17191D" },
+    { "light": "#E8E9EB", "dark": "#202329" },
+    { "light": "#DCDDE0", "dark": "#292C33" },
+    { "light": "#D0D2D6", "dark": "#33363E" },
+    { "light": "#C4C6CB", "dark": "#3D4049" }
+  ],
+  "surface": {
+    "fill": { "light": "#FFFFFF", "dark": "#0E1013" },
+    "material": "none",
+    "cornerRadius": 6,
+    "border": {
+      "width": 1,
+      "color": { "light": "#1F2329", "dark": "#F4F5F7" }
+    },
+    "shadow": "none",
+    "text": { "color": { "light": "#111318", "dark": "#F4F5F7" } },
+    "placeholderColor": { "light": "#555B66", "dark": "#B9BFCA" },
+    "selection": { "light": "#11131826", "dark": "#F4F5F726" },
+    "caret": { "light": "#111318", "dark": "#F4F5F7" }
+  },
+  "typography": { "size": 14, "weight": "regular", "lineSpacing": 2 },
+  "highContrast": {
+    "surface.fill": { "light": "#FFFFFF", "dark": "#000000" },
+    "surface.text.color": { "light": "#000000", "dark": "#FFFFFF" }
+  }
+}

@@ -15,6 +15,14 @@ cp Resources/Info.plist "$app/Contents/Info.plist"
 cp "$bin/Webby" "$app/Contents/MacOS/Webby"
 cp "$bin/webby-bridge" "$app/Contents/MacOS/webby-bridge"
 
+for skin in webby.clear webby.mono; do
+  if [[ ! -f "Resources/Skins/$skin/skin.json" ]]; then
+    echo "Missing built-in skin manifest: Resources/Skins/$skin/skin.json" >&2
+    exit 1
+  fi
+done
+cp -R Resources/Skins "$app/Contents/Resources/Skins"
+
 # Ad-hoc signature: enough to run locally; not notarized.
 codesign --force --sign - "$app/Contents/MacOS/webby-bridge"
 codesign --force --sign - "$app"
