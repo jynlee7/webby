@@ -1,0 +1,1832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Webby Skin Directions</title>
+<meta name="description" content="Skin directions for Webby, a macOS sticky-note app: five looks, one .webbyskin format, and a lab to try, check and download skins.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%2393C5FF' fill-opacity='.55' stroke='%230B0C0F' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: white "paper" ground, one live glass lens up top, then a credited reference wall,
+   live material studies, tokens, and rules. Glass appears only where Webby's notes would. */
+:root {
+  --paper: #F4F5F8;
+  --paper-2: #FFFFFF;
+  --ink: #0B0C0F;
+  --ink-2: #545A66;
+  --ink-3: #8A909B;
+  --rule: rgba(11, 12, 15, .10);
+  --caustic: #E8962E;
+  --cobalt: #2F52E0;
+  --glass-fill: rgba(255, 255, 255, .42);
+  --glass-edge: rgba(255, 255, 255, .70);
+  --glass-hi: rgba(255, 255, 255, .95);
+  --glass-lo: rgba(11, 12, 15, .06);
+  --glass-shadow: rgba(16, 24, 48, .20);
+  --solid-fill: #F9FAFB;
+  --code-bg: #FFFFFF;
+  --chip-bg: rgba(11, 12, 15, .05);
+  --photo-a: #FFE6CC;
+  --photo-b: #D6E0FF;
+
+  --f-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist", "Helvetica Neue", Arial, sans-serif;
+  --f-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", "Geist Mono", Menlo, Consolas, monospace;
+
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 72px; --s-9: 112px;
+  --t-label: 11px; --t-small: 13px; --t-body: 16px; --t-lead: 21px; --t-h2: clamp(28px, 4vw, 40px); --t-h1: clamp(40px, 7vw, 76px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0D0E11; --paper-2: #16181D; --ink: #F1F2F4; --ink-2: #A3A9B4; --ink-3: #6E7480;
+    --rule: rgba(255, 255, 255, .10); --caustic: #F2A94A; --cobalt: #7D97FF;
+    --glass-fill: rgba(255, 255, 255, .08); --glass-edge: rgba(255, 255, 255, .18);
+    --glass-hi: rgba(255, 255, 255, .35); --glass-lo: rgba(0, 0, 0, .35); --glass-shadow: rgba(0, 0, 0, .55);
+    --solid-fill: #1D2026; --code-bg: #121419; --chip-bg: rgba(255, 255, 255, .07);
+    --photo-a: #1B1F3B; --photo-b: #3A1C4A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0D0E11; --paper-2: #16181D; --ink: #F1F2F4; --ink-2: #A3A9B4; --ink-3: #6E7480;
+  --rule: rgba(255, 255, 255, .10); --caustic: #F2A94A; --cobalt: #7D97FF;
+  --glass-fill: rgba(255, 255, 255, .08); --glass-edge: rgba(255, 255, 255, .18);
+  --glass-hi: rgba(255, 255, 255, .35); --glass-lo: rgba(0, 0, 0, .35); --glass-shadow: rgba(0, 0, 0, .55);
+  --solid-fill: #1D2026; --code-bg: #121419; --chip-bg: rgba(255, 255, 255, .07);
+  --photo-a: #1B1F3B; --photo-b: #3A1C4A;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-text);
+  font-size: var(--t-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 3px; border-radius: 6px; }
+.wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* Mono corner label with a tick rule, borrowed from the reference film's frame marks */
+.label {
+  font-family: var(--f-mono);
+  font-size: var(--t-label);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+.label::after { content: ""; display: block; width: 18px; height: 1px; margin-top: 6px; background: currentColor; opacity: .6; }
+.label.r::after { margin-left: auto; }
+.label.flat::after { display: none; }
+
+/* ---------- Hero ---------- */
+.hero { padding-block: var(--s-5) 0; }
+.stage {
+  position: relative;
+  border-radius: 22px;
+  overflow: hidden;
+  aspect-ratio: 16 / 7;
+  min-height: 300px;
+  max-width: 100%;
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  touch-action: pan-y;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.stage .corner { position: absolute; pointer-events: none; }
+.stage .tl { top: 18px; left: 20px; }
+.stage .tr { top: 18px; right: 20px; text-align: right; }
+.stage .bl { bottom: 18px; left: 20px; }
+.stage .br { bottom: 18px; right: 20px; text-align: right; }
+.stage .bl::after, .stage .br::after { display: none; }
+.stage .bl::before, .stage .br::before { content: ""; display: block; width: 18px; height: 1px; margin-bottom: 6px; background: currentColor; opacity: .6; }
+.stage .br::before { margin-left: auto; }
+.hint { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); color: var(--ink-3); pointer-events: none; white-space: nowrap; }
+.hint::after { display: none; }
+
+.intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--s-7);
+  padding-block: var(--s-7) var(--s-8);
+  align-items: end;
+}
+h1 {
+  font-family: var(--f-display);
+  font-size: var(--t-h1);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: .98;
+  margin: var(--s-4) 0 0;
+  text-wrap: balance;
+}
+.lead { font-size: var(--t-lead); line-height: 1.45; color: var(--ink); margin: 0 0 var(--s-5); max-width: 34ch; text-wrap: pretty; }
+.meta { display: grid; grid-template-columns: auto 1fr; gap: var(--s-2) var(--s-5); margin: 0; font-size: var(--t-small); }
+.meta dt { font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); padding-top: 2px; }
+.meta dd { margin: 0; color: var(--ink-2); }
+
+/* ---------- Sections ---------- */
+section { padding-block: var(--s-8); border-top: 1px solid var(--rule); }
+.sec-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--s-7); margin-bottom: var(--s-7); align-items: end; }
+h2 {
+  font-family: var(--f-display);
+  font-size: var(--t-h2);
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.05;
+  margin: var(--s-3) 0 0;
+  text-wrap: balance;
+}
+.sec-head p { margin: 0; color: var(--ink-2); max-width: 60ch; }
+h3 { font-family: var(--f-display); font-size: 19px; font-weight: 650; letter-spacing: -.015em; margin: 0; line-height: 1.25; text-wrap: balance; }
+
+/* ---------- Principles ---------- */
+.principles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: var(--s-6) var(--s-7); }
+.principles li { display: grid; gap: var(--s-2); align-content: start; padding-top: var(--s-4); border-top: 1px solid var(--ink); }
+.principles p { margin: 0; color: var(--ink-2); max-width: 46ch; }
+.refs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-2); }
+.ref {
+  font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .02em;
+  padding: 3px 8px; border-radius: 999px; background: var(--chip-bg); color: var(--ink-2); text-decoration: none;
+}
+.ref:hover { color: var(--ink); }
+
+/* ---------- Reference wall ---------- */
+.wall { columns: 3 300px; column-gap: var(--s-5); }
+.tile { break-inside: avoid; margin: 0 0 var(--s-6); display: grid; gap: var(--s-3); scroll-margin-top: 24px; }
+.tile .shot { display: block; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--rule); background: var(--paper-2); }
+.tile img { display: block; width: 100%; height: auto; transition: transform .5s cubic-bezier(.2, .8, .2, 1); }
+.tile .shot:hover img { transform: scale(1.025); }
+.tile figcaption { display: grid; gap: 6px; }
+.tile .who { display: flex; justify-content: space-between; gap: var(--s-3); font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .06em; color: var(--ink-3); text-transform: uppercase; }
+.tile .who a { color: var(--ink-2); text-decoration: none; }
+.tile .who a:hover { color: var(--ink); text-decoration: underline; }
+.tile .what { margin: 0; font-size: 15px; line-height: 1.45; }
+.tile .take { margin: 0; font-size: var(--t-small); color: var(--ink-2); line-height: 1.5; }
+.tile .take b { font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .1em; text-transform: uppercase; color: var(--caustic); font-weight: 500; margin-right: 6px; }
+.tile.quote blockquote {
+  margin: 0; padding: var(--s-5); border-radius: 14px; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule);
+  font-family: var(--f-display); font-size: 22px; line-height: 1.25; letter-spacing: -.02em; font-weight: 600; text-wrap: balance;
+}
+.tile.seed .shot { box-shadow: 0 0 0 1px var(--rule), 0 0 0 4px var(--paper), 0 0 0 5px var(--caustic); }
+
+/* ---------- Glass recipe (the direction itself) ---------- */
+.glass {
+  --frost: 18px;
+  --fill: var(--glass-fill);
+  position: relative;
+  isolation: isolate;
+  background: var(--fill);
+  -webkit-backdrop-filter: blur(var(--frost)) saturate(180%);
+  backdrop-filter: blur(var(--frost)) saturate(180%);
+  border-radius: 16px;
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 1px 1.5px 0 0 var(--glass-hi),
+    inset -1px -1.5px 0 0 var(--glass-lo),
+    0 1px 2px var(--glass-shadow),
+    0 18px 40px -18px var(--glass-shadow);
+}
+/* Sheen: one light, top left */
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background:
+    radial-gradient(140% 70% at 0% 0%, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(160deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 40%);
+  opacity: .9;
+}
+/* Spectral rim: warm and cool fringes where the edge bends light */
+.glass::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px;
+  background: conic-gradient(from 210deg, transparent 0 14%, color-mix(in srgb, var(--caustic) 75%, transparent) 22%, transparent 32% 62%, color-mix(in srgb, var(--cobalt) 65%, transparent) 72%, transparent 82%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: .55;
+}
+.glass.solid { --fill: var(--solid-fill); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.glass.solid::before, .glass.solid::after { opacity: 0; }
+.glass.clear { --frost: 2px; --fill: color-mix(in srgb, var(--glass-fill) 45%, transparent); }
+
+/* A stand-in web page for the glass to sit on */
+.page {
+  position: relative; border-radius: 18px; overflow: hidden; background: var(--paper-2);
+  box-shadow: 0 0 0 1px var(--rule), 0 30px 60px -40px var(--glass-shadow);
+  max-width: 100%;
+}
+.page .bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+.page .dots { display: flex; gap: 6px; }
+.page .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--rule); display: block; }
+.page .url { flex: 1; min-width: 0; font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); background: var(--chip-bg); border-radius: 8px; padding: 5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page .body { padding: var(--s-6); display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--s-6); }
+.page .kicker { font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .1em; text-transform: uppercase; color: var(--cobalt); }
+.page h4 { font-family: var(--f-display); font-size: 28px; letter-spacing: -.025em; line-height: 1.1; margin: 8px 0 12px; }
+.page p { margin: 0 0 12px; color: var(--ink-2); font-size: 15px; }
+.photo {
+  border-radius: 12px; min-height: 260px; max-width: 100%;
+  background:
+    radial-gradient(55% 75% at 20% 25%, #FF8A3D 0%, transparent 60%),
+    radial-gradient(50% 65% at 85% 30%, #3E63FF 0%, transparent 60%),
+    radial-gradient(55% 65% at 55% 95%, #12B886 0%, transparent 60%),
+    radial-gradient(35% 45% at 70% 60%, #F7C948 0%, transparent 70%),
+    linear-gradient(135deg, var(--photo-a), var(--photo-b));
+}
+.note {
+  position: absolute; width: min(300px, calc(100% - 32px)); padding: 12px 14px 14px; color: var(--ink);
+  font-size: 14px; line-height: 1.45;
+}
+.note .nh { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.note .scope { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.note .btns { display: flex; gap: 4px; }
+.note .btns span { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--ink-2); font-size: 12px; line-height: 1; }
+.note p { margin: 0; }
+.note .tag { color: var(--cobalt); }
+.note-a { top: 92px; right: 28px; }
+
+/* Frost scale */
+.scale { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-5); }
+.scale .cell { display: grid; gap: var(--s-3); align-content: start; }
+.scale .bed { position: relative; border-radius: 16px; overflow: hidden; padding: 28px 20px; min-height: 210px; display: grid; align-items: center; }
+.scale .bed .photo { position: absolute; inset: 0; border-radius: 0; min-height: 0; }
+.scale .bed .txt { position: absolute; inset: 14px 16px auto; font-family: var(--f-display); font-weight: 700; font-size: 34px; line-height: 1; letter-spacing: -.03em; color: var(--ink); }
+.scale .note { position: relative; width: auto; inset: auto; }
+.scale h3 { font-size: 16px; }
+.scale p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+
+/* Morph demo */
+.studies { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-5); margin-top: var(--s-6); }
+.study { border-radius: 18px; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule); padding: var(--s-5); display: grid; gap: var(--s-4); align-content: start; min-width: 0; }
+.study p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+.morph-bed { position: relative; height: 230px; border-radius: 14px; overflow: hidden; }
+.morph-bed .photo { position: absolute; inset: 0; border-radius: 0; min-height: 0; }
+.mnote {
+  position: absolute; left: 24px; top: 24px; width: 250px; height: 150px; padding: 12px 14px; overflow: hidden;
+  font-size: 14px; line-height: 1.45;
+  transition: width .48s cubic-bezier(.32, 1.32, .45, 1), height .48s cubic-bezier(.32, 1.32, .45, 1), border-radius .48s cubic-bezier(.32, 1.32, .45, 1);
+}
+.mnote .body { transition: opacity .18s ease; }
+.mnote.is-collapsed { width: 210px; height: 32px; border-radius: 16px; padding-block: 6px; }
+.mnote.is-collapsed .body { opacity: 0; }
+.mnote .first { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.btn {
+  font: 500 13px/1 var(--f-text); color: var(--ink); background: var(--chip-bg); border: 0; border-radius: 999px; padding: 9px 14px; cursor: pointer; justify-self: start;
+}
+.btn:hover { background: color-mix(in srgb, var(--chip-bg) 100%, var(--ink) 6%); }
+
+/* Icon sketch */
+.icon-row { display: flex; flex-wrap: wrap; gap: var(--s-6); align-items: center; }
+.app-icon {
+  --sz: 132px;
+  width: var(--sz); height: var(--sz); border-radius: 30px; position: relative; overflow: hidden; flex: none;
+  background: linear-gradient(165deg, #FFFFFF 0%, #E6EAF2 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .9), inset 0 -2px 6px rgba(20, 30, 60, .10), 0 10px 24px -10px rgba(16, 24, 48, .35);
+}
+.app-icon::before { /* dot grid under the glass, the page */
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(30, 40, 80, .28) 1.1px, transparent 1.3px);
+  background-size: 9px 9px;
+  mask: radial-gradient(70% 70% at 55% 60%, #000 40%, transparent 75%);
+}
+.app-icon .caustic { position: absolute; width: 70px; height: 34px; left: 48px; top: 88px; border-radius: 50%; background: radial-gradient(closest-side, rgba(232, 150, 46, .55), transparent); filter: blur(4px); }
+.app-icon .pane {
+  position: absolute; left: 30px; top: 26px; width: 74px; height: 74px; border-radius: 20px; transform: rotate(-7deg);
+  background: linear-gradient(150deg, rgba(255, 255, 255, .75), rgba(255, 255, 255, .25));
+  -webkit-backdrop-filter: blur(3px) saturate(160%); backdrop-filter: blur(3px) saturate(160%);
+  box-shadow: inset 1px 1.5px 0 rgba(255, 255, 255, 1), inset 0 0 0 1px rgba(255, 255, 255, .6), inset -1px -2px 2px rgba(47, 82, 224, .25), 0 8px 14px -6px rgba(16, 24, 48, .35);
+}
+.app-icon .pane i { position: absolute; left: 14px; height: 5px; border-radius: 3px; background: rgba(11, 12, 15, .55); }
+.app-icon .pane i:nth-child(1) { top: 20px; width: 40px; }
+.app-icon .pane i:nth-child(2) { top: 32px; width: 32px; background: rgba(11, 12, 15, .3); }
+.app-icon .pane i:nth-child(3) { top: 44px; width: 36px; background: rgba(11, 12, 15, .3); }
+.app-icon.small { --sz: 64px; border-radius: 15px; }
+.app-icon.small .pane { left: 14px; top: 12px; width: 36px; height: 36px; border-radius: 10px; }
+.app-icon.small .pane i { left: 7px; height: 3px; }
+.app-icon.small .pane i:nth-child(1) { top: 10px; width: 20px; }
+.app-icon.small .pane i:nth-child(2) { top: 16px; width: 16px; }
+.app-icon.small .pane i:nth-child(3) { top: 22px; width: 18px; }
+.app-icon.small .caustic { width: 34px; height: 16px; left: 24px; top: 43px; }
+.app-icon.small::before { background-size: 6px 6px; }
+
+/* ---------- Tokens ---------- */
+.tokens { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-7); }
+.swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3); }
+.sw { display: grid; gap: 8px; }
+.sw .chip { position: relative; height: 84px; border-radius: 14px; overflow: hidden; }
+.sw .chip .under {
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(90deg, var(--ink) 0 14px, transparent 14px 28px);
+  opacity: .9;
+}
+.sw .chip .glass { position: absolute; inset: 10px; border-radius: 10px; }
+.sw .name { font-size: var(--t-small); font-weight: 600; }
+.sw code { font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); }
+.type-spec { display: grid; gap: var(--s-5); margin-top: var(--s-6); }
+.type-spec .row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--s-4); align-items: baseline; padding-top: var(--s-4); border-top: 1px solid var(--rule); }
+.type-spec .disp { font-family: var(--f-display); font-weight: 700; font-size: 34px; letter-spacing: -.03em; line-height: 1.1; }
+.type-spec .text { font-size: 14px; line-height: 20px; }
+.type-spec .mono { font-family: var(--f-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+pre {
+  margin: 0; padding: var(--s-5); border-radius: 14px; background: var(--code-bg); box-shadow: 0 0 0 1px var(--rule);
+  overflow-x: auto; font-family: var(--f-mono); font-size: 12.5px; line-height: 1.6; color: var(--ink);
+}
+pre .k { color: var(--cobalt); }
+pre .c { color: var(--ink-3); }
+.code-wrap { display: grid; gap: var(--s-3); min-width: 0; }
+.code-wrap p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+
+/* ---------- Rules ---------- */
+.rules { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-7); }
+.rules ul { list-style: none; margin: var(--s-4) 0 0; padding: 0; display: grid; gap: 0; }
+.rules li { padding: var(--s-3) 0; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--s-2); }
+.rules li::before { font-family: var(--f-mono); font-size: 13px; }
+.rules .do li::before { content: "+"; color: var(--cobalt); }
+.rules .dont li::before { content: "\2212"; color: var(--caustic); }
+
+.callout { margin-top: var(--s-7); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-7); }
+.callout > div { display: grid; gap: var(--s-3); align-content: start; }
+.callout p, .callout li { color: var(--ink-2); margin: 0; }
+.callout ul { margin: 0; padding-left: 1.1em; display: grid; gap: var(--s-2); }
+.callout code, .principles code, .tile code { font-family: var(--f-mono); font-size: .86em; background: var(--chip-bg); padding: 1px 5px; border-radius: 5px; }
+
+footer { padding-block: var(--s-6) var(--s-8); border-top: 1px solid var(--rule); color: var(--ink-3); font-size: var(--t-small); }
+
+@media (max-width: 860px) {
+  .intro, .sec-head, .tokens, .rules, .studies, .callout { grid-template-columns: minmax(0, 1fr); gap: var(--s-5); }
+  .page .body { grid-template-columns: minmax(0, 1fr); }
+  .note-a { top: auto; bottom: 20px; right: 16px; }
+  .scale { grid-template-columns: minmax(0, 1fr); }
+  section { padding-block: var(--s-7); }
+}
+@media (max-width: 560px) {
+  .stage { aspect-ratio: 4 / 3; }
+  .hint { display: none; }
+  .stage .tr, .stage .br { display: none; }
+  .swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .type-spec .row { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mnote, .mnote .body, .tile img { transition: none; }
+}
+
+/* ---------- v2: nav, directions, lab, skin rendering ---------- */
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+.topnav {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%);
+  border-bottom: 1px solid var(--rule);
+}
+.topnav .wrap { display: flex; gap: 4px; overflow-x: auto; padding-block: 8px; scrollbar-width: none; }
+.topnav a { flex: none; font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); text-decoration: none; padding: 6px 10px; border-radius: 999px; }
+.topnav a:hover { background: var(--chip-bg); color: var(--ink); }
+section { scroll-margin-top: 48px; }
+
+.dirs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--s-4); }
+.dir-card { display: grid; grid-template-rows: auto 1fr; border-radius: 18px; overflow: hidden; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule); min-width: 0; }
+.dir-stage { position: relative; height: 190px; display: grid; place-items: center; overflow: hidden; }
+.dir-stage[data-bg="light"] { background: radial-gradient(70% 90% at 15% 20%, #FFB27A, transparent 60%), radial-gradient(60% 80% at 90% 80%, #8FB0FF, transparent 60%), #F1EEE8; }
+.dir-stage[data-bg="dark"] { background: radial-gradient(70% 90% at 15% 20%, #6B3A1E, transparent 60%), radial-gradient(60% 80% at 90% 80%, #1F3A7A, transparent 60%), #121317; }
+.dir-stage .dir-note { transform: scale(.82); transform-origin: center; }
+.dir-body { padding: var(--s-4) var(--s-4) var(--s-5); display: grid; gap: var(--s-2); align-content: start; }
+.dir-body p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+.dots { display: flex; gap: 4px; margin-top: 2px; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); display: block; }
+.dir-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--s-2); }
+a.btn { text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--cobalt); color: #fff; }
+.btn.primary:hover { background: color-mix(in srgb, var(--cobalt), #000 12%); }
+
+/* Lab */
+.lab { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--s-5); align-items: start; }
+.lab-preview, .lab-side { display: grid; gap: var(--s-4); min-width: 0; }
+.lab-toolbar { display: flex; flex-wrap: wrap; gap: var(--s-3); align-items: center; }
+.seg { display: inline-flex; background: var(--chip-bg); border-radius: 999px; padding: 3px; }
+.seg button { font: 500 13px/1 var(--f-text); border: 0; background: transparent; color: var(--ink-2); padding: 7px 12px; border-radius: 999px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.tog { display: inline-flex; gap: 6px; align-items: center; font-size: var(--t-small); color: var(--ink-2); cursor: pointer; }
+.lab-stage { position: relative; border-radius: 18px; overflow: hidden; min-height: 360px; box-shadow: 0 0 0 1px var(--rule); }
+.lab-stage[data-app="light"] { background: #F7F5F1; color: #22252B; }
+.lab-stage[data-app="dark"] { background: #15161A; color: #C9CCD3; }
+.lab-page { position: absolute; inset: 0; padding: 22px 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+.lab-page h4 { font-family: var(--f-display); font-size: 22px; letter-spacing: -.02em; margin: 6px 0 8px; line-height: 1.15; }
+.lab-page p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; opacity: .8; }
+.lab-page .kick { font-family: var(--f-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }
+.lab-page .art { border-radius: 12px; background: radial-gradient(55% 70% at 25% 25%, #FF8A3D, transparent 60%), radial-gradient(50% 60% at 85% 35%, #3E63FF, transparent 60%), radial-gradient(50% 60% at 55% 95%, #12B886, transparent 60%), radial-gradient(35% 45% at 70% 60%, #F7C948, transparent 70%), linear-gradient(135deg, #2A2F55, #4A2558); }
+.lab-note-host { position: relative; padding: 70px 0 70px 44%; display: grid; gap: 16px; justify-items: start; }
+.lab-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.pal-row, .snd-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pal { width: 26px; height: 26px; border-radius: 50%; border: 0; cursor: pointer; background: linear-gradient(var(--c), var(--c)), repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0 / 8px 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.pal.on { box-shadow: inset 0 0 0 1px rgba(0,0,0,.15), 0 0 0 2px var(--paper), 0 0 0 4px var(--cobalt); }
+.chipbtn { font: 500 12px/1 var(--f-mono); border: 0; background: var(--chip-bg); color: var(--ink); border-radius: 999px; padding: 7px 10px; cursor: pointer; }
+.lab-meta { margin: 0; font-size: var(--t-small); color: var(--ink-2); }
+.drop { display: grid; gap: 4px; place-items: center; text-align: center; padding: var(--s-6) var(--s-4); border-radius: 16px; border: 1.5px dashed color-mix(in srgb, var(--ink) 25%, transparent); background: var(--paper-2); cursor: pointer; transition: background .15s, border-color .15s; }
+.drop:hover, .drop.over { border-color: var(--cobalt); background: color-mix(in srgb, var(--cobalt) 6%, var(--paper-2)); }
+.drop:focus-within { outline: 2px solid var(--cobalt); outline-offset: 3px; }
+.drop input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.drop span { color: var(--ink-2); font-size: var(--t-small); }
+.drop .formats { font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); }
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.shelf-item { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px; border-radius: 12px; border: 0; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule); cursor: pointer; color: var(--ink); min-width: 0; }
+.shelf-item.on { box-shadow: 0 0 0 2px var(--cobalt); }
+.shelf-sw { flex: none; width: 34px; height: 34px; display: grid; place-items: center; font-size: 13px; font-weight: 600; background-clip: padding-box; }
+.shelf-t { display: grid; min-width: 0; font-size: 13px; line-height: 1.25; }
+.shelf-t b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.shelf-t small { color: var(--ink-3); font-size: 11px; }
+.editor { display: grid; gap: var(--s-3); }
+.editor-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.editor-head > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.hint-text { margin: 0; font-size: var(--t-small); color: var(--ink-2); }
+#lab-json { width: 100%; min-height: 300px; resize: vertical; font: 12px/1.55 var(--f-mono); color: var(--ink); background: var(--code-bg); border: 0; border-radius: 14px; padding: var(--s-4); box-shadow: 0 0 0 1px var(--rule); tab-size: 2; }
+#lab-json:focus { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+#lab-json[readonly] { color: var(--ink-2); }
+.diags { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+.diags li { padding: 7px 10px; border-radius: 10px; background: var(--chip-bg); color: var(--ink); line-height: 1.45; }
+.diags .lvl { font-family: var(--f-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; margin-right: 8px; padding: 2px 6px; border-radius: 6px; background: var(--paper-2); }
+.diags .fatal .lvl, .diags .error .lvl { color: #C2410C; }
+.diags .warning .lvl { color: #A16207; }
+.diags .info .lvl { color: var(--cobalt); }
+.diags .ok { color: var(--ink-2); }
+.diags code { font-family: var(--f-mono); font-size: .92em; }
+.sheet { display: grid; gap: var(--s-3); padding: var(--s-5); border-radius: 18px; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule), 0 24px 48px -28px var(--glass-shadow); }
+.sheet h3 { font-size: 20px; }
+.sheet-meta, .sheet-desc { margin: 0; font-size: var(--t-small); color: var(--ink-2); }
+.sheet-reject { margin: 0; color: #C2410C; }
+.sheet-previews { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+.sheet-pv { position: relative; border-radius: 14px; min-height: 180px; display: grid; place-items: center; padding: 26px 8px 14px; overflow: hidden; }
+.sheet-pv[data-app="light"] { background: radial-gradient(60% 80% at 20% 20%, #FFB27A, transparent 60%), radial-gradient(60% 80% at 90% 90%, #8FB0FF, transparent 60%), #F1EEE8; }
+.sheet-pv[data-app="dark"] { background: radial-gradient(60% 80% at 20% 20%, #6B3A1E, transparent 60%), radial-gradient(60% 80% at 90% 90%, #1F3A7A, transparent 60%), #121317; }
+.sheet-pv .label { position: absolute; top: 8px; left: 10px; color: #fff; mix-blend-mode: difference; }
+.sheet-note { transform: scale(.78); transform-origin: center; }
+.sheet-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.samples { margin: 0; padding-left: 1.1em; font-size: var(--t-small); color: var(--ink-2); display: grid; gap: 4px; }
+.samples code { font-family: var(--f-mono); font-size: 11.5px; word-break: break-all; }
+
+/* Link cards: each links to its post on X instead of copying the post's media. */
+.tile.card { position: relative; padding: var(--s-4); border-radius: 14px; background: var(--paper-2); box-shadow: 0 0 0 1px var(--rule); transition: box-shadow .15s; }
+.tile.card:hover { box-shadow: 0 0 0 1px var(--ink-3); }
+.tile.card:has(.post:focus-visible) { box-shadow: 0 0 0 2px var(--cobalt); }
+.tile.seed.card { box-shadow: 0 0 0 1px var(--rule), 0 0 0 4px var(--paper), 0 0 0 5px var(--caustic); }
+.tile .cap { display: grid; gap: 6px; }
+.tile.card .post::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.tile.card p a { position: relative; z-index: 1; }
+.tile .shows { margin: 0; font-size: var(--t-small); color: var(--ink-3); line-height: 1.45; }
+.tile .shows b { font-family: var(--f-mono); font-size: var(--t-label); letter-spacing: .1em; text-transform: uppercase; font-weight: 500; margin-right: 6px; }
+.samples a { color: var(--ink); text-underline-offset: 3px; }
+
+/* Skin rendering */
+.sk-wrap { position: relative; max-width: 100%; }
+.sk-note { position: relative; overflow: hidden; box-sizing: border-box; min-height: 118px; isolation: isolate; text-align: left; }
+.sk-tint, .sk-bg { position: absolute; inset: 0; pointer-events: none; box-sizing: border-box; }
+.sk-head, .sk-text, .sk-icons { position: relative; }
+.sk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; font-size: .86em; font-weight: 600; }
+.sk-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-icons { display: flex; gap: 1px; z-index: 1; }
+.sk-icons.float { position: absolute; }
+.sk-ic { display: block; width: 18px; height: 18px; flex: none; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; }
+.sk-text { white-space: pre-wrap; overflow-wrap: anywhere; outline: none; min-height: 3em; }
+.sk-text::selection { background: var(--sel); }
+.sk-resize { position: absolute; right: 4px; bottom: 4px; width: 10px; height: 10px; opacity: .55; background: linear-gradient(135deg, transparent 52%, currentColor 52% 60%, transparent 60% 74%, currentColor 74% 82%, transparent 82%); transition: opacity .15s; }
+.sk-resize.hover { opacity: 0; }
+.sk-note:hover .sk-resize.hover { opacity: .55; }
+.sk-deco { position: absolute; pointer-events: none; z-index: 2; }
+.sk-bar { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 230px; max-width: 100%; padding: 0 8px 0 12px; box-sizing: border-box; white-space: nowrap; overflow: hidden; }
+.sk-bar span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sk-orb { position: absolute; right: 18px; bottom: 18px; width: 44px; height: 44px; border-radius: 50%; background: radial-gradient(circle at 34% 30%, #fff 0 8%, var(--orb, #2F52E0) 48%, color-mix(in srgb, var(--orb, #2F52E0), #000 40%)); box-shadow: 0 8px 20px -8px var(--orb, #2F52E0), inset 0 0 0 1px rgba(255,255,255,.35); animation: orb 2.6s ease-in-out infinite; }
+.sk-orb img { width: 44px; height: 44px; display: block; }
+.sk-orb:has(img) { background: none; box-shadow: none; animation: none; }
+@keyframes orb { 50% { transform: scale(1.07); } }
+
+/* Library mock */
+.lib { display: grid; grid-template-columns: 150px minmax(0, 1fr); border-radius: 14px; overflow: hidden; background: var(--lib-bg); box-shadow: 0 0 0 1px var(--rule); font-size: 12.5px; min-height: 160px; }
+.lib-side { padding: 10px; display: grid; gap: 2px; align-content: start; background: color-mix(in srgb, var(--lib-bg), #7F8794 12%); }
+.lib-side.glassy { background: color-mix(in srgb, var(--lib-bg), #7F8794 18%); }
+.lib-ws { padding: 5px 8px; border-radius: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-ws.on { background: color-mix(in srgb, var(--lib-accent) 16%, transparent); color: var(--lib-accent); font-weight: 600; }
+.lib-main { padding: 12px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.lib-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lib-head span { opacity: .6; }
+.lib-card { padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, var(--lib-bg), #7F8794 10%); display: grid; gap: 2px; }
+.lib-card span { opacity: .7; }
+
+/* Direction sections */
+.dir-lead { font-size: var(--t-lead); line-height: 1.45; max-width: 40ch; margin: 0; text-wrap: pretty; }
+.spec { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--s-5) var(--s-6); margin-block: var(--s-6) var(--s-7); }
+.spec > div { display: grid; gap: var(--s-2); align-content: start; padding-top: var(--s-3); border-top: 1px solid var(--rule); min-width: 0; }
+.spec p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-mono); font-size: 11px; color: var(--ink-2); padding: 3px 8px 3px 3px; border-radius: 999px; background: var(--chip-bg); }
+.chip i { width: 16px; height: 16px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.recipe { margin-top: var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s-7); }
+.recipe > div { display: grid; gap: var(--s-2); align-content: start; }
+.recipe p { margin: 0; color: var(--ink-2); }
+.patterns { list-style: none; margin: 0 0 var(--s-7); padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: var(--s-5) var(--s-6); }
+.patterns li { display: grid; gap: 6px; padding-top: var(--s-3); border-top: 1px solid var(--ink); align-content: start; }
+.patterns p { margin: 0; color: var(--ink-2); font-size: var(--t-small); }
+.patterns .seen { font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); }
+.flow { margin: 0 0 var(--s-7); padding-left: 1.3em; display: grid; gap: var(--s-2); max-width: 70ch; }
+.flow li { color: var(--ink-2); padding-left: 4px; }
+.flow li::marker { font-family: var(--f-mono); color: var(--cobalt); }
+
+@media (max-width: 860px) {
+  .lab, .recipe { grid-template-columns: minmax(0, 1fr); }
+  .lab-note-host { padding: 150px 16px 80px; justify-items: center; }
+  .lab-page { grid-template-columns: minmax(0, 1fr); }
+  .lab-page .art { display: none; }
+}
+@media (max-width: 560px) {
+  .lib { grid-template-columns: minmax(0, 1fr); }
+  .lib-side { display: none; }
+  .sheet-previews { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { .sk-orb { animation: none; } }
+
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="stage" id="stage">
+      <canvas id="lens" role="img" aria-label="A glass droplet resting on the word webby, bending the letters beneath it. Move the pointer to move it."></canvas>
+      <div class="corner tl label">Webby<br>Skin directions</div>
+      <div class="corner tr label r">Format<br>.webbyskin</div>
+      <div class="corner bl label">Moodboard<br>27 Oct 2026</div>
+      <div class="corner br label r">Status<br>Proposed</div>
+      <div class="hint label flat">Move the pointer over the glass</div>
+    </div>
+
+    <div class="intro">
+      <div>
+        <div class="label">Moodboard · Proposed</div>
+        <h1>One note. Any skin.</h1>
+      </div>
+      <div>
+        <p class="lead">Webby ships with clear glass. Anyone can make their own skin, package it as one <code style="font-family:var(--f-mono);font-size:.82em">.webbyskin</code> file and drop it in. This board collects five directions from designers and engineers on X, plus a lab where you can try your own skin file now or download one to start from.</p>
+        <dl class="meta">
+          <dt>For</dt><dd>Note panels, the collapsed bar, the Library window, the voice orb and the app icon</dd>
+          <dt>Format</dt><dd>One <code style="font-family:var(--f-mono)">.webbyskin</code> file: a ZIP of <code style="font-family:var(--f-mono)">skin.json</code>, PNG images and WAV sounds (plan §5.4)</dd>
+          <dt>Seed</dt><dd><a href="https://x.com/uxuidesign/status/2100038127691669680" target="_blank" rel="noopener">@uxuidesign</a> quoting <a href="https://x.com/HeyLabii/status/2099744554446630949" target="_blank" rel="noopener">@HeyLabii, “Wait Until the Glass Starts Moving.”</a></dd>
+        </dl>
+      </div>
+    </div>
+  </header>
+</div>
+
+<nav class="topnav" aria-label="Sections">
+  <div class="wrap">
+    <a href="#directions">Directions</a><a href="#lab">Skin lab</a><a href="#ecosystem">Skins by anyone</a><a href="#glass">Glass</a><a href="#paper">Paper</a><a href="#graphite">Graphite</a><a href="#retro">Retro</a><a href="#hardware">Field</a>
+  </div>
+</nav>
+
+<div class="wrap">
+  <section id="directions" aria-labelledby="dir-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Directions</div>
+        <h2 id="dir-h">Five looks, one file format</h2>
+      </div>
+      <p>Each direction below is drawn by the same skin engine Webby would use, from a real <code style="font-family:var(--f-mono)">skin.json</code>. Glass is the built-in default. The others show how far a skin can go within the format: PNG images, colors, type and sounds, with no code.</p>
+    </div>
+    <div class="dirs">
+      <article class="dir-card" data-skin-card="webby.clear" data-app="light" data-text="Why a drop magnifies
+Index 1.5 for the glass test, not 1.33.">
+        <div class="dir-stage" data-bg="light"><div class="dir-note"></div></div>
+        <div class="dir-body">
+          <div class="label flat">Built-in · default</div>
+          <h3>Clear Glass</h3>
+          <p>A note is a lens, not a sheet of paper. The page stays visible through it.</p>
+          <div class="dir-actions"><a class="btn" href="#glass">References</a><button type="button" class="btn" data-try="webby.clear">Try it</button><button type="button" class="btn" data-download="webby.clear">Download</button></div>
+        </div>
+      </article>
+      <article class="dir-card" data-skin-card="webby.paper" data-app="light" data-text="Return library book
+Due Friday. Check the renewal desk on floor 2." data-slot="0">
+        <div class="dir-stage" data-bg="light"><div class="dir-note"></div></div>
+        <div class="dir-body">
+          <div class="label flat">Built-in (v1.1)</div>
+          <h3>Paper &amp; Tape</h3>
+          <p>A Webby note should look like real stationery stuck onto the web: grainy paper with honest edges, tape or a die-cut sticker holding it down, a short hard shadow and ink-coloured type, so it reads as an object sitting on top of the page rather than more site UI.</p>
+          <div class="dots" aria-hidden="true"><i style="background:#F6F1E6"></i><i style="background:#F7DC6F"></i><i style="background:#CDA978"></i><i style="background:#E9DFC6"></i><i style="background:#BFE6D2"></i><i style="background:#2B2621"></i></div>
+          <div class="dir-actions"><a class="btn" href="#paper">References</a><button type="button" class="btn" data-try="webby.paper">Try it</button><button type="button" class="btn" data-download="webby.paper">Download</button></div>
+        </div>
+      </article>
+      <article class="dir-card" data-skin-card="webby.graphite" data-app="dark" data-text="github.com/pulls
+Review the cache PR before standup." data-slot="0">
+        <div class="dir-stage" data-bg="dark"><div class="dir-note"></div></div>
+        <div class="dir-body">
+          <div class="label flat">Built-in (v1.1)</div>
+          <h3>Graphite</h3>
+          <p>Notes as quiet instrument panels: tuned near-black greys, 1 pt hairlines, mono metadata and a single signal colour, so a note reads like a pro tool&#x27;s inspector rather than a paper sticker.</p>
+          <div class="dots" aria-hidden="true"><i style="background:#0B0C0E"></i><i style="background:#16171A"></i><i style="background:#1D1E22"></i><i style="background:#2C2D32"></i><i style="background:#E4E4E7"></i><i style="background:#A1A1AA"></i></div>
+          <div class="dir-actions"><a class="btn" href="#graphite">References</a><button type="button" class="btn" data-try="webby.graphite">Try it</button><button type="button" class="btn" data-download="webby.graphite">Download</button></div>
+        </div>
+      </article>
+      <article class="dir-card" data-skin-card="io.github.jynlee7.desk-accessory" data-app="light" data-text="Desk accessory
+Call the printer people about toner." data-slot="0">
+        <div class="dir-stage" data-bg="light"><div class="dir-note"></div></div>
+        <div class="dir-body">
+          <div class="label flat">Sample skin</div>
+          <h3>Retro OS</h3>
+          <p>Each note becomes a small desk-accessory window from 1991–2005: a beveled or pinstriped title bar, flat opaque paper and LCD-style readouts, built entirely from crisp PNG chrome, so skins feel like the theme packs people used to trade.</p>
+          <div class="dots" aria-hidden="true"><i style="background:#CECECE"></i><i style="background:#F2F2F2"></i><i style="background:#E0E0E0"></i><i style="background:#000000"></i><i style="background:#FFF9CB"></i><i style="background:#4F8BC5"></i></div>
+          <div class="dir-actions"><a class="btn" href="#retro">References</a><button type="button" class="btn" data-try="io.github.jynlee7.desk-accessory">Try it</button><button type="button" class="btn" data-download="io.github.jynlee7.desk-accessory">Download</button></div>
+        </div>
+      </article>
+      <article class="dir-card" data-skin-card="io.github.jynlee7.field-instrument" data-app="light" data-text="Bench notes
+Recalibrate before the 3 pm run." data-slot="0">
+        <div class="dir-stage" data-bg="light"><div class="dir-note"></div></div>
+        <div class="dir-body">
+          <div class="label flat">Sample skin</div>
+          <h3>Field Instrument</h3>
+          <p>Each note is a small, well-made device: a warm moulded housing, a recessed display window, printed labels, and one safety-orange signal light, with a mechanical click when something switches on.</p>
+          <div class="dots" aria-hidden="true"><i style="background:#EDEBE6"></i><i style="background:#1C1C1B"></i><i style="background:#1A1A18"></i><i style="background:#ECEBE6"></i><i style="background:#FF5F1F"></i><i style="background:#B8410E"></i></div>
+          <div class="dir-actions"><a class="btn" href="#hardware">References</a><button type="button" class="btn" data-try="io.github.jynlee7.field-instrument">Try it</button><button type="button" class="btn" data-download="io.github.jynlee7.field-instrument">Download</button></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="lab" aria-labelledby="lab-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Skin lab · live</div>
+        <h2 id="lab-h">Bring your own skin</h2>
+      </div>
+      <p>Drop a <code style="font-family:var(--f-mono)">.webbyskin</code> or a <code style="font-family:var(--f-mono)">skin.json</code> here. The lab runs the checks Webby runs on import: allowed file names, size limits, real PNG headers, contrast and group fallback. Then it shows the install sheet. Download any skin to edit it and drop it back in; built-in skins download as an editable copy. Your file stays in this browser tab. Nothing is uploaded anywhere.</p>
+    </div>
+    <div class="lab" id="lab-root">
+      <div class="lab-preview">
+        <div class="lab-toolbar">
+          <div class="seg" role="group" aria-label="Appearance"><button type="button" data-app-toggle="light" aria-pressed="true">Light</button><button type="button" data-app-toggle="dark" aria-pressed="false">Dark</button></div>
+          <label class="tog"><input type="checkbox" id="lab-hc"> Increase contrast</label>
+          <label class="tog"><input type="checkbox" id="lab-rt"> Reduce transparency</label>
+        </div>
+        <div class="lab-stage" id="lab-stage" data-app="light">
+          <div class="lab-page" aria-hidden="true">
+            <div>
+              <div class="kick">Optics · Field notes</div>
+              <h4>Why a drop of water magnifies</h4>
+              <p>A drop on a page is a small, thick lens. Light leaving the paper bends as it enters the water and again as it leaves, so the letters under the drop look larger.</p>
+              <p>Water bends light less than glass: its refractive index is about 1.33, against about 1.5 for window glass.</p>
+              <p>At the rim the surface is steepest. That is where the image stretches most.</p>
+            </div>
+            <div class="art"></div>
+          </div>
+          <div id="lab-note" class="lab-note-host"></div>
+        </div>
+        <div class="lab-row"><span class="label flat">Palette</span><div id="lab-palette" class="pal-row"></div><div id="lab-sounds" class="snd-row" hidden></div></div>
+        <div id="lab-lib" class="lib"></div>
+        <p id="lab-meta" class="lab-meta"></p>
+      </div>
+      <div class="lab-side">
+        <label id="lab-drop" class="drop" for="lab-file">
+          <input type="file" id="lab-file" accept=".webbyskin,.zip,.json,application/zip,application/json">
+          <b>Drop a skin file here</b>
+          <span>or click to choose one</span>
+          <span class="formats">.webbyskin · .zip · skin.json · up to 25 MB</span>
+        </label>
+        <div class="label flat">Sample files</div>
+        <ul class="samples">
+          <li><a href="samples/frosted-kraft.webbyskin" download="Frosted Kraft (jynlee7).webbyskin">Frosted Kraft</a>: kraft paper and washi tape. It installs, and the checks skip the two macOS junk files inside.</li>
+          <li><a href="samples/neon-mistake.webbyskin" download="Neon Mistake (you).webbyskin">Neon Mistake</a>: broken on purpose, to show what the checks catch.</li>
+        </ul>
+        <div class="label flat">Installed skins</div>
+        <div id="lab-shelf" class="shelf"></div>
+        <div id="lab-sheet" class="sheet" hidden role="region" aria-labelledby="sheet-title">
+          <h3 id="sheet-title"></h3>
+          <div id="sheet-body" style="display:grid;gap:var(--s-3)"></div>
+          <div id="sheet-actions" class="sheet-actions"></div>
+        </div>
+        <div id="lab-editor" class="editor">
+          <div class="editor-head"><span class="label flat">skin.json</span><div><button type="button" id="lab-dup" class="btn">Duplicate to edit</button><button type="button" id="lab-copy" class="btn">Copy skin.json</button><button type="button" id="lab-download" class="btn">Download .webbyskin</button></div></div>
+          <p id="lab-edit-note" class="hint-text"></p>
+          <textarea id="lab-json" spellcheck="false" aria-label="skin.json for the selected skin"></textarea>
+          <div class="label flat">Checks</div>
+          <ul id="lab-diags" class="diags" aria-live="polite"></ul>
+        </div>
+        <div id="lab-live" class="sr-only" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ecosystem" aria-labelledby="eco-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Skins by anyone</div>
+        <h2 id="eco-h">What makes skin communities work</h2>
+      </div>
+      <p class="dir-lead">Customization ecosystems thrive when a skin is a small, legible file anyone can make from images and a few values, previewed on the real UI before it is applied, credited to everyone who made or mixed it, and safe to try because missing pieces fall back and any change can be undone.</p>
+    </div>
+    <p style="margin:0 0 var(--s-6);color:var(--ink-2);max-width:70ch">A .webbyskin already copies osu!&#x27;s fixed-filename PNG + JSON model, so Webby can borrow what osu!, Winamp and Obsidian proved: render a real note at import time, show credits and validation next to the Install button, and make fallback and rollback invisible. Notes are personal, so the install moment has to reassure (no code, never touches note content) as much as it delights.</p>
+    <ul class="patterns">
+      <li><h3>Preview on the real surface</h3><p>The skin is shown applied to the actual UI (playfield, player, client) before you commit, not as a swatch list.</p><p><b>For Webby:</b> The install sheet renders a live note (expanded, collapsed bar, decoration, palette chips) and a Library row with the incoming skin, with Light/Dark/High-contrast toggles and sound play buttons, before Install.</p><span class="seen">Seen in: Winamp Skin Museum opening each skin live in Webamp; osuck skin.ini editor gameplay preview; Omarchy/Aether preview modal; Discord custom themes recoloring the client live</span></li>
+      <li><h3>Fixed filenames make skins mixable</h3><p>Elements are addressed by well-known filenames, so people swap one PNG or merge two skins by copying files, and tools check files against the expected set.</p><p><b>For Webby:</b> Publish the canonical filename list, show &#x27;14 of 31 elements provided, rest from Default&#x27; on the install sheet, and add &#x27;Use this element from...&#x27; in the Library skin detail to mix installed skins.</p><span class="seen">Seen in: osu! skin folders (hitcircle@2x.png, cursor.png, applause.ogg) dropped into the osuck editor; osu!lazer skin editor sprite picker; &#x27;Mixer&#x27; credits on osuck skin listings</span></li>
+      <li><h3>Credits as metadata, with roles</h3><p>Authors travel with the skin and are shown wherever it appears, including roles such as creator and mixer, and forks name their source.</p><p><b>For Webby:</b> skin.json carries authors with roles, basedOn, version and license; the install sheet and Library show them; editing a copy adds the editor as Mixer and keeps the originals.</p><span class="seen">Seen in: osuck listings (Creator / Mixer / Gameplay); Obsidian detail pages (author, downloads); mnml credited as a fork of kepano&#x27;s Minimal</span></li>
+      <li><h3>Few tokens in, full look out</h3><p>A tiny set of inputs (a few colors, fonts, contrast) is enough, and the app derives everything else.</p><p><b>For Webby:</b> A valid skin can be three colors in skin.json; Webby derives borders, hover, header and high-contrast values from them, and any omitted group falls back to Default so beginner skins still look finished.</p><span class="seen">Seen in: Codex themes (accent, background, foreground, fonts, contrast); Discord (up to 5 colors); Ghostty generating 256 colors from a 16-color base</span></li>
+      <li><h3>Presets and Import live together</h3><p>Installed themes appear as rendered thumbnails with Import (and Copy/Export) in the same picker.</p><p><b>For Webby:</b> The Appearance popover is a grid of mini-notes rendered from each installed skin, ending with &#x27;Import Skin...&#x27;; each tile has Duplicate &amp; Edit, Reveal in Finder and Export.</p><span class="seen">Seen in: Xcode Presets popover with &#x27;Import...&#x27; at the bottom; Codex &#x27;Import&#x27; and &#x27;Copy theme&#x27; next to the theme menu</span></li>
+      <li><h3>Share as one file or one link</h3><p>A theme moves as a single file, a copyable string or a URL that opens the app&#x27;s own install flow.</p><p><b>For Webby:</b> Export always produces one .webbyskin; an optional webby://skin link downloads, validates and opens the same install sheet; nothing applies without the sheet.</p><span class="seen">Seen in: Winamp .wsz with [Download] [Share] links; Omarchy &#x27;paste the URL&#x27; installer and aether://apply deep links; Codex &#x27;Copy theme&#x27;</span></li>
+      <li><h3>Trust signals at the install moment</h3><p>Automated checks, disclosures and a report path are shown before install.</p><p><b>For Webby:</b> The sheet shows a validation summary (files, size, &#x27;images and sounds only, no code&#x27;, re-encoded images, sound length) plus warnings tied to filenames; any future gallery gets a Report button.</p><span class="seen">Seen in: Obsidian scorecards (scans of every version, &#x27;Review Passed&#x27;, disclosures); Winamp Skin Museum &#x27;Report as NSFW&#x27;</span></li>
+      <li><h3>Remix from anything</h3><p>Every theme can be opened in an editor, and remixes are a normal path rather than a hack.</p><p><b>For Webby:</b> &#x27;Duplicate &amp; Edit&#x27; copies the skin to a folder, records basedOn, opens it in Finder and pins a live preview note that hot-reloads as files change.</p><span class="seen">Seen in: Aether &#x27;Edit&#x27; beside &#x27;Apply&#x27;; osuck editor importing .osk/.zip/folders; mnml forked from Minimal</span></li>
+    </ul>
+    <div class="sec-head" style="margin-bottom:var(--s-4)"><div><div class="label">Proposed import flow</div><h2 style="font-size:24px">From file to note in six steps</h2></div><p>The lab above runs steps 2 to 4 in your browser. Webby would add the Undo toast, Update and Keep both handling, and webby:// links.</p></div>
+    <ol class="flow">
+      <li>One path for every entry point: double-click a .webbyskin, drop it on the Library window (the window shows a &#x27;Drop to preview skin&#x27; target), choose Import Skin... in the Appearance grid, or open a webby://skin link.</li>
+      <li>Validate off the main thread in a temp folder: ZIP limits (size, file count, no path traversal or symlinks), allowlist of skin.json + PNG + WAV, decode and re-encode images, check pixel caps and 9-slice insets, check schema version; unknown keys are ignored and listed.</li>
+      <li>Show the install sheet: a live note preview (expanded, collapsed, decoration) with Light/Dark/High-contrast toggles and sound play buttons; name, version, credits by role, and &#x27;N of 31 elements, rest from Default&#x27;.</li>
+      <li>List problems by filename: errors block install (corrupt PNG), warnings do not (no dark variant, so it falls back; low text contrast).</li>
+      <li>Choose Install, or Install &amp; Apply; if the same skin id exists, offer &#x27;Update 1.1 to 1.2&#x27; or &#x27;Keep both&#x27; and keep the old version for rollback.</li>
+      <li>After applying, show an Undo toast that restores the previous skin; the skin appears in the Library with credits, Reveal in Finder, Duplicate &amp; Edit and Export.</li>
+    </ol>
+    <div class="wall">
+      <article class="tile card" id="r-ecosystem-osu-skin-ini-editor">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/osuck_skins/status/1744320884486119462" target="_blank" rel="noopener">@osuck_skins</a><span>8 Jan 2024 · 80K views</span></div>
+          <p class="shows"><b>Shows</b>Web skin editor for osu!: a file-explorer window of a skin folder (hitcircle.png, approachcircle@2x.png, cursor.png, count1.png, applause.ogg) being dragged onto a dashed &#x27;click here or drag and drop to upload skin files&#x27; zone, with a live gameplay preview above and a tooltip noting uploaded files stay on the device.</p>
+          <p class="what">Community &#x27;visual skin.ini editor&#x27; for osu! with live gameplay preview, local custom-skin upload by drag and drop, random colors, and skin.ini import/export.</p>
+          <p class="take"><b>Take</b>Let people drop a whole skin folder onto an editor that maps fixed filenames to elements and shows a live note preview, all processed locally.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-osu-skin-credits">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/osuck_skins/status/2070079704598560947" target="_blank" rel="noopener">@osuck_skins</a><span>25 Jun 2026 · 1K views</span></div>
+          <p class="shows"><b>Shows</b>2x2 grid of the &#x27;teczowy&#x27; osu! skin in standard scenes: two gameplay shots with pink approach circles, the song-select screen and the results screen with a large green A grade.</p>
+          <p class="what">Skin release card listing aspect ratio, modes, size, release date and authors by role (sofram as Creator, MALISZEWSKI as Mixer), with the same four standard preview scenes every listing uses.</p>
+          <p class="take"><b>Take</b>Store credits with roles (creator, mixer, artist) in skin.json and auto-render a fixed set of preview scenes so every skin is comparable at a glance.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-winamp-skin-museum">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/captbaritone/status/1301551041784152064" target="_blank" rel="noopener">@captbaritone</a><span>3 Sep 2020</span></div>
+          <p class="shows"><b>Shows</b>Winamp Skin Museum in a browser: a dense mosaic of hundreds of Winamp skin screenshots with a search box and a Random button.</p>
+          <p class="what">Launch of the Winamp Skin Museum: infinite scroll through 65k skins with instant search; clicking one opens it live in Webamp with Download, Share and Report as NSFW links (seen at the end of the video).</p>
+          <p class="take"><b>Take</b>A gallery should open each skin as a working preview rather than a static image, and pair Download with Share and Report.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-zelda-winamp-skin">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/OldInternetFeel/status/2073562372245954780" target="_blank" rel="noopener">@OldInternetFeel</a><span>5 Jul 2026 · 48K views</span></div>
+          <p class="shows"><b>Shows</b>&#x27;ZeldaAmp III&#x27; Winamp skin: Legend of Zelda pixel-art overworld forms the player and equalizer, with heart containers, a magic meter and a &#x27;GAME OVER&#x27; playlist panel.</p>
+          <p class="what">A fan-made Zelda Winamp skin resurfacing in 2026 and drawing about 1.8k likes; pure bitmap art, no code.</p>
+          <p class="take"><b>Take</b>PNG-only skins can be wildly expressive, so give image slots real reach (decoration, header, collapsed bar), and plan for fan art that uses copyrighted characters.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-obsidian-community-scorecard">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/obsdmd/status/2054234821875146898" target="_blank" rel="noopener">@obsdmd</a><span>12 May 2026 · 510K views</span></div>
+          <p class="shows"><b>Shows</b>Obsidian Community detail page for &#x27;Minimal Theme Settings&#x27; by kepano: 1.5M downloads, purple &#x27;Add to Obsidian&#x27; button, two screenshots, Overview/Scorecard/Updates tabs and a 96% score with Health Excellent and Review Passed.</p>
+          <p class="what">Obsidian launched a directory for plugins and themes with author pages, screenshots, automated scans of every version, safety scorecards and capability disclosures.</p>
+          <p class="take"><b>Take</b>Put creator, popularity and an automatic validation verdict right next to the install button so trust is readable before anything is applied.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-xcode-theme-presets">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/DylanMcD8/status/2075986736211951964" target="_blank" rel="noopener">@DylanMcD8</a><span>11 Jul 2026 · 7K views</span></div>
+          <p class="shows"><b>Shows</b>Xcode Appearance settings with a Presets popover: a 3-column grid of rendered theme thumbnails (Standard, Sakura, Ember, Sunrise, Midnight, Neon Noir, Cobalt, Coral Reef, Emerald), Classic Presets below, and an &#x27;Import...&#x27; button at the bottom.</p>
+          <p class="what">A developer discovers Xcode&#x27;s new full color themes: a presets popover of miniature editor renders with Import in the same place.</p>
+          <p class="take"><b>Take</b>Show installed skins and &#x27;Import Skin...&#x27; in one visual grid, each tile a miniature note rendered from the skin itself.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-codex-import-copy-theme">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/OpenAIDevs/status/2032222631538409728" target="_blank" rel="noopener">@OpenAIDevs</a><span>12 Mar 2026 · 717K views</span></div>
+          <p class="shows"><b>Shows</b>Codex app Appearance settings: Light/Dark/System toggle, a code-diff theme preview, and a Dark theme section set to &#x27;Dracula&#x27; with Import and Copy theme links, accent/background/foreground hex fields, UI and code font fields, a translucent-sidebar toggle and a contrast slider.</p>
+          <p class="what">OpenAI added themes to the Codex app: pick built-ins, import themes you like, or share your own.</p>
+          <p class="take"><b>Take</b>Keep the core token set tiny and editable inline (accent, background, foreground, fonts, contrast) and put Copy and Import one click from the picker.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-discord-custom-themes">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/discord/status/1963695484587196735" target="_blank" rel="noopener">@discord</a><span>4 Sep 2025 · 1.2M views</span></div>
+          <p class="shows"><b>Shows</b>Discord client mockup washed in a teal-to-green gradient with a floating color picker holding two color stops; the whole UI recolors as the stops move.</p>
+          <p class="what">Discord launched Nitro custom themes: pick up to 5 colors and gradients and the entire client updates live.</p>
+          <p class="take"><b>Take</b>Constrain input to a few colors and recolor the real UI live while dragging, so the edit is the preview.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-obsidian-mnml-fork">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/linuz90/status/2090094649482588356" target="_blank" rel="noopener">@linuz90</a><span>19 Aug 2026 · 98K views</span></div>
+          <p class="shows"><b>Shows</b>Obsidian window using the mnml theme: quiet light-gray sidebar tree and a clean note with a TL;DR list, on a blue backdrop.</p>
+          <p class="what">A designer releases mnml, a quieter, more native-feeling fork of kepano&#x27;s Minimal theme, crediting the original in the post and repo.</p>
+          <p class="take"><b>Take</b>Make forking first-class: &#x27;Duplicate &amp; Edit&#x27; should record basedOn and the original authors automatically so remixes keep attribution.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-ecosystem-omarchy-aether-preview">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/iamdothash/status/2088308309476401242" target="_blank" rel="noopener">@iamdothash</a><span>14 Aug 2026 · 90K views</span></div>
+          <p class="shows"><b>Shows</b>Omarchy Themes site preview modal: a neon purple pyramid-desert wallpaper on the left; on the right five generated variants (Palette, Warm, Cool, Material, Aether), each with a swatch strip and Edit and Apply buttons.</p>
+          <p class="what">A site of 3,088 wallpapers, each with five generated theme variants, applied from the browser through a deep link or opened in the Aether editor to tweak.</p>
+          <p class="take"><b>Take</b>Offer variants plus both Apply and Edit from the preview; a URL-scheme handoff into the app is fine if it lands on the install sheet, never a silent apply.</p>
+        </div>
+      </article>
+    </div>
+    <div class="recipe"><div><span class="label">Risks</span><p>Safety: crafted ZIPs (bombs, path traversal, symlinks), malformed PNG/WAV aimed at decoders, huge images or long or loud sounds. Mitigate with a strict allowlist, size and pixel caps, decode in a limited helper and re-encode, clamp sound duration and volume, and no network fetches or fonts from inside skin.json. Name system fonts only, falling back when one is missing. Legal: fan skins routinely use copyrighted characters and art (Zelda Winamp skin, anime osu! skins). Local import is the user&#x27;s choice, but any official gallery needs a license field, original or licensed art for featured skins, and a takedown and report path. Quality: low-contrast or busy skins can make note text unreadable. Run a contrast check in the sheet, let high-contrast overrides win when the system Increase Contrast setting is on, and fall back to default text colors below a threshold. Longevity: themes that hook internals break on every update, as Spicetify themes do after Spotify updates. Keep element names and the schema stable and versioned (minAppVersion), migrate old skins, and fall back per element so a broken skin never blanks a note. UX and trust: links or double-clicks must never silently re-skin the app. Always show the sheet, keep Undo, and make sure sharing or exporting a skin can never include note content or screenshots of real notes.</p></div><div></div></div>
+  </section>
+
+  <section id="glass" aria-labelledby="glass-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Direction · Built-in default</div>
+        <h2 id="glass-h">Clear Glass</h2>
+      </div>
+      <p class="dir-lead">A note is a lens, not a sheet of paper. Each note is a drop of clear glass: you read the note, and the page stays visible through it. It's also the fallback for every other skin.</p>
+    </div>
+    <div class="dir-actions"><button type="button" class="btn" data-try="webby.clear">Try Clear Glass in the lab</button></div>
+  </section>
+
+  <section id="principles" aria-labelledby="p-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Clear Glass · Principles</div>
+        <h2 id="p-h">Five rules for the glass</h2>
+      </div>
+      <p>Each rule comes from at least one reference below. The chips link to them. Together they keep the glossy look in check: glass where it helps you read, and nothing extra elsewhere.</p>
+    </div>
+    <ul class="principles">
+      <li>
+        <h3>Lens, not sheet</h3>
+        <p>A note bends the page under it instead of covering it, so you keep your place. Text sits on a frosted inner layer, which keeps it readable over any page.</p>
+        <div class="refs"><a class="ref" href="#r-labii">@HeyLabii</a><a class="ref" href="#r-prifer">@AndrewPrifer</a></div>
+      </li>
+      <li>
+        <h3>One light, top left</h3>
+        <p>Every highlight on notes, buttons and the icon comes from the same source, at about 45° from the top left. A highlight that disagrees with the others looks like a sticker.</p>
+        <div class="refs"><a class="ref" href="#r-figma">@figma Light</a><a class="ref" href="#r-1000kb">@1000kilobytes</a></div>
+      </li>
+      <li>
+        <h3>Liquid only at the moments that matter</h3>
+        <p>Shapes morph on create, collapse and merge, and nowhere else. Typing, dragging, scrolling and menus respond instantly.</p>
+        <div class="refs"><a class="ref" href="#r-morph">@SwiftyAlex</a><a class="ref" href="#r-shadcn">@shadcn</a></div>
+      </li>
+      <li>
+        <h3>Readable before glossy</h3>
+        <p>Frost increases with the amount of text. Reduce Transparency and Increase Contrast switch the note to a solid surface. Every skin still has to pass the contrast floor.</p>
+        <div class="refs"><a class="ref" href="#r-tahoe">@flarup on Tahoe</a><a class="ref" href="#r-fishbowl">@Codelaby</a></div>
+      </li>
+      <li>
+        <h3>Refraction should do a job</h3>
+        <p>Glass can reveal things as well as decorate. Proposed: hold <code>⌥</code> over a note to make it fully clear and read the page underneath.</p>
+        <div class="refs"><a class="ref" href="#r-portal">@ty_kra_lab</a><a class="ref" href="#r-fold">@sentry_fka</a></div>
+      </li>
+    </ul>
+  </section>
+
+  <section id="wall" aria-labelledby="w-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Clear Glass · References</div>
+        <h2 id="w-h">From X: designers and engineers working in glass</h2>
+      </div>
+      <p>Posts by designers, design engineers and shader developers, from June 2025 to September 2026. Each card says what the post shows and links to it on X. Every card ends with “Take”: the one thing Webby should borrow.</p>
+    </div>
+
+    <div class="wall">
+      <article class="tile seed card" id="r-labii">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/HeyLabii/status/2099744554446630949" target="_blank" rel="noopener">@HeyLabii · seed</a><span>15 Sep 2026</span></div>
+          <p class="shows"><b>Shows</b>A clear glass droplet resting on the black word glass on white paper, with orange and blue fringes at its edge</p>
+          <p class="what">“Wait Until the Glass Starts Moving.” A 4K film: one droplet stretching across heavy black type on white paper, shared by @uxuidesign.</p>
+          <p class="take"><b>Take</b>The whole hero palette: bright paper, heavy black type, a single piece of glass with warm and cool fringes and a caustic in its shadow.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-prifer">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/AndrewPrifer/status/2056923983581446529" target="_blank" rel="noopener">@AndrewPrifer</a><span>20 May 2026 · 1.4M views</span></div>
+          <p class="shows"><b>Shows</b>A glass notification card over a vivid orange and teal wallpaper, refracting and tinting the colors behind it</p>
+          <p class="what">Liquid DOM: refraction, adaptive tint, adaptive specular highlight and dispersion on real HTML.</p>
+          <p class="take"><b>Take</b>The closest match to a Webby note over a busy page. Adaptive tint picks up the page's color, so the note belongs to the place it's pinned.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-figma">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/figma/status/2016198567631978909" target="_blank" rel="noopener">@figma</a><span>27 Jan 2026 · 1.1M views</span></div>
+          <p class="shows"><b>Shows</b>Figma's Glass panel with Light angle 26 degrees, Refraction, Depth, Dispersion, Frost and Splay sliders next to a glass 9:41 clock</p>
+          <p class="what">“Do more with Glass”: Light, Refraction, Depth, Dispersion, Frost and Splay as editable properties.</p>
+          <p class="take"><b>Take</b>The vocabulary for the skin format. These names map cleanly onto <code>surface</code> tokens and make glass skins easy to design in Figma.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-finder">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/TheAppleDesign/status/2027394686332387520" target="_blank" rel="noopener">@TheAppleDesign</a><span>27 Feb 2026 · 133K views</span></div>
+          <p class="shows"><b>Shows</b>A concept macOS Finder window with a frosted glass sidebar over a lake landscape and soft periwinkle folders</p>
+          <p class="what">“Liquid Glass on macOS should look like THIS.” A concept window with a frosted sidebar and quiet content.</p>
+          <p class="take"><b>Take</b>The Library window: a glass sidebar for workspaces and an almost opaque content pane where you read notes.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-ghostty">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/flarup/status/1936884227049406685" target="_blank" rel="noopener">@flarup</a><span>22 Jun 2025</span></div>
+          <p class="shows"><b>Shows</b>The Ghostty app icon as a purple glass tile with a dot-grid texture and a glowing ghost glyph</p>
+          <p class="what">Ghostty's Tahoe icon: “Liquid glass with layered specular effects. A mix of texture and translucency.”</p>
+          <p class="take"><b>Take</b>The app icon: a glass pane over a textured layer that stands in for the page. Texture gives glass something to bend.</p>
+        </div>
+      </article>
+
+      <figure class="tile quote" id="r-shadcn">
+        <blockquote>“Menus, alerts, dialogs. They open instantly. Some of the glass. Almost none of the liquid. Where work happens, the interface should feel instant.”</blockquote>
+        <figcaption>
+          <div class="who"><a href="https://x.com/shadcn/status/2096797264370950464" target="_blank" rel="noopener">@shadcn</a><span>7 Sep 2026 · 159K views</span></div>
+          <p class="take"><b>Take</b>The motion budget. Notes are a tool you work in, so the liquid motion goes into a few transitions only.</p>
+        </figcaption>
+      </figure>
+
+      <article class="tile card" id="r-search">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/thetirthparmar/status/2070221314041036928" target="_blank" rel="noopener">@thetirthparmar</a><span>25 Jun 2026 · MIT</span></div>
+          <p class="shows"><b>Shows</b>A glass search pill reading Hello over a painted illustration, stretching the colors behind it</p>
+          <p class="what">liquidglass-oss: WebGL refraction and chromatic aberration on a search field, nav bar and toggles.</p>
+          <p class="take"><b>Take</b>The collapsed note bar: one line in a pill, with refraction stretched along its length.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-morph">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/SwiftyAlex/status/1932779330977083516" target="_blank" rel="noopener">@SwiftyAlex</a><span>11 Jun 2025 · WWDC25</span></div>
+          <p class="shows"><b>Shows</b>Two glass capsules merging into one shape on a blue background</p>
+          <p class="what">SwiftUI morphing glass: put elements in a <code>GlassEffectContainer</code> and give each one a <code>.glassEffectID()</code>.</p>
+          <p class="take"><b>Take</b>The collapse and merge animation comes from the system API, so no custom shader is needed.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-jhey">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/jh3yy/status/2016253370424553508" target="_blank" rel="noopener">@jh3yy</a><span>27 Jan 2026 · 217K views</span></div>
+          <p class="shows"><b>Shows</b>A glass pill lens over white text on black, flipping and bending the words beneath it</p>
+          <p class="what">Liquid glass with CSS and SVG displacement maps. <code>backdrop-filter: url()</code> works only in Chromium. His later fix: use <code>filter</code> with synced displacement maps.</p>
+          <p class="take"><b>Take</b>The website and extension popup. Notes themselves are native panels, but the web needs this technique.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-fishbowl">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/Codelaby/status/2028435064980136420" target="_blank" rel="noopener">@Codelaby</a><span>2 Mar 2026</span></div>
+          <p class="shows"><b>Shows</b>An iPhone demo of a Metal glass shader with sliders for corner radius 16, thickness 5 and refractive index 1.5</p>
+          <p class="what">“Since Apple doesn't give us the fishbowl glass we want”: a Shadertoy shader ported to Metal, tuned to a clear base.</p>
+          <p class="take"><b>Take</b>Three numbers define the glass: corner radius 16, thickness 5, refractive index 1.5. Native Metal is an option if the system material looks too flat.</p>
+        </div>
+      </article>
+
+      <figure class="tile quote" id="r-1000kb">
+        <blockquote>“The specular highlights on those buttons are 0°, compared to what you see IRL in 26.”</blockquote>
+        <figcaption>
+          <div class="who"><a href="https://x.com/1000kilobytes/status/2056734658134778039" target="_blank" rel="noopener">@1000kilobytes</a><span>19 May 2026 · 116K views</span></div>
+          <p class="take"><b>Take</b>People notice light angles. Fix Webby's angle in one token so it can follow Apple's change in macOS 27, as <a href="https://x.com/LeakerApple/status/2056850708918583454" target="_blank" rel="noopener">@LeakerApple</a> also reported.</p>
+        </figcaption>
+      </figure>
+
+      <article class="tile card" id="r-portal">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/ty_kra_lab/status/2026334579091489103" target="_blank" rel="noopener">@ty_kra_lab</a><span>24 Feb 2026 · 38K views</span></div>
+          <p class="shows"><b>Shows</b>A phone showing a glass window that reveals a different photo as the phone tilts</p>
+          <p class="what">“Liquid Glass is often used as decoration, while refraction could become the core of the user experience.”</p>
+          <p class="take"><b>Take</b>Peek: a note that clears on demand so you can read the page beneath it.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-tahoe">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/flarup/status/1937043000410173813" target="_blank" rel="noopener">@flarup</a><span>23 Jun 2025 · 52K views</span></div>
+          <p class="shows"><b>Shows</b>The System Settings gear icon in Catalina, Sequoia and Tahoe, getting flatter and less detailed</p>
+          <p class="what">“Most are a downgrade. They are less clear, not as well crafted and arbitrarily restricted.”</p>
+          <p class="take"><b>Take</b>The warning. Glass that loses detail loses meaning, so the glyph and the text stay sharp and the glass stays behind them.</p>
+        </div>
+      </article>
+
+      <article class="tile card" id="r-fold">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/sentry_fka/status/2097901446108688583" target="_blank" rel="noopener">@sentry_fka</a><span>10 Sep 2026 · 4M views</span></div>
+          <p class="shows"><b>Shows</b>A foldable phone half-closed, with the home screen darkening where the hinge turns away from the light</p>
+          <p class="what">“More than wobbly glowy glass buttons, this is skeuomorphism at its finest.” The screen darkens exactly where the fold turns away from the light.</p>
+          <p class="take"><b>Take</b>Shading should follow shape. A highlight has to explain an edge, or it shouldn't be there.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="studies" aria-labelledby="s-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Clear Glass · Material studies</div>
+        <h2 id="s-h">The direction applied to Webby</h2>
+      </div>
+      <p>These are real CSS glass, not images. In the first study, a note is pinned to a page with the default <em>This page</em> scope. It has one light, a frosted body, a spectral rim and a soft shadow. Turn on dark mode to see the dark material.</p>
+    </div>
+
+    <div class="page">
+      <div class="bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="url">fieldnotes.example/optics/why-a-drop-magnifies</div>
+      </div>
+      <div class="body">
+        <div>
+          <div class="kicker">Optics · Field notes</div>
+          <h4>Why a drop of water magnifies</h4>
+          <p>A drop on a page is a small, thick lens. Light leaving the paper bends as it enters the water and again as it leaves, so the letters under the drop look larger and pushed toward its edge.</p>
+          <p>Water bends light less than glass. Its refractive index is about 1.33, against about 1.5 for window glass, so a glass bead of the same shape magnifies more.</p>
+          <p>At the rim the surface is steepest. That is where the image stretches most, and where white light splits into a thin warm and cool fringe.</p>
+        </div>
+        <div class="photo" aria-hidden="true"></div>
+      </div>
+      <div class="note glass note-a">
+        <div class="nh"><span class="scope">This page</span><span class="btns" aria-hidden="true"><span>⌄</span><span>⋯</span></span></div>
+        <p>Index 1.5 for the glass test, not 1.33. Water looks too weak on dense text. <span class="tag">#webby-ui</span></p>
+      </div>
+    </div>
+
+    <div class="scale" style="margin-top: var(--s-6)">
+      <div class="cell">
+        <div class="bed"><div class="photo" aria-hidden="true"></div><div class="txt" aria-hidden="true">Busy page</div>
+          <div class="note glass clear"><div class="nh"><span class="scope">Clear</span></div><p>Buy oat milk.</p></div>
+        </div>
+        <h3>Clear</h3>
+        <p>For notes of three lines or fewer. Mostly refraction with a little frost: <code>frost 2</code>, fill at 45% of the default.</p>
+      </div>
+      <div class="cell">
+        <div class="bed"><div class="photo" aria-hidden="true"></div><div class="txt" aria-hidden="true">Busy page</div>
+          <div class="note glass"><div class="nh"><span class="scope">Frost · default</span></div><p>Compare against last quarter's pricing page before Friday. Check the footnote on annual plans.</p></div>
+        </div>
+        <h3>Frost</h3>
+        <p>The default. The page shows as color and shape, and the text stays fully legible: <code>frost 18</code>, <code>saturate 180%</code>.</p>
+      </div>
+      <div class="cell">
+        <div class="bed"><div class="photo" aria-hidden="true"></div><div class="txt" aria-hidden="true">Busy page</div>
+          <div class="note glass solid"><div class="nh"><span class="scope">Solid</span></div><p>Compare against last quarter's pricing page before Friday. Check the footnote on annual plans.</p></div>
+        </div>
+        <h3>Solid</h3>
+        <p>Used automatically when Reduce Transparency or Increase Contrast is on. It is the skin's <code>highContrast</code> surface. No blur and no rim.</p>
+      </div>
+    </div>
+
+    <div class="studies">
+      <div class="study">
+        <div class="label">Motion · collapse</div>
+        <div class="morph-bed">
+          <div class="photo" aria-hidden="true"></div>
+          <div class="mnote glass" id="mnote">
+            <span class="first">Release checklist</span>
+            <div class="body">Notarize build · update appcast · check the Chrome extension ID matches the host manifest.</div>
+          </div>
+        </div>
+        <button class="btn" id="collapse" type="button" aria-pressed="false" aria-controls="mnote">Collapse note</button>
+        <p>A spring with slight overshoot (about 480 ms) on size and corner radius, used only here and on create and merge. With Reduce Motion on, the change is instant.</p>
+      </div>
+      <div class="study">
+        <div class="label">Icon · sketch</div>
+        <div class="icon-row">
+          <div class="app-icon" aria-label="App icon sketch: a tilted glass note over a dot grid" role="img"><span class="caustic"></span><span class="pane"><i></i><i></i><i></i></span></div>
+          <div class="app-icon small" aria-hidden="true"><span class="caustic"></span><span class="pane"><i></i><i></i><i></i></span></div>
+        </div>
+        <p>A tilted glass note over a dot grid that stands in for the page, with an amber caustic where the light passes through. It follows the Ghostty approach of glass plus texture and keeps the glyph sharp, as Flarup argues.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tokens" aria-labelledby="t-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Clear Glass · Tokens</div>
+        <h2 id="t-h">Values for the <code style="font-family:var(--f-mono);font-size:.7em;letter-spacing:0">webby.clear</code> skin</h2>
+      </div>
+      <p>Proposed values for the built-in skin, in the <code>skin.json</code> format from plan §5.4.2. Tints are glass fills, shown here over stripes so you can see how much shows through.</p>
+    </div>
+
+    <div class="tokens">
+      <div>
+        <div class="swatches">
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(255,255,255,.5)"></div></div><span class="name">Clear</span><code>#FFFFFF80 / #16181DB8</code></div>
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(255,200,107,.4)"></div></div><span class="name">Amber</span><code>#FFC86B66 / #FFB3472E</code></div>
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(255,157,181,.4)"></div></div><span class="name">Rose</span><code>#FF9DB566 / #FF7A9A2E</code></div>
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(143,227,184,.4)"></div></div><span class="name">Mint</span><code>#8FE3B866 / #4FD69A29</code></div>
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(147,197,255,.4)"></div></div><span class="name">Sky</span><code>#93C5FF66 / #5AA9FF2E</code></div>
+          <div class="sw"><div class="chip"><div class="under"></div><div class="glass" style="--fill: rgba(195,174,255,.4)"></div></div><span class="name">Lilac</span><code>#C3AEFF66 / #A98BFF2E</code></div>
+        </div>
+
+        <div class="type-spec">
+          <div class="row"><span class="label flat">Display</span><span class="disp">Notes that come back.</span></div>
+          <div class="row"><span class="label flat">Note text</span><span class="text">SF Pro Text, 14 on 20. The skin's <code style="font-family:var(--f-mono);font-size:12px">typography</code> group, with weight regular and line spacing 3.</span></div>
+          <div class="row"><span class="label flat">Scope</span><span class="mono">This page · This path and below · Whole site · Just this tab · This app</span></div>
+        </div>
+      </div>
+
+      <div class="code-wrap">
+        <p>The full <code>skin.json</code> for Clear is in the lab. Open it, select <b>Duplicate to edit</b>, and change any value to see the note update.</p>
+        <p>Fill opacity starts at the contrast floor. Over any page, black text on white glass needs at least 50% fill to keep 4.5:1, and light text on dark glass needs about 62%. The engine computes this for every skin and raises the opacity when a skin goes below it.</p>
+        <div class="dir-actions"><button type="button" class="btn" data-try="webby.clear">Open Clear in the lab</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="rules" aria-labelledby="d-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Clear Glass · Guardrails</div>
+        <h2 id="d-h">Do and don't</h2>
+      </div>
+      <p>Most glass interfaces fail because of readability. These guardrails keep that from happening.</p>
+    </div>
+    <div class="rules">
+      <div class="do">
+        <div class="label flat">Do</div>
+        <ul>
+          <li>Keep text on frost, and save visible refraction for the rim and the collapsed bar.</li>
+          <li>Light every highlight from the top left: notes, buttons, the voice orb and the icon.</li>
+          <li>Morph only on create, collapse and merge.</li>
+          <li>Switch to the solid surface when Reduce Transparency or Increase Contrast is on.</li>
+          <li>Let the tint pick up the page's color, then limit its saturation so notes don't look like ads.</li>
+        </ul>
+      </div>
+      <div class="dont">
+        <div class="label flat">Don't</div>
+        <ul>
+          <li>Put body text over refraction that hasn't been frosted.</li>
+          <li>Animate typing, dragging, scrolling or menus.</li>
+          <li>Stack glass on glass. A note's menu over a note needs more frost, or it becomes unreadable.</li>
+          <li>Add gloss to flat shapes. A highlight has to explain an edge.</li>
+          <li>Use rainbow dispersion on anything smaller than the note's own edge.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div>
+        <div class="label">Platform note</div>
+        <p>Webby targets macOS 14 and later, but native Liquid Glass (<code>glassEffect</code>, <code>GlassEffectContainer</code>, <code>NSGlassEffectView</code>) needs macOS 26. On macOS 26 and later, notes would use system glass. That would reverse plan decision 21, which keeps Liquid Glass off note bodies because the HIG keeps it out of the content layer. On 14 and 15, they would fall back to the skin's <code>NSVisualEffectView</code> material with the drawn rim and sheen. Either way, the direction has to look right without true refraction.</p>
+      </div>
+      <div>
+        <div class="label">Open questions</div>
+        <ul>
+          <li>Should <code>surface.material</code> get a <code>glass</code> value, with a defined fallback on macOS 14 and 15?</li>
+          <li>Should the light angle and rim fringe be skin tokens or fixed by the app, so every skin agrees with the system light?</li>
+          <li>Is Peek (hold <code>⌥</code> to clear a note) worth a global key, given notes are panels above Chrome?</li>
+          <li>How much tint pick-up is allowed before a note stops looking like Webby's?</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="paper" aria-labelledby="paper-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Direction · Built-in (v1.1)</div>
+        <h2 id="paper-h">Paper &amp; Tape</h2>
+      </div>
+      <p class="dir-lead">A Webby note should look like real stationery stuck onto the web: grainy paper with honest edges, tape or a die-cut sticker holding it down, a short hard shadow and ink-coloured type, so it reads as an object sitting on top of the page rather than more site UI.</p>
+    </div>
+    <p style="margin:0;color:var(--ink-2);max-width:70ch">Webby&#x27;s core idea is literally sticking a note onto a page, site, tab or app and finding it there again. Tape, deckled edges and a lifted shadow make it obvious at a glance that the note is attached on top and is not part of the website, on any background.</p>
+    <div class="spec">
+      <div><span class="label flat">Palette</span><div class="chips"><span class="chip" title="fill (default note, light)"><i style="background:#F6F1E6"></i>#F6F1E6 · Cotton paper</span><span class="chip" title="fill (classic sticky)"><i style="background:#F7DC6F"></i>#F7DC6F · Canary pad</span><span class="chip" title="fill / collapsed tab"><i style="background:#CDA978"></i>#CDA978 · Kraft</span><span class="chip" title="tape (about 80% alpha)"><i style="background:#E9DFC6"></i>#E9DFC6 · Masking tape</span><span class="chip" title="tape / palette fill"><i style="background:#BFE6D2"></i>#BFE6D2 · Washi mint</span><span class="chip" title="text (light)"><i style="background:#2B2621"></i>#2B2621 · Graphite</span><span class="chip" title="caret / links / handwriting accent"><i style="background:#24357A"></i>#24357A · Ballpoint blue</span><span class="chip" title="accent (stamp ink, ruled margin, Library accent)"><i style="background:#E5574B"></i>#E5574B · Margin red</span><span class="chip" title="ruled and grid lines inside the note-body PNG"><i style="background:#BBD0EA"></i>#BBD0EA · Rule blue</span><span class="chip" title="selection (about 45% alpha)"><i style="background:#FFE800"></i>#FFE800 · Highlighter</span><span class="chip" title="accent (decoration and voice orb only)"><i style="background:#FF48B0"></i>#FF48B0 · Riso fluoro pink</span><span class="chip" title="fill (dark)"><i style="background:#24211D"></i>#24211D · Carbon paper</span><span class="chip" title="text (dark)"><i style="background:#EDE6D6"></i>#EDE6D6 · Chalk</span><span class="chip" title="shadow (14–20% alpha, short offset)"><i style="background:#3B2F22"></i>#3B2F22 · Desk shadow</span></div></div>
+      <div><span class="label flat">Type</span><p><b>Display</b> Noteworthy or Bradley Hand (macOS built-in). Optional Google Fonts: Caveat or Kalam</p><p><b>Body</b> Charter, with Iowan Old Style or New York as fallbacks (macOS built-in)</p><p><b>Mono</b> American Typewriter (macOS built-in). Optional Google Fonts: Courier Prime or IBM Plex Mono</p></div>
+      <div><span class="label flat">Materials</span><p>Off-white cotton or laid paper with fine fibres and a very faint fold line. Pastel sticky-pad stock with slightly irregular edges. Translucent masking or washi tape with toothed torn ends. Kraft-brown tabs. Die-cut vinyl stickers with a white border of about 3 pt. Perforated postage-stamp edges. Ruled lines with a red margin. Riso halftone and misregistration go in decoration only, never behind text.</p></div>
+      <div><span class="label flat">Motion</span><p>The skin format has no motion fields, so these are app-level suggestions. A new note settles with a 1–2° tilt and the shadow tightens over about 120 ms, like pressing it down. On drag the note lifts and the shadow lengthens. When a note is moved, a faint glue-residue ghost could stay briefly at its old anchor (see the DannPetty ref). Deleting could crumple the note instead of fading it (see the jhey crumple ref). Keep every effect under 250 ms and turn them off when Reduce Motion is on.</p></div>
+      <div><span class="label flat">Sound</span><p>Quiet, short, dry, mono WAVs at 44.1 kHz, about −20 LUFS. note-create.wav: a short masking-tape tear followed by a palm press (about 220 ms). voice-start.wav: a soft rubber-stamp thunk (about 120 ms). voice-stop.wav: two pencil taps on paper (about 150 ms). No music, no reverb tails.</p></div>
+    </div>
+    <div class="wall">
+      <article class="tile card" id="r-paper-jhey-sticker-peel">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/jh3yy/status/2113040509966905792" target="_blank" rel="noopener">@jh3yy</a><span>21 Oct 2026 · 147K views</span></div>
+          <p class="shows"><b>Shows</b>Browser demo called stick.er on a white grid page. A holographic &#x27;VI&#x27; sticker is half peeled, its grey adhesive back curling up. Around it are die-cut stickers with glitter and white borders: a bear holding a red balloon, a lightning bolt and a pink heart.</p>
+          <p class="what">Jhey&#x27;s CSS/WebGL sticker playground, with separate materials (holo, glitter, vinyl), peel-off curls, sounds and wear marks.</p>
+          <p class="take"><b>Take</b>Treat the decoration slot as a real die-cut sticker: a white border of about 3 pt, a tight shadow and one material per skin, paired with a peel or press sound for note-create.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-dannpetty-sticky-residue">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/DannPetty/status/2112945791451193459" target="_blank" rel="noopener">@DannPetty</a><span>21 Oct 2026 · 11K views</span></div>
+          <p class="shows"><b>Shows</b>Dark portfolio grid of project cards. One card has been dragged off to the left, leaving a speckled grey ghost of its outline and content where it used to sit.</p>
+          <p class="what">Dann Petty&#x27;s portfolio leaves a faint &#x27;sticky residue&#x27; outline wherever a card is lifted and moved.</p>
+          <p class="take"><b>Take</b>An app-level idea for Webby: when a note is moved or re-anchored, leave a brief glue-residue ghost at the old spot so the note feels physically stuck to the page.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-paper-shader-deckle-labels">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/stephenhaney/status/2105007065106419936" target="_blank" rel="noopener">@stephenhaney</a><span>29 Sep 2026 · 37K views</span></div>
+          <p class="shows"><b>Shows</b>Crumpled blue-ruled graph paper with a collage of paper labels: a pinking-shear starburst reading NOW, a torn strip reading AVAILABLE, a perforated stamp of the Paper logo, and a stamp-edged card with tool icons reading &#x27;On Paper&#x27;.</p>
+          <p class="what">Launch of Paper&#x27;s rebuilt open-source paper shader, with fold lines, wrinkles, crumples, stripes, fibre and grain, shown as a cut-paper collage.</p>
+          <p class="take"><b>Take</b>Bake the note-body 9-slice from output like this: faint fibre grain in the tiled centre, a pinked or deckled edge in the slices, and graph paper as an &#x27;index&#x27; palette variant.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-holdmynotes-edge-tabs">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/nullbytes00/status/2093755659628245221" target="_blank" rel="noopener">@nullbytes00</a><span>29 Aug 2026 · 209K views</span></div>
+          <p class="shows"><b>Shows</b>macOS desktop with pastel sticky notes docked on the right screen edge as vertical tabs labelled OFFICE and GROCERI. A mint &#x27;Groceries&#x27; note slides out, showing a handwritten list: apple, 4x banana, dry fruits, peanuts.</p>
+          <p class="what">Hold My Notes, an indie Mac sticky-notes app whose notes sit on the screen edge as labelled index tabs and peek out on hover.</p>
+          <p class="take"><b>Take</b>Make Webby&#x27;s collapsed bar an index tab or a tape strip with the first line written on it, so a collapsed note still reads as paper, not as a toolbar.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-handwriting-font-lined-paper">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/claudeai/status/2111177838208377213" target="_blank" rel="noopener">@claudeai</a><span>16 Oct 2026 · 589K views</span></div>
+          <p class="shows"><b>Shows</b>Lined notebook page with a double red margin line. A blue ballpoint handwritten heading reads &#x27;Keep only the most typical ones&#x27;, above rows of handwritten samples of the letters a, d, e, g and r with their counts.</p>
+          <p class="what">A demo that turns 120 photographed notebook pages into a working handwriting font, presented entirely on ruled paper.</p>
+          <p class="take"><b>Take</b>Borrow the exercise-book look (pale blue rules, red margin, ballpoint-blue ink) for a ruled palette, and keep handwriting for titles or the collapsed line, with a readable serif for body text.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-riso-plugin-ez200">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/pavlikgavrik/status/2070067556715516014" target="_blank" rel="noopener">@pavlikgavrik</a><span>25 Jun 2026 · 28K views</span></div>
+          <p class="shows"><b>Shows</b>Figma plugin styled like a print-shop machine labelled EZ-200. It shows a teal and pink halftone photo of a statue, a grid of risograph ink swatches, four black knobs labelled dot size, offset, strength and texture, and an underlined Convert button.</p>
+          <p class="what">Pavel Haimi&#x27;s Figma risograph plugin, which uses real riso ink colour profiles and outputs misregistered halftone.</p>
+          <p class="take"><b>Take</b>Take accents from real riso inks (fluoro pink, blue, yellow, teal) and keep halftone and misregistration to the decoration and voice-orb frames, never behind text.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-figjam-washi-tape">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/keeyeny/status/1509948118657163267" target="_blank" rel="noopener">@keeyeny</a><span>1 Apr 2022</span></div>
+          <p class="shows"><b>Shows</b>Six washi tape strips with zigzag torn ends: a UI-button pattern reading &#x27;Iterate&#x27;, green squiggle arrows, yellow suns, pink arrows, red squares on cream, and orange moon phases. Beside them, a FigJam toolbar holds a roll of Shiba-patterned tape.</p>
+          <p class="what">Keeyen&#x27;s washi tape designs for the FigJam washi tape launch, with patterns drawn from the editor&#x27;s own UI elements. It&#x27;s from 2022, older than the other refs, but the best tape reference found.</p>
+          <p class="take"><b>Take</b>Model the tape decoration on these strips: toothed torn ends, one quiet repeating pattern, and semi-translucent so the page shows through.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-jhey-crumple-discard">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/jh3yy/status/2093865435603050655" target="_blank" rel="noopener">@jh3yy</a><span>30 Aug 2026 · 47K views</span></div>
+          <p class="shows"><b>Shows</b>A &#x27;Discard draft?&#x27; dialog in the middle of being crumpled: the white card is crushed into faceted paper folds and its red Discard button is crinkled. A dark debug panel with a crumple slider sits in the corner.</p>
+          <p class="what">Jhey&#x27;s WebGL experiment that crumples a real HTML dialog into a paper ball when you discard it.</p>
+          <p class="take"><b>Take</b>A paper-true way to delete a note: crumple it instead of fading it out. This is an app-level feature; the current skin format has no delete animation or delete sound.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-digital-stamp-collection">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/codrops/status/2064331146956046759" target="_blank" rel="noopener">@codrops</a><span>9 Jun 2026 · 10K views</span></div>
+          <p class="shows"><b>Shows</b>Off-white postage stamps with perforated edges scattered at angles on a light grid. Each is printed in a single vermilion ink: Turismo en Uruguay with a compass rose, 50th Anniversary, 1779, 38, and a key emblem.</p>
+          <p class="what">Codrops feature on an interactive digital stamp collection with perforated stamps, postcards, shaders and a loupe for close inspection.</p>
+          <p class="take"><b>Take</b>Single-ink stamp styling (perforated edge, one vermilion ink on cream) works well as an alternate decoration and as the Library&#x27;s red &#x27;stamped&#x27; accent.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-paper-excalidraw-sticky-note">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/excalidraw/status/2098076009027260626" target="_blank" rel="noopener">@excalidraw</a><span>10 Sep 2026 · 9K views</span></div>
+          <p class="shows"><b>Shows</b>Excalidraw canvas under its toolbar, showing a square canary-yellow sticky note with a slightly wobbly edge. It reads &#x27;this is a sticky n&#x27; in a hand-drawn monospace font, with a small &#x27;10 Sep&#x27; date in the corner and a hard offset shadow at the bottom right.</p>
+          <p class="what">Excalidraw shipping native sticky notes, with a hand-drawn wobble, a hard offset shadow and an automatic date stamp.</p>
+          <p class="take"><b>Take</b>A baseline for the default Paper skin: canary fill, nearly square corners, a short hard offset shadow instead of a soft glow, and a hint of hand-drawn irregularity in the 9-slice edge.</p>
+        </div>
+      </article>
+    </div>
+    <div class="recipe">
+      <div><span class="label">As a .webbyskin</span><p>surface: fill #F6F1E6 at alpha 1.0. Set material to none, because paper is opaque and vibrancy breaks the illusion. note-body.png is a 9-slice at @2x, 192×192 px, with insets of 14 pt on every side. Draw the edge slices with a subtle deckle or pinked edge plus 1 px of fibre fray. Tile the centre slice (stretching smears the fibres). The centre is a seamless neutral grey grain tile at 3–4% luminance variance, marked tintable by palette so every note colour keeps the same grain. Other surface values: cornerRadius 2, border 0 (the edge lives in the PNG), shadow soft (aim for a short 1–2 pt offset look, not a glow), padding 14, text #2B2621, selection #FFE800 at 45%, caret #24357A. typography: Charter 14 pt, regular weight, lineSpacing 1.35. A &#x27;Hand&#x27; variant skin uses Noteworthy 15. header: 20 pt with a 3-slice header.png that looks like the glued top of a tear-off pad: a slightly darker band with a faint perforation line. Icons sit on it. collapsed: height 26, showsFirstLine true. collapsed.png is a 3-slice kraft or masking-tape strip with toothed torn ends, text #2B2118, so a collapsed note becomes a tape tab or index tab. decoration: tape.png at 96×28 pt (192×56 px), a semi-translucent masking-tape strip with torn ends, anchored top-centre at offset y −10 and rotated −3°, so it sits above the text and stays out of the icons. Sibling skins swap in a die-cut sticker (40×40) or a perforated stamp (48×56) as the single decoration. icons: 16 pt template PNGs drawn with a slightly wobbly 1.5 pt pencil line: a folded-corner collapse icon, an unfold expand icon, a scribbled x for close, and three inked dots for more. palette: 10 light/dark pairs: Cotton #F6F1E6/#24211D, Canary #F7DC6F/#4A3F17, Kraft #CDA978/#3A2C1D, Mint #BFE6D2/#1E3A2E, Sky #C9DDF5/#1D2A3F, Blush #F8C9D6/#41222D, Lilac #DCD0F2/#2D2540, Peach #F9CFA6/#40291A, Graph #F4F7FB/#1E2329 (with the blue grid baked into a palette-specific PNG only if per-palette images are supported, otherwise keep it plain), Riso pink #FFC2DF/#4A1F35. library: accent #E5574B, sidebar material sidebar, the flattest card style, so note colours read like index cards in a box. voiceOrb: 128×128 px frames at 12 fps in a riso style, two misregistered inks (fluoro pink #FF48B0 and blue #0078BF) as halftone dots. idle is a slow 6-frame breathing stamp ring. listening is an 8-frame pencil circle that draws itself on. thinking is an 8-frame rotating date-stamp wheel. speaking is a 6-frame ink blot whose halftone dots swell with level. sounds: the three WAVs described above. ~dark: note-body~dark.png is charcoal &#x27;carbon paper&#x27; grain at half the contrast, and tape~dark.png is a darker, more transparent tape. Dark fill is #24211D and text is #EDE6D6. highContrast: replace the grain with a flat fill (#FFF8E7 light, #000000 dark), text #111111 or #FFFFFF, border 2, shadow system, and hide or simplify the decoration.</p><div class="dir-actions"><button type="button" class="btn primary" data-try="webby.paper">Open Paper &amp; Tape in the lab</button><button type="button" class="btn" data-download="webby.paper">Download .webbyskin</button></div></div>
+      <div><span class="label">Risks</span><p>1. Grain and fibres under text lower legibility. Keep the centre tile at 4% luminance variance or less, put the character in the edges and tape, and check the contrast floor against the darkest grain pixel, not the average fill. 2. Handwriting fonts slow reading and lack glyphs outside Latin, so keep them opt-in or limited to titles. 3. A tape or sticker decoration can cover the first line or the icons. Anchor it above the top edge and test on short, collapsed and narrow notes. 4. Twee scrapbook clutter: use one decoration per skin, a muted base palette, and save riso fluoro for accents, never as text colour. 5. Dark mode paper rarely convinces. Use &#x27;carbon paper&#x27; or charcoal stock, not inverted cream. 6. Tile seams and @2x blur: author seamless 256 px tiles at @2x and check them at both scales. 7. Multiply-tinting the grain can muddy pale palette colours, so author the grain as mid-grey with alpha. 8. Several refs are web or WebGL motion demos (peel, residue, crumple) that a static skin can&#x27;t express. They describe app features to consider, not skin settings.</p><p>A skin can&#x27;t ship font files, so it should default to fonts bundled with macOS and list Google Fonts only as optional installs. Use handwriting faces for short text (a one-line note, the collapsed bar or a &#x27;Hand&#x27; variant skin) and never as the default for long notes.</p></div>
+    </div>
+  </section>
+
+  <section id="graphite" aria-labelledby="graphite-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Direction · Built-in (v1.1)</div>
+        <h2 id="graphite-h">Graphite</h2>
+      </div>
+      <p class="dir-lead">Notes as quiet instrument panels: tuned near-black greys, 1 pt hairlines, mono metadata and a single signal colour, so a note reads like a pro tool&#x27;s inspector rather than a paper sticker.</p>
+    </div>
+    <p style="margin:0;color:var(--ink-2);max-width:70ch">A note pinned over a busy web page or app has to be dense, legible and calm, and Graphite keeps it there. Small mono headers (&#x27;github.com/pulls · 3h ago&#x27;) and keyboard legends suit people who live in Linear, Raycast and terminals, and those are the people most likely to leave notes on tools.</p>
+    <div class="spec">
+      <div><span class="label flat">Palette</span><div class="chips"><span class="chip" title="background"><i style="background:#0B0C0E"></i>#0B0C0E · Carbon</span><span class="chip" title="fill"><i style="background:#16171A"></i>#16171A · Graphite</span><span class="chip" title="fill-raised"><i style="background:#1D1E22"></i>#1D1E22 · Lifted graphite</span><span class="chip" title="border"><i style="background:#2C2D32"></i>#2C2D32 · Hairline</span><span class="chip" title="text"><i style="background:#E4E4E7"></i>#E4E4E7 · Bone</span><span class="chip" title="text-secondary"><i style="background:#A1A1AA"></i>#A1A1AA · Ash</span><span class="chip" title="text-tertiary"><i style="background:#8B8B93"></i>#8B8B93 · Smoke</span><span class="chip" title="accent"><i style="background:#5E9BFF"></i>#5E9BFF · Signal blue</span><span class="chip" title="status"><i style="background:#F5A524"></i>#F5A524 · Amber</span><span class="chip" title="fill-light"><i style="background:#FAFAFA"></i>#FAFAFA · Paper</span><span class="chip" title="text-light"><i style="background:#18181B"></i>#18181B · Ink</span><span class="chip" title="shadow (soft, 40% alpha, 12 pt blur, 4 pt y)"><i style="background:#000000"></i>#000000 · Shadow</span></div></div>
+      <div><span class="label flat">Type</span><p><b>Display</b> SF Pro Display Semibold (Apple system); Google alternative: Geist</p><p><b>Body</b> SF Mono 12.5–13 pt Regular for the signature skin, or SF Pro Text 13 pt in a &#x27;Graphite Sans&#x27; variant for long notes; Google alternatives: Geist Mono / Geist, JetBrains Mono, IBM Plex Mono</p><p><b>Mono</b> SF Mono (system monospaced, with Menlo as fallback): tabular figures for times and counts</p></div>
+      <div><span class="label flat">Materials</span><p>Opaque, not glass: material &#x27;none&#x27; on note surfaces so the page behind never smears into the text. Depth comes from three tuned greys (#0B0C0E, #16171A, #1D1E22), a 1 pt border at about 10% white, and a 1 px inner top highlight at about 5% white baked into the 9-slice. A 2–3% blue-noise grain is baked into the note-body centre and tiled, never stretched, so large notes stay crisp. The Library sidebar may use the &#x27;sidebar&#x27; material, but keep it dim.</p></div>
+      <div><span class="label flat">Motion</span><p>Small and exact. Show and hide take 120–160 ms ease-out (opacity plus a 4 pt translate, no scale bounce), and collapse or expand animates height over 140 ms. The focus ring appears instantly and fades out over 120 ms. Spinners step frame by frame at about 80 ms per frame, never easing. With Reduce Motion on, everything becomes an opacity cross-fade under 100 ms.</p></div>
+      <div><span class="label flat">Sound</span><p>Nearly silent and mechanical. note-create: a 25–35 ms soft low-profile key click, dry with no reverb, peaking around -20 dBFS. voice-start: two short sine blips rising from 880 to 1320 Hz, 40 ms each with a 20 ms gap. voice-stop: the same blips falling. Nothing over 120 ms, nothing musical.</p></div>
+    </div>
+    <div class="wall">
+      <article class="tile card" id="r-graphite-linear-refresh">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/linear/status/2032145903578923156" target="_blank" rel="noopener">@linear</a><span>12 Mar 2026 · 224K views</span></div>
+          <p class="shows"><b>Shows</b>Close crop of Linear&#x27;s 2026 interface refresh: near-black panels nested with indigo hairline borders and blueprint guide lines, monospace labels 01: APP, 02: LOCATION BAR, 03: VIEW BAR, 04: CONTENT, and outlined round icon buttons.</p>
+          <p class="what">Linear&#x27;s 2026 interface refresh, announced as reducing noise and bringing structure back into focus.</p>
+          <p class="take"><b>Take</b>Build the note from nested 1 pt hairlines on #08090B-class blacks, with a single cool accent and small mono labels instead of filled chrome.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-opencode-shortcuts">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/iamdavidhill/status/2009254964908953995" target="_blank" rel="noopener">@iamdavidhill</a><span>8 Jan 2026 · 8K views</span></div>
+          <p class="shows"><b>Shows</b>opencode in a Ghostty window: near-black panes, a message block with a blue left rule, a context sidebar with token and cost figures, and a bottom shortcuts sheet in tabular mono columns (action left, key right) with a &#x27;16/74 shortcuts used&#x27; progress bar.</p>
+          <p class="what">David Hill shows opencode&#x27;s pull-up keyboard cheatsheet, which you can open without leaving your flow and which tracks the shortcuts you have already used.</p>
+          <p class="take"><b>Take</b>Use the left rule as the note&#x27;s colour signal, and give the Library a two-column action/key shortcut sheet in muted mono.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-opencode-tui">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/adamdotdev/status/1931382361477755198" target="_blank" rel="noopener">@adamdotdev</a><span>7 Jun 2025 · 160K views</span></div>
+          <p class="shows"><b>Shows</b>The opencode terminal UI on a deep slate-indigo background (#232436): a two-tone pixel wordmark, cwd and config paths, slash commands in white with descriptions in muted lavender, and a hairline-bordered prompt box reading &#x27;It&#x27;s prompting time...&#x27;.</p>
+          <p class="what">Adam previews the opencode rewrite, which he calls his best TUI work yet.</p>
+          <p class="take"><b>Take</b>Two text tones only (bright command, muted description) on a hue-tilted graphite, with a 1 pt hairline input box: a whole skin language without any images.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-codex-raycast-theme">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/dkundel/status/2037552817385467967" target="_blank" rel="noopener">@dkundel</a><span>27 Mar 2026 · 58K views</span></div>
+          <p class="shows"><b>Shows</b>Codex app Appearance settings in dark mode with a Raycast theme applied: accent #FF6363, background #101010, foreground #FEFEFE, Inter UI font, JetBrains Mono code font, a contrast slider at 60, and a translucent-sidebar toggle.</p>
+          <p class="what">Dominik Kundel shows that the Codex app now accepts a matching Raycast theme, with dark mode as the highlight.</p>
+          <p class="take"><b>Take</b>Proof that a full pro theme reduces to accent, background, foreground and contrast, so Graphite&#x27;s skin.json can stay that small and be derived the same way.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-vercel-filters">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/witsdev/status/2093336820625060276" target="_blank" rel="noopener">@witsdev</a><span>28 Aug 2026 · 145K views</span></div>
+          <p class="shows"><b>Shows</b>Vercel dashboard Deployments list on pure black: pill filter chips with muted keys and bright values (Created Aug 23 - 27, Author WITS, Environment Preview, Status Ready), rows with teal status dots, tabular durations, and hairline row dividers.</p>
+          <p class="what">wits walks through how the new Vercel dashboard deployment filters were designed and engineered.</p>
+          <p class="take"><b>Take</b>Pair a muted key with a bright value, add tabular timestamps and a tiny status dot: a template for the collapsed note bar and the Library card meta line.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-sidebridge">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/buddyhadry/status/2075285379943366891" target="_blank" rel="noopener">@buddyhadry</a><span>9 Jul 2026 · 20K views</span></div>
+          <p class="shows"><b>Shows</b>Sidebridge, a native macOS sidebar, on a graphite card (#1C1F26): mono project metadata in green, orange and grey, a &#x27;Since Last Focus&#x27; tile grid with tiny small-caps labels (TOOLS, COMMITS, LINES), green/red diff bars, and commit rows with mono hashes.</p>
+          <p class="what">Buddy Hadry launches Sidebridge, a native Swift sidebar that follows your active pane and shows what changed since you last looked.</p>
+          <p class="take"><b>Take</b>Same promise as Webby (come back and your context is waiting), so borrow its &#x27;since last focus&#x27; header and small-caps tile labels for a note&#x27;s reappearance.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-harp-status">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/dominikmartn/status/2112166646706319783" target="_blank" rel="noopener">@dominikmartn</a><span>19 Oct 2026 · 155K views</span></div>
+          <p class="shows"><b>Shows</b>A dark rounded menu (#232429) over blurred blue, teal and violet light. Five rows read agent is working, needs you, done not read yet, done and inactive, each with a right-aligned relative time and a distinct monochrome glyph: spinner ring, amber target, filled check, thin check and moon.</p>
+          <p class="what">Dom&#x27;s terminal redesign, made after Warp went open source and later released as Harp, with a compact legend of agent states.</p>
+          <p class="take"><b>Take</b>A state vocabulary of glyph, label weight and relative time, using one amber colour for &#x27;needs you&#x27;. It fits note states (new, unread, stale) and the template-tinted icons.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-yoinks-tui">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/pablostanley/status/2077812435411767359" target="_blank" rel="noopener">@pablostanley</a><span>16 Jul 2026 · 91K views</span></div>
+          <p class="shows"><b>Shows</b>yoinks terminal app on charcoal (#272C30): a pixel-font wordmark, a muted subtitle row separated by middle dots, a hairline-boxed &#x27;Download&#x27; list with a chevron cursor, and a footer key legend reading ↑↓ choose · ↵ yoink · esc back · ^c quit.</p>
+          <p class="what">Pablo Stanley&#x27;s tiny keyboard-driven TUI for downloading videos, with a clickable box-drawn UI.</p>
+          <p class="take"><b>Take</b>End every Graphite surface with a dim key legend (⌘↩ save · esc collapse), and draw the voice orb&#x27;s frames from block and braille characters.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-conductor-sidebar">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/charlieholtz/status/1945870105109246401" target="_blank" rel="noopener">@charlieholtz</a><span>17 Jul 2025 · 596K views</span></div>
+          <p class="shows"><b>Shows</b>Conductor&#x27;s dark warm-grey sidebar (#292522). Each workspace row has an uppercase mono eyebrow with the city name and a right-aligned relative time (&#x27;3H AGO&#x27;, &#x27;&lt;1M AGO&#x27;), a sans branch title, an indented status line (&#x27;··· Typing&#x27;) and small red count badges.</p>
+          <p class="what">Charlie Holtz introduces Conductor, a Mac app for running parallel Claude Code agents in isolated workspaces.</p>
+          <p class="take"><b>Take</b>The Library row recipe: a mono caps eyebrow (SITE · 3H AGO) over the note&#x27;s first line in sans, with a dotted live-status line under it.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-graphite-ghostty-vercel">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/samko_cx/status/1967762244265243056" target="_blank" rel="noopener">@samko_cx</a><span>16 Sep 2025 · 5K views</span></div>
+          <p class="shows"><b>Shows</b>Ghostty with the bundled Vercel theme on black: a 16-swatch ANSI palette (red #FF0F3F-class, green, amber, blue, pink, teal, grey, white), a bat-rendered Zig file with grey line numbers and hairline gutters, and a shell prompt in green, blue and amber.</p>
+          <p class="what">Sam Ko announces that a Vercel theme now ships inside Ghostty 1.2.</p>
+          <p class="take"><b>Take</b>Use a terminal-style numbered palette: keep note fills graphite and spend these saturated 16-colour hues only on 3 pt tags, ticks and the caret.</p>
+        </div>
+      </article>
+    </div>
+    <div class="recipe">
+      <div><span class="label">As a .webbyskin</span><p>surface: fill #16171A at alpha 0.97 for dark and #FAFAFA at 0.98 for light; material &#x27;none&#x27;; note-body.png and note-body~dark.png are 48×48 px @2x 9-slices with insets 8/8/8/8 pt in tile mode. Each has a 1 px outer hairline (white 10% dark, black 9% light), a 1 px inner top highlight (white 5%) and 2–3% tiled blue-noise in the centre. Keep the body near-neutral so palette tinting moves hue and not lightness. cornerRadius 6; border 1 (#2C2D32 dark / #E4E4E7 light); shadow &#x27;soft&#x27;; padding 12; text #E4E4E7 / #18181B; selection #5E9BFF at 30% alpha; caret #5E9BFF. typography: family &#x27;SF Mono&#x27;, size 13, weight regular, lineSpacing 3 (Graphite Sans variant: &#x27;SF Pro Text&#x27; 13/4). header: 22 pt with a 3-slice header.png (#1D1E22 and a bottom hairline at 7% white) where the app shows site or app identity, ideally as mono caps meta. collapsed: height 24, showsFirstLine true, collapsed.png 3-slice like a TUI status line, with a 3 pt-wide left notch in light grey that palette tint turns into the note&#x27;s colour tick. decoration: decoration.png at 16×16 pt, a pair of 1 pt registration or crop-mark corner ticks (Linear-refresh blueprint lines) at top-right, offset (-6, -6), rotation 0, 35% white; an alternative is a 44×16 pt keycap chip reading ⌘⇧N. icons: collapse/expand/close/more as 14 pt, 1.5 pt-stroke line glyphs, template-tinted to #8B8B93, with full-opacity text colour on hover. palette: 12 low-chroma pairs (light/dark): Graphite #F4F4F5/#16171A, Slate #F1F4F9/#151922, Indigo #F2F2FD/#17182A, Moss #F1F6F0/#151A16, Teal #EEF7F7/#131B1C, Steel #F2F4F6/#181B1F, Amber #FBF6EA/#1C1912, Oxide #FBF2EE/#1C1614, Rose #FCF1F3/#1E1518, Plum #F7F1FA/#1B1620, Ink #FFFFFF/#0E0F11, Carbon #EBEBED/#1F2023. Each colour also shows as a saturated collapsed-bar notch. library: accent #5E9BFF, sidebar material &#x27;sidebar&#x27; (or none on #0B0C0E), card style flat with 1 pt hairline and no shadow; rows use a mono caps eyebrow (SITE · 3H AGO) over the first line. voiceOrb: 64×64 pt PNG frame strips in Bone on transparent, drawn as terminal glyphs instead of a glowing sphere. idle is a 1.5 pt hairline ring with one dot (1 frame); listening adds 8 tick segments that lengthen with level (12 frames); thinking is a braille spinner ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ (10 frames at 80 ms); speaking is a 5-bar block equalizer ▁▃▅▇ (12 frames); only the active segment uses Signal blue. sounds: note-create.wav key click, voice-start.wav / voice-stop.wav blip pairs as described. highContrast: fill #0B0B0C, text #FFFFFF, border 1 pt at 45% white, meta #C8C8CC, accent #8AB4FF, grain removed.</p><div class="dir-actions"><button type="button" class="btn primary" data-try="webby.graphite">Open Graphite in the lab</button><button type="button" class="btn" data-download="webby.graphite">Download .webbyskin</button></div></div>
+      <div><span class="label">Risks</span><p>A dark note on a white page can feel like a black hole, so ship the light Paper variant, follow system appearance, and keep the fill at #16171A rather than #000. Grey-on-grey can fail the contrast floor; body text must stay Bone (about 14:1), and Smoke (#8B8B93, about 5:1) is reserved for meta, never for note text. Mono prose is slower to read in long notes, so offer the SF Pro &#x27;Graphite Sans&#x27; variant and keep 13 pt with lineSpacing 3. A hairline under 1 pt or under 8% alpha disappears on dark pages and on 1x displays. Stretched noise produces smears, so tile it and keep it at 3% or less. Low-chroma palette tints can be hard to tell apart, so pair every tint with a saturated notch or tick and check it under colour-blind simulation. On taste, avoid the &#x27;Linear clone&#x27; cliché of purple glows, gradient blobs and neon. Use one accent, no glow, and let structure carry the look.</p><p>Skins can&#x27;t bundle fonts, so typography.family must name a font every Mac has. Use SF Mono or SF Pro, or Menlo as a safe fallback. Geist, Geist Mono and JetBrains Mono are free on Google Fonts and only help users who installed them, so the skin must fall back cleanly.</p></div>
+    </div>
+  </section>
+
+  <section id="retro" aria-labelledby="retro-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Direction · Sample skin</div>
+        <h2 id="retro-h">Retro OS</h2>
+      </div>
+      <p class="dir-lead">Each note becomes a small desk-accessory window from 1991–2005: a beveled or pinstriped title bar, flat opaque paper and LCD-style readouts, built entirely from crisp PNG chrome, so skins feel like the theme packs people used to trade.</p>
+    </div>
+    <p style="margin:0;color:var(--ink-2);max-width:70ch">Sticky notes are a classic desk accessory (Stickies shipped with System 7.5), and small floating windows with a draggable title bar and a windowshade collapse belong to this era. Webby&#x27;s 9-slice body, 3-slice header and collapsed bar, and PNG-frame voice orb match how Winamp skins and Mac OS 8 Appearance themes were built, so the community can make era skins without code.</p>
+    <div class="spec">
+      <div><span class="label flat">Palette</span><div class="chips"><span class="chip" title="chrome (window frame, header base, light)"><i style="background:#CECECE"></i>#CECECE · Platinum</span><span class="chip" title="chrome (header and sheet stripe A)"><i style="background:#F2F2F2"></i>#F2F2F2 · Pinstripe Light</span><span class="chip" title="chrome (header and sheet stripe B, 2 px pitch)"><i style="background:#E0E0E0"></i>#E0E0E0 · Pinstripe Dark</span><span class="chip" title="text, 1 px outlines, close box"><i style="background:#000000"></i>#000000 · 1-bit Ink</span><span class="chip" title="fill (default note paper)"><i style="background:#FFF9CB"></i>#FFF9CB · Stickies Cream</span><span class="chip" title="accent (library accent, default button, selection base)"><i style="background:#4F8BC5"></i>#4F8BC5 · Aqua Gel</span><span class="chip" title="accent surface (voice orb display, collapsed-bar readout)"><i style="background:#8F9F8C"></i>#8F9F8C · LCD Sage</span><span class="chip" title="shadow (inner bevel bottom-right, disabled icons)"><i style="background:#757575"></i>#757575 · Bevel Shadow</span><span class="chip" title="chrome (dark variant frame and header)"><i style="background:#4F4D50"></i>#4F4D50 · Graphite</span><span class="chip" title="fill (dark variant note body)"><i style="background:#333333"></i>#333333 · Graphite Panel</span></div></div>
+      <div><span class="label flat">Type</span><p><b>Display</b> Silkscreen or Pixelify Sans (Google Fonts) for pixel-era decoration art baked into PNGs; Lucida Grande Bold for Aqua headers</p><p><b>Body</b> Geneva (still ships with macOS) at 12–13 pt for 1-bit and Platinum skins; Lucida Grande 12–13 pt for Aqua skins</p><p><b>Mono</b> Monaco (ships with macOS) for LCD and terminal skins; VT323 (Google Fonts) only inside PNG art</p></div>
+      <div><span class="label flat">Materials</span><p>Opaque, with no blur (surface.material = none). All depth comes from PNG chrome: 1 px black outlines; 1 px white top-left and #757575 bottom-right bevels (Platinum); 2 px pinstripe tiles (Aqua); a fine horizontal brushed-metal grain strip (Aqua metal); and an XP-style pixel gradient title bar (Luna-like). Texture stays in the header, edges and collapsed bar. The text area is flat paper. Pixel assets are drawn at 1x and exported by integer nearest-neighbor scaling to @2x and @3x.</p></div>
+      <div><span class="label flat">Motion</span><p>Stepped, not tweened. The only skin-controlled motion is the voiceOrb PNG sequences, at 2–4 fps for idle and 8–12 fps for active states, like LCD meters and pixel sprites. Collapse reads as a Mac OS 8 &#x27;windowshade&#x27; because the collapsed bar reuses the header art. Keep blinking below 3 Hz and loops short, so the orb stays calm when Reduce Motion is on.</p></div>
+      <div><span class="label flat">Sound</span><p>Short, dry and lo-fi original sounds: note-create is a 40–80 ms mechanical click or &#x27;pop&#x27;; voice-start is a two-note rising square-wave chirp; voice-stop is the same chirp descending. Use 16-bit mono WAV at 22.05 kHz, under 300 ms and quiet. Never sample Apple alert sounds (Sosumi, Quack, the startup chime) or Windows or Winamp sounds. Evoke them with synthesis instead.</p></div>
+    </div>
+    <div class="wall">
+      <article class="tile card" id="r-retro-ryos-system7-chat">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/ryolu_/status/1920230279773323267" target="_blank" rel="noopener">@ryolu_</a><span>7 May 2025 · 7K views</span></div>
+          <p class="shows"><b>Shows</b>A chat window in ryOS with System 7-style chrome: a white title bar filled with horizontal black pinstripes, a square close box at left and the centered title &#x27;@ryo&#x27;, a light gray frame, a white message pane with pale-yellow and pale-blue speech bubbles, and an input field with hand and microphone icons.</p>
+          <p class="what">Ryo Lu shows ryOS&#x27;s AI chat persona of himself running inside a 1-bit, System 7-style window.</p>
+          <p class="take"><b>Take</b>This is the header recipe for a 1-bit skin: a pinstriped 3-slice title bar with a square close box over a flat gray frame. It also shows that an AI or voice chat looks at home in this chrome.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-ryos-brushed-metal-player">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/ryolu_/status/1996620858497159658" target="_blank" rel="noopener">@ryolu_</a><span>4 Dec 2025 · 719K views</span></div>
+          <p class="shows"><b>Shows</b>A ryOS video-player window in early Mac OS X style: glossy red, yellow and green window buttons on a pinstriped title bar, a clip of the Aqua introduction keynote, and a brushed-metal control panel with a sage-green LCD readout of track, time and title above rounded pill buttons.</p>
+          <p class="what">Ryo Lu&#x27;s &#x27;consistency is not uniformity&#x27; post argues that Aqua&#x27;s lickable buttons and sheets taught real mental models. It&#x27;s shown with ryOS&#x27;s brushed-metal player playing the Aqua introduction.</p>
+          <p class="take"><b>Take</b>Use a brushed-metal strip and a sage LCD panel (#8F9F8C) for the voice orb and collapsed bar, and keep the note body itself plain and readable.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-os9-graphite-notes-concept">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/LundukeJournal/status/2011987063755907579" target="_blank" rel="noopener">@LundukeJournal</a><span>16 Jan 2026 · 18K views</span></div>
+          <p class="shows"><b>Shows</b>A dark graphite Mac OS 9 desktop concept: a &#x27;Notes&#x27; window with a list of dated notes on the left and the open note on the right, beveled add and trash buttons, desk-accessory widgets with a calendar date and a green LCD clock, and a Finder window and app strip below. Credited &#x27;Concept made by MondySpartan, 2026&#x27;.</p>
+          <p class="what">The Lunduke Journal shares MondySpartan&#x27;s 2026 concept of a themed, graphite Mac OS 9 with a Notes app and calls it better-looking than modern desktops.</p>
+          <p class="take"><b>Take</b>This is a period-correct dark variant: graphite chrome (#333333, #4F4D50) with beveled buttons and a two-pane notes list. It&#x27;s a direct model for the ~dark images and a retro Library window.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-discord-messenger-2005">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/tehmondspartan/status/2039182355152425094" target="_blank" rel="noopener">@tehmondspartan</a><span>1 Apr 2026 · 247K views</span></div>
+          <p class="shows"><b>Shows</b>A Windows XP-era desktop concept showing an imagined 2005 &#x27;Discord Messenger&#x27; buddy-list window: a silver-blue title bar, a tabbed friend list with presence dots, Message and Call buttons and a banner, plus an About dialog, over a game wallpaper above an XP taskbar.</p>
+          <p class="what">MondySpartan reimagines Discord as a 2005 instant messenger with XP silver-style chrome.</p>
+          <p class="take"><b>Take</b>The method to copy: send a modern app back to one specific year and redraw only the chrome. A &#x27;Webby, 2005&#x27; skin would use a soft silver-blue gradient title bar, beveled pill buttons and small status dots.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-snow-leopard-on-tahoe">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/SamGuichelaar/status/1976349140557984212" target="_blank" rel="noopener">@SamGuichelaar</a><span>9 Oct 2025 · 28K views</span></div>
+          <p class="shows"><b>Shows</b>macOS Tahoe re-themed as Mac OS X Snow Leopard: a Finder window with a gray gradient toolbar, glossy window buttons and a blue scroller, an About This Mac panel, the purple aurora wallpaper and a reflective dock.</p>
+          <p class="what">Sam Guichelaar themes macOS 26 to look like Snow Leopard with the Glow tool, which requires disabling SIP.</p>
+          <p class="take"><b>Take</b>People want era skins on modern macOS badly enough to disable SIP for them. Webby can offer that nostalgia safely inside its own windows, using the restrained late-Aqua look: a gray gradient header and one blue accent.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-aqua-pinstripe-dialog">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/BasicAppleGuy/status/1876404044438355973" target="_blank" rel="noopener">@BasicAppleGuy</a><span>6 Jan 2025 · 73K views</span></div>
+          <p class="shows"><b>Shows</b>An original Mac OS X Aqua alert on a blue desktop: a white sheet with fine horizontal gray pinstripes, a blue Finder icon, bold text asking to remove items from the Trash permanently, a white gel &#x27;Cancel&#x27; pill and a glossy blue gel &#x27;OK&#x27; pill.</p>
+          <p class="what">Basic Apple Guy marks Aqua&#x27;s 25th anniversary with screenshots of the original Mac OS X interface.</p>
+          <p class="take"><b>Take</b>Pinstripes (#F2F2F2 and #E0E0E0 at a 2 px pitch) and one gel-blue accent (#4F8BC5) are enough to say Aqua. Keep the stripes faint and out of the text area.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-pixquare-pixel-themes">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/pixquare_app/status/2074892625539367258" target="_blank" rel="noopener">@pixquare_app</a><span>8 Jul 2026 · 8K views</span></div>
+          <p class="shows"><b>Shows</b>The Pixquare pixel-art editor on iPad in an olive theme: chunky pixel-drawn toolbar buttons with 1 px outlines, a canvas window with a pixel title bar, a Brush panel with pixel icons and cat-faced toggle switches, and a layers panel, in a limited olive, cream and brown palette.</p>
+          <p class="what">Pixquare shows its pixel-art editor&#x27;s UI themes, each a full repaint of the pixel chrome and icons.</p>
+          <p class="take"><b>Take</b>A whole pixel UI can be themed by palette swaps over one set of 9-slice assets, which is how Webby&#x27;s tintable note-body and palette pairs should work. Small charm details like the cat toggles suit the decoration slot.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-windy-xp-pixel-overlay">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/tacocrepe/status/1952062172340654571" target="_blank" rel="noopener">@tacocrepe</a><span>3 Aug 2025 · 113K views</span></div>
+          <p class="shows"><b>Shows</b>A pixel-art stream overlay inspired by Windows XP: blue-bordered windows titled ME.EXE, CHAT.EXE and MUSIC.EXE, each with tiny minimize, maximize and red close buttons, over a pixel-art green hill and cloudy sky, with a &#x27;WINDY XP&#x27; logo.</p>
+          <p class="what">tacocrepe&#x27;s free &#x27;Windy XP&#x27; stream overlay redraws XP windows as pixel art.</p>
+          <p class="take"><b>Take</b>Translate an era into pixel art instead of copying screenshots. A thin blue pixel title bar (3-slice) and a pixel frame (9-slice) can scale to any note size. Leave out the Windows logo.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-fastpotify-winamp-skins">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/paolino/status/2094334032267899311" target="_blank" rel="noopener">@paolino</a><span>31 Aug 2026 · 79K views</span></div>
+          <p class="shows"><b>Shows</b>Fastpotify running as a classic Winamp 2-style mini player over a leafy wallpaper: a dark main window with a green LCD time and scrolling track title, transport buttons, a 10-band equalizer and a playlist window, all with a thin salmon border.</p>
+          <p class="what">Carmine Paolino&#x27;s native Spotify client loads any classic Winamp 2 skin and renders it as a period-accurate mini player with integer pixel scaling.</p>
+          <p class="take"><b>Take</b>Copy the plumbing, not the art: drop-in skin files, a settings list of installed skins, and integer-only scaling that keeps pixel chrome crisp on Retina.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-retro-aqua-pet-voice">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/aquavoice/status/2110819161727185341" target="_blank" rel="noopener">@aquavoice</a><span>15 Oct 2026 · 42K views</span></div>
+          <p class="shows"><b>Shows</b>A small blue pixel-art slime character sits below a dark app window, with a dictated prompt in a speech bubble above it and the pixel-font caption &#x27;You talk. Aqua types.&#x27;</p>
+          <p class="what">Aqua Voice introduces Aqua Pet, a pixel pet on the macOS desktop that &#x27;throws&#x27; your dictated words into the text field, with unlockable outfits and colors.</p>
+          <p class="take"><b>Take</b>The voice orb doesn&#x27;t have to be an orb. A 48–64 pt pixel character with idle, listening, thinking and speaking loops fits the voiceOrb PNG-frame slot, and its outfits show how skins could restyle it.</p>
+        </div>
+      </article>
+    </div>
+    <div class="recipe">
+      <div><span class="label">As a .webbyskin</span><p>Ship one skin per era rather than a mashup. Primary: &#x27;Desk Accessory&#x27; (System 7 / Platinum). surface: fill #FFF9CB alpha 1.0, material none; note-body.png is 9-slice, 24x24 px @2x with insets 4/4/4/4 pt, mode stretch. It has a 1 pt #000 outer line, a 1 pt white top-left bevel and a 1 pt #757575 bottom-right bevel. Its center is neutral white so palette tint recolors the paper but not the bevel. Bake a hard 1 pt offset drop into the PNG and set shadow none. cornerRadius 0, border 0 (the outline is in the PNG), padding 10, text #000000, selection #B9D2EE, caret #000000. typography: Geneva 12, regular, lineSpacing 2. header: 20 pt with header.png 3-slice. The left cap holds a 12 pt square close-box outline; the middle tile is six 1 px black lines on white at 2 px pitch (pinstripes); the right cap has a windowshade box. If titles render in the header, leave a solid white pad in the middle. collapsed: height 20, showsFirstLine true, collapsed.png reuses the header art, which gives the windowshade effect. decoration: one 48x24 pt pixel paperclip or dog-ear PNG anchored top-right, offset (-8, -6), rotation 0. Pixel art must not rotate except by 90-degree steps. icons: 14 pt 1-bit template PNGs (close box, windowshade bar, expand, three-dot more), drawn on the pixel grid, template tint on. palette (light/dark): Cream #FFF9CB/#3A3726, Sky #E2F0FC/#1F2F40, Platinum #DDDDDD/#333333, Mint #DDF3D6/#22331F, Rose #F9DADA/#3B2626, Lilac #E6E0F7/#2B2638, Peach #FDE3C8/#3B2D1F, Sage #C9D3C4/#2A3328. library: accent #4F8BC5, sidebar material none (an opaque Platinum fill), flat bordered cards. voiceOrb: 56 pt (112 px @2x) LCD panel in #8F9F8C with a brushed-metal bezel. idle: a 2-frame blinking block cursor at 2 fps. listening: 8 frames of rising pixel level-meter bars at 12 fps. thinking: an 8-frame rotating ring of pixel dots at 10 fps; draw your own rather than the Mac watch or hourglass cursor. speaking: a 6-frame scrolling waveform. Optional alternative: a pixel mascot, as in Aqua Pet. sounds as above. ~dark images: &#x27;Graphite&#x27; variant, with fill #333333, text #EDEDED, header stripes #4F4D50/#3E3C3F and bevels #5C5A5E/#1E1E1E. highContrast: border 2 pt #000, fill #FFFFFF, text #000000, solid header with no stripes, 18 pt icons. Sibling skins built from the same recipe: &#x27;Pinstripe&#x27; (Aqua) uses fill #F7F7F7, cornerRadius 6, shadow soft, a 22 pt header of #F2F2F2/#E0E0E0 2 px stripes with original gel pill icons, Lucida Grande 12 and accent #4F8BC5. &#x27;Pixel Luna&#x27; (XP pixel art) uses a 24 pt blue pixel-gradient header 3-slice, a 9-slice frame with stepped pixel corners (cornerRadius 0, rounding baked in) and Geneva 12 body text. &#x27;Metal LCD&#x27; puts a brushed-metal header and collapsed bar over a sage LCD voice orb.</p><div class="dir-actions"><button type="button" class="btn primary" data-try="io.github.jynlee7.desk-accessory">Open Retro OS in the lab</button><button type="button" class="btn" data-download="io.github.jynlee7.desk-accessory">Download .webbyskin</button></div></div>
+      <div><span class="label">Risks</span><p>Readability: pinstripes, dithering and fake scanlines behind text fail the contrast floor and shimmer on Retina. Keep texture in the header and edges, and keep stripe contrast low (#F2F2F2 vs #E0E0E0). Never use a pixel font for body text under 12 pt. Pixel art blurs under non-integer scaling, rotation or stretched patterned middles. Author at 1x, export at exact 2x and 3x, tile (don&#x27;t stretch) patterned centers, and align 9-slice insets to whole pixels. Fonts: skins can&#x27;t ship fonts, and Chicago and Charcoal aren&#x27;t available, so name Geneva, Monaco or Lucida Grande with fallbacks. Trademark and trade dress: don&#x27;t reproduce the Apple logo, Happy Mac, the Finder face, Aqua&#x27;s exact red/yellow/green traffic lights, the Windows flag, the Luna &#x27;start&#x27; button, Winamp&#x27;s lightning bolt, OS wallpapers or system sounds. Name skins generically (&#x27;Desk Accessory&#x27;, &#x27;Pinstripe&#x27;, &#x27;Pixel Luna&#x27;), not &#x27;Mac OS 9&#x27; or &#x27;Windows XP&#x27;, and evoke the era through materials (bevels, stripes, LCDs, the pixel grid) with original drawings. Taste: mixing eras in one skin reads as kitsch, as do vaporwave CRT effects and AI &#x27;retro&#x27; renders. Pick one year and commit. Dark mode: the classic eras were light-only. Use Graphite (Mac OS 9 / Aqua Graphite) as the period-correct dark variant rather than inverting colors. Accessibility: keep orb blinking under 3 Hz and offer a high-contrast override that removes all texture.</p><p>Skins can&#x27;t bundle fonts, so typography.family must name a font that is already installed. Geneva, Monaco and Lucida Grande ship with macOS and carry the era. Chicago and Charcoal don&#x27;t ship and can&#x27;t be redistributed. Google Fonts pixel faces (Silkscreen, Pixelify Sans, VT323, Press Start 2P, Jersey 10, Tiny5) are fine as hand-drawn lettering inside PNGs, or as an opt-in body font with a Geneva or Monaco fallback. Never set body text below 12 pt in a pixel face.</p></div>
+    </div>
+  </section>
+
+  <section id="hardware" aria-labelledby="hardware-h">
+    <div class="sec-head">
+      <div>
+        <div class="label">Direction · Sample skin</div>
+        <h2 id="hardware-h">Field Instrument</h2>
+      </div>
+      <p class="dir-lead">Each note is a small, well-made device: a warm moulded housing, a recessed display window, printed labels, and one safety-orange signal light, with a mechanical click when something switches on.</p>
+    </div>
+    <p style="margin:0;color:var(--ink-2);max-width:70ch">Sticky notes that come back to a page work like labels and indicator lights on a bench instrument, so a hardware skin makes each note feel like a physical tag clipped to that site. The collapsed one-line bar fits naturally as a small LCD readout.</p>
+    <div class="spec">
+      <div><span class="label flat">Palette</span><div class="chips"><span class="chip" title="fill (light note surface, warm moulded plastic)"><i style="background:#EDEBE6"></i>#EDEBE6 · Shell White</span><span class="chip" title="fill (dark note surface / display black)"><i style="background:#1C1C1B"></i>#1C1C1B · Graphite</span><span class="chip" title="text on light (14.6:1 on Shell White)"><i style="background:#1A1A18"></i>#1A1A18 · Print Ink</span><span class="chip" title="text on dark (14.3:1 on Graphite)"><i style="background:#ECEBE6"></i>#ECEBE6 · Phosphor</span><span class="chip" title="signal: caret, LED, toggle-on, focus (never small text on light: 2.6:1)"><i style="background:#FF5F1F"></i>#FF5F1F · Safety Orange</span><span class="chip" title="accent text on light (4.6:1 on Shell White)"><i style="background:#B8410E"></i>#B8410E · Burnt Orange</span><span class="chip" title="palette note colour / warning; dark text on it is 12:1"><i style="background:#FFD23F"></i>#FFD23F · Signal Yellow</span><span class="chip" title="voice orb dots on black (10:1)"><i style="background:#FFB000"></i>#FFB000 · Amber LED</span><span class="chip" title="collapsed bar / display window in light mode (dark text 11.8:1)"><i style="background:#C9D6DF"></i>#C9D6DF · LCD Backlight</span><span class="chip" title="border, header strip, neutral note colour"><i style="background:#D6D6D2"></i>#D6D6D2 · Aluminium</span><span class="chip" title="recording / voice-active LED, red note colour"><i style="background:#F0473C"></i>#F0473C · Signal Red</span><span class="chip" title="shadow at 14-18% alpha, inner well shade at 25%"><i style="background:#000000"></i>#000000 · Housing Shadow</span></div></div>
+      <div><span class="label flat">Type</span><p><b>Display</b> Doto (Google Fonts, dot-matrix variable font). Use it only inside PNG art for header labels, collapsed-bar captions and decoration plates, because skins cannot bundle fonts.</p><p><b>Body</b> SF Pro Text (Apple system) at 14 pt regular, the most readable choice for note text. Alternatively SF Mono 13 pt for the full instrument look.</p><p><b>Mono</b> SF Mono (Apple system). If installed, Geist Mono or JetBrains Mono (Google Fonts) are close substitutes.</p></div>
+      <div><span class="label flat">Materials</span><p>Matte injection-moulded ABS in warm white or graphite, with a 1 px top highlight, a 1 px lower shade and a faint 2 pt chamfer. Recessed display windows (dark glass or a backlit blue-grey LCD) carry an inner shadow. Labels are pad-printed or engraved; the only metal is brushed aluminium on small knob or plate details. Everything is opaque: no blur and no glass.</p></div>
+      <div><span class="label flat">Motion</span><p>Mechanical and stepped rather than floaty. Presses sink 1-2 pt with the shadow collapsing (about 80 ms) and spring back in about 120 ms. Collapse and expand move like a shutter (about 150 ms ease-out, no bounce). LEDs blink at 1 Hz while voice is active. Dot-matrix orb frames step at 8-12 fps with hard cuts, not tweens. Skins only supply frames; Webby owns the timing.</p></div>
+      <div><span class="label flat">Sound</span><p>Short, dry, quiet mechanical sounds (44.1 kHz/16-bit mono WAV, under 150 ms, peaks around -18 dBFS, soft exponential attack): note-create is a latching key &#x27;clack&#x27;, voice-start a toggle &#x27;click&#x27; with a small rising 2-tone blip, voice-stop the toggle returning with a falling blip. Record or synthesise them; never sample branded devices.</p></div>
+    </div>
+    <div class="wall">
+      <article class="tile card" id="r-hardware-luce-instrument">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/mike_matas/status/2020850857819205700" target="_blank" rel="noopener">@mike_matas</a><span>9 Feb 2026 · 1.5M views</span></div>
+          <p class="shows"><b>Shows</b>Frame from the Ferrari Luce interior film: a black instrument panel with a thick rounded bezel, a yellow analog stopwatch dial with a red hand, a dim grey digital readout (10:10, MON 25, 00:00) beside small line graphs, and tiny physical buttons set into the bezel edge.</p>
+          <p class="what">Mike Matas (LoveFrom) unveils the Ferrari Luce interior, where tactile switches, glass keys and digital gauges were designed as one interface across industrial, interaction, type and sound design.</p>
+          <p class="take"><b>Take</b>Treat a note like an instrument panel: a thick rounded bezel, one signal colour used sparingly, and tabular numerals for metadata.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-luce-switch-sounds">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/juanbuis/status/2020926284118049095" target="_blank" rel="noopener">@juanbuis</a><span>9 Feb 2026 · 26K views</span></div>
+          <p class="shows"><b>Shows</b>A hand flicking one of a row of black toggle switches under a small console display that shows speed, power and time readouts with green and orange outlined tags, below two aluminium air vents.</p>
+          <p class="what">Hands-on clip praising how every button and switch in the Ferrari Luce sounds, and the choice of real tactile controls over a touchscreen.</p>
+          <p class="take"><b>Take</b>Make sound part of the material, with short mechanical toggle clicks for note-create and voice start/stop. Use tiny outlined tag labels (MODE / POWER style) for note metadata.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-nothing-os5-label-type">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/nothing/status/2092195279114264652" target="_blank" rel="noopener">@nothing</a><span>25 Aug 2026 · 247K views</span></div>
+          <p class="shows"><b>Shows</b>White monospaced capitals on black that mix words with inline pill tokens and pictograms: &#x27;WED (26) (AUG) BST 11:00&#x27;, &#x27;32°C TOMORROW&#x27;, &#x27;OPEN BETA STARTS →&#x27;, &#x27;WITH PHONE (3)&#x27;.</p>
+          <p class="what">Nothing announces Nothing OS 5.0. Its new clock faces set text, pill-shaped tokens and icons together on one monospaced grid.</p>
+          <p class="take"><b>Take</b>Collapsed bars and note metadata can read like a label maker: monospaced caps with outlined pills for date, site and scope.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-rams-components">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/mrblackstudio/status/1922392009794265528" target="_blank" rel="noopener">@mrblackstudio</a><span>13 May 2025 · 2K views</span></div>
+          <p class="shows"><b>Shows</b>Grid of white cards showing physical-style controls: rotary knobs with orange index dots and printed scales, an orange rocker toggle, a domed push button, a numbered slider with an orange ball, plus bold charcoal wordmark cards on safety orange.</p>
+          <p class="what">Lee Black shares Framer components built on Dieter Rams principles: knobs, toggles, sliders and buttons in white plastic with orange signals.</p>
+          <p class="take"><b>Take</b>Use this as the base skin: warm-white moulded surfaces, charcoal type, and a single safety-orange signal kept for &#x27;on&#x27;, caret and focus.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-somvai-halo">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/emrekayganaci/status/1920437826153558451" target="_blank" rel="noopener">@emrekayganaci</a><span>8 May 2025 · 5K views</span></div>
+          <p class="shows"><b>Shows</b>Rendered white bedside device on a wooden base, with a warm dot-matrix &#x27;40m&#x27; readout in the middle of a concave face and a ring of amber LED dots partly lit around the edge.</p>
+          <p class="what">Emre shows the dot-matrix and halo-light UI of the Somvai nap timer, where a ring of dots counts down the remaining time.</p>
+          <p class="take"><b>Take</b>A direct model for the voice orb: a ring of amber dots that breathes when idle, fills while listening and chases while thinking, all as PNG frames.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-dotmatrix-icons">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/streamlinehq/status/1947651093795942857" target="_blank" rel="noopener">@streamlinehq</a><span>22 Jul 2025 · 3K views</span></div>
+          <p class="shows"><b>Shows</b>Four rows of white dot-matrix icons on black, including arrows, close, speaker, sun, grid, chat, music note, microphone, video and search, all built from round LED-like dots.</p>
+          <p class="what">Streamline highlights the dot-matrix UI icons Arkotype and Cory Schmitz designed for the game C-Smash VRS.</p>
+          <p class="take"><b>Take</b>Draw the collapse, expand, close and more icons as dot glyphs on a 2 pt grid, so they read as template-tinted LED symbols at 16 pt.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-push-button">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/iampetrknoll/status/1888904836516663529" target="_blank" rel="noopener">@iampetrknoll</a><span>10 Feb 2025 · 364K views</span></div>
+          <p class="shows"><b>Shows</b>Two states of a light-grey pill button labelled &#x27;Push&#x27;: raised with a soft drop shadow on the left, and pressed down into a dark recessed well on the right.</p>
+          <p class="what">Petr Knoll&#x27;s CSS box-shadow experiment: a skeuomorphic push button that sinks into its housing when pressed.</p>
+          <p class="take"><b>Take</b>Give the note-body 9-slice a subtle moulded housing (top highlight, bottom shade, inner well) without going photoreal.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-op1-field-screens">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/avstorm/status/1820859577644302499" target="_blank" rel="noopener">@avstorm</a><span>6 Aug 2024 · 160K views</span></div>
+          <p class="shows"><b>Shows</b>Four OP-1 field screen designs on black: a tape-deck drawing with &#x27;VINTAGE 4-TRACK&#x27; and tan &#x27;REELS&#x27; tabs, a wireframe room with large &#x27;48&#x27; numerals, a stereo waveform editor, and a vocoder diagram with blue, tan, orange and red labels.</p>
+          <p class="what">Andreas Storm praises the OP-1 field UI colours: muted blue, tan, grey and red labels with thin line art on a black screen.</p>
+          <p class="take"><b>Take</b>For the dark variant, use a black display with thin-line drawing and a four-colour label code (blue, tan, grey, red) that maps onto the note palette.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-tp7-memo-display">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/colderoshay/status/1782484051351437381" target="_blank" rel="noopener">@colderoshay</a><span>22 Apr 2024 · 903K views</span></div>
+          <p class="shows"><b>Shows</b>Close-up of a grey Teenage Engineering recorder corner with a recessed black display window showing &#x27;MEMO&#x27; and &#x27;00:11:02&#x27; in white dot-matrix type, and a small &#x27;USB&#x27; label pad-printed above a port.</p>
+          <p class="what">Cole&#x27;s post on Teenage Engineering&#x27;s screen UI, with close-ups of device displays including the TP-7 field recorder.</p>
+          <p class="take"><b>Take</b>Draw the collapsed note bar as a recessed display window, with dot-style label art in an inset panel and small printed captions like port labels.</p>
+        </div>
+      </article>
+      <article class="tile card" id="r-hardware-ep133-icons">
+        <div class="cap">
+          <div class="who"><a class="post" href="https://x.com/ilyamiskov/status/1744556590420705717" target="_blank" rel="noopener">@ilyamiskov</a><span>9 Jan 2024 · 28K views</span></div>
+          <p class="shows"><b>Shows</b>Grid of flat icons on black from the EP-133 K.O. II: segment-display digits reading 22.11.23 with ghosted unlit segments, a metronome, a gramophone &#x27;MONO&#x27; badge, a vacuum tube, faders, scissors and a boxer, in red, pink, blue, orange and white.</p>
+          <p class="what">Ilya Miskov collects the EP-133 K.O. II icon set, which mixes segment-display digits with flat red, pink and blue pictograms.</p>
+          <p class="take"><b>Take</b>Use segment-display numerals with ghosted unlit segments for counts and timestamps in decoration art and the Library.</p>
+        </div>
+      </article>
+    </div>
+    <div class="recipe">
+      <div><span class="label">As a .webbyskin</span><p>skin.json groups: surface: fill #EDEBE6 alpha 1.0 (dark #1C1C1B), material none, note-body.png 9-slice 64x64 @2x with insets 14/14/14/14 and mode stretch. It holds the moulded housing: top highlight, bottom shade and a faint 2 pt chamfer, with two 2 pt screw-dot marks in the top corners. Palette tint is on so colour notes keep the moulding. cornerRadius 10, border 1 pt #C9C6BE (dark #2E2E2C), shadow soft, padding 14, text #1A1A18 / #ECEBE6, selection #FF5F1F at 28% alpha, caret #FF5F1F. typography: family &#x27;SF Pro Text&#x27; (or &#x27;SF Mono&#x27; 13), size 14, weight regular, lineSpacing 3. header: 24 pt, header.png 3-slice (12|1|12 pt). It is an aluminium #D6D6D2 strip (graphite ~dark) with a 6 pt orange LED dot at left and a fine vent-slot texture at right, with no text baked in. collapsed: height 24, showsFirstLine true, collapsed.png 3-slice drawn as a recessed LCD window: #C9D6DF backlit panel with inner shadow in light mode, and #0E1210 dark glass in the ~dark variant so text-colour contrast holds. decoration: plate.png 72x24 pt engraved spec tag (&#x27;NOTE-01&#x27; in Doto caps, Burnt Orange rule), anchored top-right, offset x -10 y -8, rotation 0. Keep it clearly passive: no fake knobs that look clickable. icons: 16 pt template PNGs drawn as 5x5 dot glyphs on a 2 pt grid (collapse &#x27;-&#x27;, expand &#x27;+&#x27;, close &#x27;x&#x27;, more &#x27;...&#x27;). palette (light/dark pairs): Shell #EDEBE6/#1C1C1B, Safety Orange #FF6A2B/#7A2E12, Signal Yellow #FFD23F/#5C4A00, LCD Blue #C9D6DF/#2A3640, Signal Red #F0473C/#8E1B14, Aluminium #D6D6D2/#3A3A38, Phosphor Green #BFE3C0/#1E3B22. Dark text goes on the light variants and light text on the dark variants; all are 4.7:1 or better. library: accent #FF5F1F (text uses #B8410E), sidebar material none, card style flat plate with 1 pt border and an orange status-dot per site. voiceOrb: 64x64 pt @2x PNG frames of a 16-dot amber ring around a 7x7 dot core on a black bezelled disc. idle: 6-frame slow breathe of the ring. listening: 8 frames filling the ring by level. thinking: 12-frame 3-dot comet chasing around the ring. speaking: 10 frames of a dot-matrix bar waveform in the core. sounds: create.wav latching clack, voice-start.wav toggle click plus rising blip, voice-stop.wav toggle plus falling blip. highContrast: border 2 pt #000/#FFF, flat note-body (no texture), text #000 on #FFF / #FFF on #000, orange kept only for caret and focus as #B23C00 / #FF8A50.</p><div class="dir-actions"><button type="button" class="btn primary" data-try="io.github.jynlee7.field-instrument">Open Field Instrument in the lab</button><button type="button" class="btn" data-download="io.github.jynlee7.field-instrument">Download .webbyskin</button></div></div>
+      <div><span class="label">Risks</span><p>Readability: dot-matrix and LCD fonts break down in paragraphs and at small sizes, so keep them in PNG captions and numerals and use SF Pro/SF Mono for note text. Contrast: Safety Orange on Shell White is only 2.6:1, so use it for fills, LEDs and the caret, and use #B8410E for any orange text. Collapsed-bar art must keep the system text colour readable in both light and dark (light LCD panel / dark glass panel). Texture: skeuomorphic shading turns muddy at 1x; test 9-slices at 1x and 2x, keep gradients under 6% luminance, and drop them in highContrast. Affordance: decorations that look like knobs or buttons but do nothing will confuse users, so use passive plates, screws and printed labels. Taste: one material and one signal colour; no leather, wood grain or chrome everywhere. Trademark: do not copy Teenage Engineering product names or layouts, Nothing&#x27;s Ndot font or &#x27;Glyph&#x27; wording, Braun or Ferrari logos and colours-as-trade-dress, or name the skin after any of them. Use a generic name like &#x27;Field Instrument&#x27; and draw all assets from scratch. Sound: mechanical clicks tire users quickly, so keep them quiet and short, and Webby should respect the system &#x27;Play user interface sound effects&#x27; setting.</p><p>Dot-matrix and LCD faces on Google Fonts: Doto (dot matrix), Silkscreen and Pixelify Sans (pixel), VT323 (terminal/LCD), DotGothic16 (dot gothic). Avoid Nothing&#x27;s Ndot and Teenage Engineering&#x27;s proprietary faces. Keep dot type to short caps labels and numerals, never body text.</p></div>
+    </div>
+  </section>
+
+  <footer>Webby · skin directions moodboard · <a href="https://github.com/jynlee7/webby/blob/main/design.md">design.md</a> · <a href="https://github.com/jynlee7/webby/blob/main/plan.md">plan §4f and §5.4</a> · collected 27 Oct 2026</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="skins.js"></script>
+<script src="lab.js"></script>
+<script src="dirskins.js"></script>
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('lens');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const tex = document.createElement('canvas');
+  const tctx = tex.getContext('2d');
+  let W = 0, H = 0, dpr = 1;
+
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const isDark = () => {
+    const t = document.documentElement.getAttribute('data-theme');
+    return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  };
+
+  function paintPaper() {
+    tex.width = W; tex.height = H;
+    tctx.fillStyle = css('--paper-2') || '#fff';
+    tctx.fillRect(0, 0, W, H);
+    // Light streaks across the paper, from the top-left source
+    const g = tctx.createLinearGradient(0, 0, W, H);
+    const dark = isDark();
+    g.addColorStop(0, dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0)');
+    tctx.fillStyle = g; tctx.fillRect(0, 0, W, H);
+    // The word
+    const word = 'webby.';
+    const fam = '-apple-system, BlinkMacSystemFont, "SF Pro Display", Geist, "Helvetica Neue", Arial, sans-serif';
+    let size = H * 0.5;
+    tctx.font = `700 ${size}px ${fam}`;
+    if ('letterSpacing' in tctx) tctx.letterSpacing = `${-size * 0.045}px`;
+    const m = tctx.measureText(word).width;
+    const target = W * 0.7;
+    size = size * target / m;
+    size = Math.min(size, H * 0.62);
+    tctx.font = `700 ${size}px ${fam}`;
+    if ('letterSpacing' in tctx) tctx.letterSpacing = `${-size * 0.045}px`;
+    tctx.fillStyle = css('--ink') || '#0B0C0F';
+    tctx.textAlign = 'center';
+    tctx.textBaseline = 'alphabetic';
+    tctx.fillText(word, W / 2, H / 2 + size * 0.34);
+  }
+
+  const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false, preserveDrawingBuffer: false });
+
+  // Fallback: no WebGL, show the paper and word without the lens.
+  if (!gl) {
+    const ctx = canvas.getContext('2d');
+    const draw = () => {
+      const r = stage.getBoundingClientRect();
+      dpr = Math.min(devicePixelRatio || 1, 2);
+      W = Math.round(r.width * dpr); H = Math.round(r.height * dpr);
+      canvas.width = W; canvas.height = H;
+      paintPaper(); ctx.drawImage(tex, 0, 0);
+    };
+    draw(); new ResizeObserver(draw).observe(stage);
+    return;
+  }
+
+  const vs = `attribute vec2 p; varying vec2 v; void main(){ v = p*0.5+0.5; gl_Position = vec4(p,0.,1.); }`;
+  const fs = `
+  precision highp float;
+  varying vec2 v;
+  uniform sampler2D T;
+  uniform vec2 R, A, B;
+  uniform float RA, RB, DK;
+  float smin(float a, float b, float k){ float h = clamp(0.5+0.5*(b-a)/k,0.,1.); return mix(b,a,h)-k*h*(1.-h); }
+  float sdf(vec2 q){ return smin(length(q-A)-RA, length(q-B)-RB, RA*0.7); }
+  float hgt(vec2 q){ float t = clamp(-sdf(q)/(RA*0.6),0.,1.); return sqrt(1.-(1.-t)*(1.-t)) * RA*0.55; }
+  vec3 tx(vec2 q){ return texture2D(T, clamp(q/R, 0.001, 0.999)).rgb; }
+  void main(){
+    vec2 q = vec2(v.x, 1.-v.y) * R;
+    float d = sdf(q);
+    vec3 paper = tx(q);
+
+    // Shadow, offset away from the top-left light, plus a warm caustic inside it
+    vec2 so = vec2(RA*0.16, RA*0.30);
+    float ds = sdf(q - so);
+    float sh = 1. - smoothstep(-RA*0.35, RA*0.45, ds);
+    vec3 col = paper * (1. - sh*mix(0.13, 0.40, DK));
+    float cz = smoothstep(RA*0.1, -RA*0.5, ds) * smoothstep(-RA*1.1, -RA*0.3, ds);
+    col += vec3(1.0, 0.62, 0.22) * cz * mix(0.14, 0.07, DK);
+    col += vec3(0.25, 0.4, 1.0) * smoothstep(RA*0.2, 0.0, ds) * smoothstep(-RA*0.15, RA*0.05, ds) * 0.05;
+
+    if (d < 1.5) {
+      float e = 1.0;
+      float hx = hgt(q+vec2(e,0.)) - hgt(q-vec2(e,0.));
+      float hy = hgt(q+vec2(0.,e)) - hgt(q-vec2(0.,e));
+      vec3 n = normalize(vec3(-hx/(2.*e), -hy/(2.*e), 1.));
+      float S = RA*0.26;
+      vec2 o = n.xy * S;
+      // Magnify toward the main center, then refract with per-channel dispersion
+      vec2 c = A + (q - A) * 0.90;
+      float r = tx(c - o*1.045).r;
+      float g = tx(c - o).g;
+      float b = tx(c - o*0.955).b;
+      vec3 g3 = vec3(r,g,b);
+      g3 = mix(g3, g3*vec3(0.97,0.985,1.0), 0.6) + 0.025;
+      g3 *= 1. - 0.06 * pow(1. - n.z, 1.5);
+
+      vec3 L = normalize(vec3(-0.6, -0.7, 0.55));
+      vec3 Rf = reflect(-L, n);
+      float spec = pow(max(Rf.z, 0.), 70.) * 1.1 + pow(max(Rf.z, 0.), 9.) * 0.10;
+      float fres = pow(1. - n.z, 2.2);
+      float away = max(0., dot(n.xy, normalize(vec2(0.6, 0.75))));
+      g3 += fres * mix(0.30, 0.22, DK) * (1. - away);
+      g3 *= 1. - 0.22 * fres * away;
+      g3 += spec;
+      // Warm and cool fringes at the very edge
+      float edge = smoothstep(-RA*0.10, 0., d);
+      g3 += edge * mix(vec3(0.9,0.5,0.1), vec3(0.15,0.3,1.0), clamp(0.5 + 0.5*dot(n.xy, normalize(vec2(-0.7,-0.7))),0.,1.)) * 0.08;
+      g3 += (1. - smoothstep(0., 1.6, abs(d + 1.2))) * mix(0.35, 0.25, DK);
+
+      float a = 1. - smoothstep(-1.0, 1.0, d);
+      col = mix(col, g3, a);
+    }
+    gl_FragColor = vec4(col, 1.);
+  }`;
+
+  function sh(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = n => gl.getUniformLocation(prog, n);
+  const uR = U('R'), uA = U('A'), uB = U('B'), uRA = U('RA'), uRB = U('RB'), uDK = U('DK');
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  function upload() {
+    paintPaper();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, tex);
+  }
+
+  // Drop state: A follows the target on a spring; B trails A, so motion stretches the drop.
+  const s = { ax: 0, ay: 0, vx: 0, vy: 0, bx: 0, by: 0, bvx: 0, bvy: 0, tx: 0, ty: 0, pointer: false, t0: performance.now() };
+  let RAd = 0;
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = Math.max(2, Math.round(r.width * dpr)); H = Math.max(2, Math.round(r.height * dpr));
+    canvas.width = W; canvas.height = H;
+    gl.viewport(0, 0, W, H);
+    RAd = Math.min(H * 0.27, W * 0.16);
+    const rest = restPoint(0);
+    if (!s.ax) { s.ax = rest[0]; s.ay = rest[1]; s.bx = s.ax + RAd*0.42; s.by = s.ay + RAd*0.30; s.tx = s.ax; s.ty = s.ay; }
+    upload();
+    draw();
+  }
+  function restPoint(t) {
+    if (reduce.matches) return [W * 0.47, H * 0.52];
+    return [W * (0.48 + Math.sin(t * 0.00031) * 0.2), H * (0.5 + Math.sin(t * 0.00047 + 1.3) * 0.06)];
+  }
+  function draw() {
+    gl.uniform2f(uR, W, H);
+    gl.uniform2f(uA, s.ax, s.ay);
+    gl.uniform2f(uB, s.bx, s.by);
+    gl.uniform1f(uRA, RAd);
+    gl.uniform1f(uRB, RAd * 0.62);
+    gl.uniform1f(uDK, isDark() ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  let last = performance.now(), running = false, visible = true;
+  function step(now) {
+    const dt = Math.min(0.033, (now - last) / 1000); last = now;
+    if (!s.pointer) { const p = restPoint(now - s.t0); s.tx = p[0]; s.ty = p[1]; }
+    // Spring A toward target
+    const k = 70, c = 13;
+    s.vx += ((s.tx - s.ax) * k - s.vx * c) * dt; s.vy += ((s.ty - s.ay) * k - s.vy * c) * dt;
+    s.ax += s.vx * dt; s.ay += s.vy * dt;
+    // B rests down-right of A (teardrop) and lags behind motion
+    const bx = s.ax + RAd*0.42 - s.vx * 0.06, by = s.ay + RAd*0.30 - s.vy * 0.06;
+    const k2 = 38, c2 = 9;
+    s.bvx += ((bx - s.bx) * k2 - s.bvx * c2) * dt; s.bvy += ((by - s.by) * k2 - s.bvy * c2) * dt;
+    s.bx += s.bvx * dt; s.by += s.bvy * dt;
+    draw();
+    const still = Math.abs(s.vx) + Math.abs(s.vy) + Math.abs(s.bvx) + Math.abs(s.bvy) < 0.5 && Math.hypot(s.tx - s.ax, s.ty - s.ay) < 0.5;
+    if (visible && !(reduce.matches && still)) requestAnimationFrame(step); else running = false;
+  }
+  function kick() { if (!running && visible) { running = true; last = performance.now(); requestAnimationFrame(step); } }
+
+  function toLocal(e) { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr]; }
+  canvas.addEventListener('pointermove', e => { [s.tx, s.ty] = toLocal(e); s.pointer = true; kick(); });
+  canvas.addEventListener('pointerdown', e => { [s.tx, s.ty] = toLocal(e); s.pointer = true; kick(); });
+  canvas.addEventListener('pointerleave', () => { if (!reduce.matches) s.pointer = false; kick(); });
+
+  new ResizeObserver(() => { resize(); kick(); }).observe(stage);
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) kick(); }).observe(stage);
+  const retheme = () => { upload(); draw(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  reduce.addEventListener('change', kick);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(retheme);
+
+  resize(); kick();
+})();
+
+// Collapse study
+(() => {
+  const btn = document.getElementById('collapse');
+  const note = document.getElementById('mnote');
+  btn.addEventListener('click', () => {
+    const on = note.classList.toggle('is-collapsed');
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? 'Expand note' : 'Collapse note';
+  });
+})();
+if (window.WebbyLab) { window.WebbyLab.init(); }
+</script>
+</body>
+</html>
