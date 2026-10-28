@@ -1,7 +1,17 @@
 /// The current app or page that a note's anchor is compared against.
-public enum Context: Hashable, Sendable {
-    case app(bundleID: String)
-    case web(PageURL)
+public struct Context: Hashable, Sendable {
+    /// The frontmost app's bundle identifier.
+    public var appBundleID: String
+    /// The known page in a supported browser, if any.
+    public var page: PageURL?
+    /// The reporting browser tab, if any.
+    public var tab: TabRef?
+
+    public init(appBundleID: String, page: PageURL? = nil, tab: TabRef? = nil) {
+        self.appBundleID = appBundleID
+        self.page = page
+        self.tab = tab
+    }
 }
 
 /// How much of a site a web anchor covers.
@@ -17,16 +27,18 @@ public enum Anchor: Hashable, Codable, Sendable {
     case web(page: PageURL, scope: WebScope)
 
     public func matches(_ context: Context) -> Bool {
-        switch (self, context) {
-        case let (.app(bundleID), .app(currentBundleID)):
-            return bundleID == currentBundleID
+        switch self {
+        case let .app(bundleID):
+            return bundleID == context.appBundleID
 
-        case let (.web(page, scope), .web(currentPage)):
-            guard page.host == currentPage.host else { return false }
+        case let .web(page, scope):
+            guard let currentPage = context.page, page.host == currentPage.host else {
+                return false
+            }
 
             switch scope {
             case .page:
-                return page.path == currentPage.path
+                return currentPage.matchesPageAnchor(page)
             case .site:
                 return true
             case .prefix(let path):
@@ -35,9 +47,6 @@ public enum Anchor: Hashable, Codable, Sendable {
                     || currentPage.path == prefix
                     || currentPage.path.hasPrefix(prefix + "/")
             }
-
-        default:
-            return false
         }
     }
 }

@@ -25,15 +25,21 @@ private func removeTempDirectory(_ directory: URL) {
 private func makeNote(
     id: UUID = UUID(),
     anchor: Anchor? = .app(bundleID: "com.example.Notes"),
+    tab: TabBinding? = nil,
+    hidden: Bool = false,
+    trashedAt: Date? = nil,
     text: String = "",
     createdAt: Date = baseDate
 ) -> Note {
     Note(
         id: id,
         anchor: anchor,
+        tab: tab,
         text: text,
         frame: NoteFrame(x: 10, y: 20, width: 300, height: 200),
         placement: .window,
+        hidden: hidden,
+        trashedAt: trashedAt,
         createdAt: createdAt,
         updatedAt: createdAt
     )
@@ -75,9 +81,15 @@ private func makeNote(
     #expect(store.note(id: appNote.id) == appNote)
     #expect(store.note(id: UUID()) == nil)
 
-    #expect(store.notes(matching: .app(bundleID: "com.example.Notes")).map(\.id) == [appNote.id])
-    #expect(store.notes(matching: .web(PageURL(host: "example.com", path: "/docs"))).map(\.id) == [siteNote.id, pageNote.id])
-    #expect(store.notes(matching: .web(PageURL(host: "example.com", path: "/other"))).map(\.id) == [siteNote.id])
+    #expect(store.notes(matching: Context(appBundleID: "com.example.Notes")).map(\.id) == [appNote.id])
+    #expect(store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/docs")
+    )).map(\.id) == [siteNote.id, pageNote.id])
+    #expect(store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/other")
+    )).map(\.id) == [siteNote.id])
 
     let updatedAt = baseDate.addingTimeInterval(120)
     #expect(store.updateContent(id: appNote.id, change: .text("Changed"), now: updatedAt))
@@ -87,7 +99,100 @@ private func makeNote(
     #expect(store.trash(id: siteNote.id, now: updatedAt))
     #expect(store.note(id: siteNote.id)?.trashedAt == updatedAt)
     #expect(store.notes.count == 3)
-    #expect(store.notes(matching: .web(PageURL(host: "example.com", path: "/other"))).isEmpty)
+    #expect(store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/other")
+    )).isEmpty)
+}
+
+@Test func notesMatchingUsesVisibilityWhileKeepingOrderAndNotMutating() throws {
+    let root = try makeTempDirectory()
+    defer { removeTempDirectory(root) }
+
+    let store = NoteStore(fileURL: root.appendingPathComponent("notes.json"), now: baseDate)
+    let liveBinding = TabBinding(
+        browser: "com.google.Chrome", profile: "profile-a", session: "session-a",
+        tabID: 7, windowID: 2, index: 0, lastURL: "https://example.com/a"
+    )
+    let closedBinding = TabBinding(
+        browser: "com.google.Chrome", profile: "profile-a", session: "session-a",
+        tabID: 8, windowID: 2, index: 1, lastURL: "https://example.com/a",
+        closedAt: baseDate
+    )
+
+    let siteNote = makeNote(
+        anchor: .web(page: PageURL(host: "example.com", path: "/"), scope: .site),
+        text: "site"
+    )
+    let closedNote = makeNote(
+        anchor: .web(page: PageURL(host: "example.com", path: "/docs"), scope: .page),
+        tab: closedBinding,
+        text: "closed"
+    )
+    let hiddenAppNote = makeNote(anchor: .app(bundleID: "com.example.Notes"), hidden: true, text: "hidden")
+    let trashedAppNote = makeNote(
+        anchor: .app(bundleID: "com.example.Notes"),
+        trashedAt: baseDate,
+        text: "trashed"
+    )
+    let tabNote = makeNote(anchor: nil, tab: liveBinding, text: "tab")
+    let appNote = makeNote(anchor: .app(bundleID: "com.example.Notes"), text: "app")
+    let inboxNote = makeNote(anchor: nil, text: "inbox")
+    let pageNote = makeNote(
+        anchor: .web(page: PageURL(host: "example.com", path: "/docs"), scope: .page),
+        text: "page"
+    )
+    let contradictoryTabNote = makeNote(
+        anchor: .app(bundleID: "com.example.Other"),
+        tab: liveBinding,
+        text: "contradictory"
+    )
+    let all = [
+        siteNote, closedNote, hiddenAppNote, trashedAppNote, tabNote,
+        appNote, inboxNote, pageNote, contradictoryTabNote,
+    ]
+    all.forEach { #expect(store.add($0)) }
+
+    let before = store.notes
+    let generation = store.mutationGeneration
+
+    let appMatches = store.notes(matching: Context(appBundleID: "com.example.Notes"))
+    #expect(appMatches.map(\.id) == [hiddenAppNote.id, appNote.id])
+
+    let pageMatches = store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/docs")
+    ))
+    #expect(pageMatches.map(\.id) == [siteNote.id, pageNote.id])
+
+    let liveTab = TabRef(
+        browser: "com.google.Chrome", profile: "profile-a", session: "session-a", tabID: 7, windowID: 2
+    )
+    let tabMatches = store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "other.example", path: "/navigated"),
+        tab: liveTab
+    ))
+    #expect(tabMatches.map(\.id) == [tabNote.id, contradictoryTabNote.id])
+
+    let closedTab = TabRef(
+        browser: "com.google.Chrome", profile: "profile-a", session: "session-a", tabID: 8, windowID: 2
+    )
+    let pageOnly = store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/docs")
+    ))
+    let closedTabMatches = store.notes(matching: Context(
+        appBundleID: "com.google.Chrome",
+        page: PageURL(host: "example.com", path: "/docs"),
+        tab: closedTab
+    ))
+    #expect(pageOnly.map(\.id) == [siteNote.id, pageNote.id])
+    #expect(closedTabMatches.map(\.id) == [siteNote.id, pageNote.id])
+    #expect(Set(pageMatches.map(\.id)).count == pageMatches.count)
+
+    #expect(store.notes == before)
+    #expect(store.mutationGeneration == generation)
 }
 
 @Test func updateAndTrashMissingIDsReturnFalse() throws {
@@ -301,7 +406,10 @@ private func expectCorruption(contents: Data) throws {
     let reloaded = NoteStore(fileURL: url)
 
     #expect(reloaded.notes == [note])
-    #expect(reloaded.notes.first?.anchor?.matches(.web(page)) == true)
+    #expect(reloaded.notes.first?.anchor?.matches(Context(
+        appBundleID: "com.google.Chrome",
+        page: page
+    )) == true)
 }
 
 @Test func saveAndReloadPreserveReferenceDatePrecision() throws {

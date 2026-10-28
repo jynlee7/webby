@@ -7,16 +7,20 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     public let path: String
     public let query: String?
 
-    public init?(string: String) {
+    init?(string: String) {
+        self.init(string: string, queryRules: QueryRules.builtIns)
+    }
+
+    /// Parses a page using the caller's complete effective significant-query rules.
+    public init?(string: String, queryRules: [QueryRule]) {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
               let scheme = components.scheme?.lowercased(),
               ["http", "https", "file"].contains(scheme)
         else { return nil }
 
-        query = nil
-
         if scheme == "file" {
+            query = nil
             host = "file"
             path = Self.normalizePath(components.percentEncodedPath)
             return
@@ -35,6 +39,11 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
 
         host = normalizedHost
         path = Self.normalizePath(components.percentEncodedPath)
+        query = QueryRules.canonicalQuery(
+            for: components.percentEncodedQuery,
+            host: normalizedHost,
+            rules: queryRules
+        )
     }
 
     /// Creates an identity from an already selected stored host rather than a raw URL host.
@@ -80,11 +89,21 @@ public struct PageURL: Hashable, Codable, Sendable, CustomStringConvertible {
     }
 
     public var description: String {
-        host + path
+        host + path + (query.map { "?" + $0 } ?? "")
+    }
+
+    /// Whether a page-scoped anchor matches this page.
+    public func matchesPageAnchor(_ anchor: PageURL) -> Bool {
+        guard QueryRules.normalizedHost(host) == QueryRules.normalizedHost(anchor.host),
+              path == anchor.path
+        else { return false }
+
+        guard let anchorQuery = anchor.query else { return true }
+        return QueryRules.currentQuery(query, contains: anchorQuery)
     }
 
     private static func normalizeStoredHost(_ rawHost: String) -> String {
-        rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        QueryRules.normalizedHost(rawHost)
     }
 
     private static func defaultPort(for scheme: String) -> Int? {

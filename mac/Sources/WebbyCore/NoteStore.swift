@@ -110,7 +110,7 @@ public final class NoteStore {
     public func note(id: UUID) -> Note? { notes.first { $0.id == id } }
 
     public func notes(matching context: Context) -> [Note] {
-        notes.filter { $0.trashedAt == nil && $0.anchor?.matches(context) == true }
+        notes.filter { NoteVisibility.isAttached($0, to: context) }
     }
 
     @discardableResult

@@ -149,3 +149,209 @@ import Testing
         try JSONDecoder().decode(PageURL.self, from: data)
     }
 }
+
+@Test func youtubeVideoIDsArePartOfPageIdentity() throws {
+    let first = try #require(PageURL(string: "https://www.youtube.com/watch?v=a&t=10#comments"))
+    let second = try #require(PageURL(string: "https://youtube.com/watch?v=b"))
+
+    #expect(first.query == "v=a")
+    #expect(second.query == "v=b")
+    #expect(first != second)
+    #expect(first.host == "youtube.com")
+    #expect(first.path == "/watch")
+    #expect(first.description == "youtube.com/watch?v=a")
+}
+
+@Test func hackerNewsItemIDsArePartOfPageIdentity() throws {
+    let first = try #require(PageURL(string: "https://news.ycombinator.com/item?id=1"))
+    let second = try #require(PageURL(string: "https://news.ycombinator.com/item?id=2"))
+
+    #expect(first.query == "id=1")
+    #expect(second.query == "id=2")
+    #expect(first != second)
+}
+
+@Test func queryRulesDropIrrelevantParametersAndFragments() throws {
+    let page = try #require(PageURL(string: "https://youtube.com/watch?t=10&v=a&list=PL#t=10"))
+
+    #expect(page.query == "v=a")
+    #expect(page.description == "youtube.com/watch?v=a")
+}
+
+@Test func queryRulesUseTheExactHostIncludingNonDefaultPorts() throws {
+    #expect(try #require(PageURL(string: "https://youtube.com:8443/watch?v=a")).query == nil)
+
+    let portRule = [QueryRule(host: "youtube.com:8443", key: "v")]
+    #expect(try #require(PageURL(string: "https://youtube.com:8443/watch?v=a", queryRules: portRule)).query == "v=a")
+    #expect(try #require(PageURL(string: "https://youtube.com/watch?v=a", queryRules: portRule)).query == nil)
+    #expect(try #require(PageURL(string: "https://music.youtube.com/watch?v=a")).query == nil)
+}
+
+@Test func queryRuleHostsMatchTrimmedCaseFoldedNFCWithoutStrippingWww() throws {
+    let rule = [QueryRule(host: " E\u{301}XAMPLE.COM ", key: "q")]
+    let nfcPage = try #require(PageURL(string: "https://Éxample.com/search?q=1", queryRules: rule))
+
+    #expect(nfcPage.host == "éxample.com")
+    #expect(nfcPage.query == "q=1")
+
+    let stored = PageURL(host: "WWW.Example.COM", path: "/a")
+    #expect(stored.host == "www.example.com")
+    #expect(PageURL(host: "www.example.com", path: "/a") == stored)
+}
+
+@Test func queryKeysAreCaseSensitive() throws {
+    let lowerRule = [QueryRule(host: "example.com", key: "v")]
+    let upperRule = [QueryRule(host: "example.com", key: "V")]
+
+    #expect(try #require(PageURL(string: "https://example.com/?V=1", queryRules: lowerRule)).query == nil)
+    #expect(try #require(PageURL(string: "https://example.com/?V=1", queryRules: upperRule)).query == "V=1")
+}
+
+@Test func repeatedQueryKeysKeepTheirRelativeOrderAfterStableKeySorting() throws {
+    let rules = [QueryRule(host: "example.com", key: "a"), QueryRule(host: "example.com", key: "b")]
+    let page = try #require(PageURL(
+        string: "https://example.com/?b=1&a=1&b=2&a=2&c=3",
+        queryRules: rules
+    ))
+
+    #expect(page.query == "a=1&a=2&b=1&b=2")
+}
+
+@Test func bareAndEmptyQueryValuesRemainDistinctAndOrdered() throws {
+    let rule = [QueryRule(host: "example.com", key: "v")]
+    let page = try #require(PageURL(string: "https://example.com/?v&v=&v=x", queryRules: rule))
+
+    #expect(page.query == "v&v=&v=x")
+    #expect(page.matchesPageAnchor(PageURL(host: "example.com", path: "", query: "v")))
+    #expect(page.matchesPageAnchor(PageURL(host: "example.com", path: "", query: "v=")))
+    #expect(page.matchesPageAnchor(PageURL(host: "example.com", path: "", query: "v=x")))
+}
+
+@Test func canonicalQueryEncodingKeepsPlusAndSpaceDistinct() throws {
+    let rule = [QueryRule(host: "example.com", key: "v")]
+    let page = try #require(PageURL(string: "https://example.com/?v=a+b%20c&v=%2B", queryRules: rule))
+
+    #expect(page.query == "v=a%2Bb%20c&v=%2B")
+}
+
+@Test func canonicalQueryEncodingNormalizesPercentEscapes() throws {
+    let rule = [QueryRule(host: "example.com", key: "v")]
+    let page = try #require(PageURL(string: "https://example.com/?v=%7e%41%2f%e4%b8%ad", queryRules: rule))
+
+    #expect(page.query == "v=~A%2F%E4%B8%AD")
+}
+
+@Test func unicodeQueryKeysAndValuesRoundTripCanonically() throws {
+    let rule = [QueryRule(host: "example.com", key: "关键词")]
+    let page = try #require(PageURL(
+        string: "https://example.com/?%e5%85%b3%e9%94%ae%e8%af%8d=%e4%b8%ad%e6%96%87",
+        queryRules: rule
+    ))
+
+    #expect(page.query == "%E5%85%B3%E9%94%AE%E8%AF%8D=%E4%B8%AD%E6%96%87")
+    #expect(QueryRules.effective(rules: [], anchors: [.web(page: PageURL(host: "example.com", path: "", query: page.query), scope: .page)])
+        == [QueryRule(host: "example.com", key: "关键词")])
+}
+
+@Test func literalLeadingQuestionMarkIsPartOfTheKey() throws {
+    let rules = [QueryRule(host: "example.com", key: "?id")]
+    let literal = try #require(PageURL(string: "https://example.com/item??id=1", queryRules: rules))
+    let encoded = try #require(PageURL(string: "https://example.com/item?%3Fid=1", queryRules: rules))
+
+    #expect(literal.query == "%3Fid=1")
+    #expect(literal == encoded)
+
+    let youtube = try #require(PageURL(string: "https://youtube.com/watch??v=a"))
+    let normal = try #require(PageURL(string: "https://youtube.com/watch?v=a"))
+    #expect(youtube.query == nil)
+    #expect(youtube != normal)
+}
+
+@Test func invalidUTF8QueryBytesRemainDistinct() throws {
+    let rules = [QueryRule(host: "example.com", key: "q")]
+    let first = try #require(PageURL(string: "https://example.com/?q=%FF", queryRules: rules))
+    let second = try #require(PageURL(string: "https://example.com/?q=%FE", queryRules: rules))
+
+    #expect(first.query == "q=%FF")
+    #expect(second.query == "q=%FE")
+    #expect(first != second)
+    #expect(!first.matchesPageAnchor(second))
+}
+
+@Test func fileURLsNeverCarryAQuery() throws {
+    let page = try #require(PageURL(string: "file:///Users/me/notes.md?v=a&id=1#top"))
+
+    #expect(page.host == "file")
+    #expect(page.path == "/Users/me/notes.md")
+    #expect(page.query == nil)
+    #expect(page.description == "file/Users/me/notes.md")
+}
+
+@Test func v1AnchorsWithoutAQueryMatchEveryQueryValue() throws {
+    let wildcard = PageURL(host: "youtube.com", path: "/watch")
+    let first = try #require(PageURL(string: "https://youtube.com/watch?v=a"))
+    let second = try #require(PageURL(string: "https://youtube.com/watch?v=b"))
+
+    #expect(first.matchesPageAnchor(wildcard))
+    #expect(second.matchesPageAnchor(wildcard))
+    #expect(wildcard.matchesPageAnchor(wildcard))
+}
+
+@Test func newerSignificantKeysDoNotStrandExistingQueryAnchors() throws {
+    let oldAnchor = PageURL(host: "youtube.com", path: "/watch", query: "v=a")
+    let current = try #require(PageURL(
+        string: "https://youtube.com/watch?v=a&t=30",
+        queryRules: [QueryRule(host: "youtube.com", key: "v"), QueryRule(host: "youtube.com", key: "t")]
+    ))
+
+    #expect(current.query == "t=30&v=a")
+    #expect(current.matchesPageAnchor(oldAnchor))
+}
+
+@Test func queryMatchingComparesMultisetsAndDistinguishesBareFromEmpty() throws {
+    let current = PageURL(host: "example.com", path: "/a", query: "v=1&v=2&v=3&x=1")
+
+    #expect(current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=1&v=2")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=1&v=1")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=1&v=4")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v")))
+    #expect(current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=3")))
+    #expect(PageURL(host: "example.com", path: "/a", query: "v").matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=A")) == false)
+    #expect(PageURL(host: "example.com", path: "/a", query: "v").matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=")) == false)
+    #expect(PageURL(host: "example.com", path: "/a", query: "v=").matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v")) == false)
+}
+
+@Test func pageAnchorMatchingRequiresExactHostAndPath() throws {
+    let current = try #require(PageURL(string: "https://youtube.com/watch?v=a"))
+    let anchor = PageURL(host: "youtube.com", path: "/watch", query: "v=a")
+
+    #expect(current.matchesPageAnchor(anchor))
+    #expect(!current.matchesPageAnchor(PageURL(host: "youtube.com:8443", path: "/watch", query: "v=a")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "music.youtube.com", path: "/watch", query: "v=a")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "youtube.com", path: "/watch/extra", query: "v=a")))
+    #expect(!current.matchesPageAnchor(PageURL(host: "youtube.com", path: "/other", query: "v=a")))
+}
+
+@Test func pageAnchorMatchingTreatsPercentEscapesAsEquivalent() throws {
+    let current = PageURL(host: "example.com", path: "/a", query: "v=A")
+
+    #expect(current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=%41")))
+    #expect(current.matchesPageAnchor(PageURL(host: "example.com", path: "/a", query: "v=%61")) == false)
+}
+
+@Test func descriptionIncludesTheQueryOnlyWhenPresent() throws {
+    let withQuery = try #require(PageURL(string: "https://youtube.com/watch?v=a&t=10"))
+    let withoutQuery = try #require(PageURL(string: "https://youtube.com/watch?t=10"))
+    let storedEmpty = PageURL(host: "example.com", path: "/a", query: "")
+
+    #expect(withQuery.description == "youtube.com/watch?v=a")
+    #expect(withoutQuery.description == "youtube.com/watch")
+    #expect(storedEmpty.description == "example.com/a?")
+}
+
+@Test func passingNoRulesOptsOutOfTheBuiltIns() throws {
+    let page = try #require(PageURL(string: "https://youtube.com/watch?v=a", queryRules: []))
+
+    #expect(page.query == nil)
+    #expect(page.description == "youtube.com/watch")
+}

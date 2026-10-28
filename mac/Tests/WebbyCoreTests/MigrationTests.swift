@@ -187,6 +187,35 @@ struct MigrationTests {
         assertV1Defaults(siteNote)
     }
 
+    @Test func migratedV1NilQueryAnchorsKeepTheirCompatibility() throws {
+        let document = try NotesDocument.decode(Data(goldenV1.utf8), version: 1)
+        let appNote = document.notes[0]
+        let pageNote = document.notes[1]
+
+        #expect(appNote.anchor?.matches(Context(appBundleID: "com.apple.TextEdit")) == true)
+        #expect(appNote.anchor?.matches(Context(
+            appBundleID: "com.apple.TextEdit",
+            page: PageURL(host: "example.com", path: "/a")
+        )) == true)
+        #expect(appNote.anchor?.matches(Context(appBundleID: "com.apple.Safari")) == false)
+
+        for query in [nil, "v=a", "v=b", "t=10&v=a"] as [String?] {
+            let context = Context(
+                appBundleID: "com.google.Chrome",
+                page: PageURL(host: "youtube.com", path: "/watch", query: query)
+            )
+            #expect(pageNote.anchor?.matches(context) == true)
+            #expect(NoteVisibility.isAttached(pageNote, to: context))
+        }
+
+        let otherPage = Context(
+            appBundleID: "com.google.Chrome",
+            page: PageURL(host: "youtube.com", path: "/other", query: "v=a")
+        )
+        #expect(pageNote.anchor?.matches(otherPage) == false)
+        #expect(!NoteVisibility.isAttached(pageNote, to: otherPage))
+    }
+
     @Test func v2RoundTripKeepsNotesWorkspacesAndMetadata() throws {
         let (document, note, workspace) = makeV2Sample()
 
