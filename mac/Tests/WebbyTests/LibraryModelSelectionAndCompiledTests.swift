@@ -272,7 +272,7 @@ private func selectionIDs(_ notes: [LibraryNote]) -> Set<UUID> {
 }
 
 @MainActor
-@Test func portabilityStatusShowsTheMostRecentOperation() {
+@Test func portabilityStatusShowsTheMostRecentOperation() throws {
     let directory = try FileManager.default.temporaryDirectory
         .appendingPathComponent("WebbyPortabilityStatus-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
