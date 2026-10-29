@@ -104,9 +104,15 @@ private func exportFolder() throws -> URL {
 @Test func exportRefusesToOverwriteAnExistingDestination() throws {
     let folder = try exportFolder()
     defer { try? FileManager.default.removeItem(at: folder) }
-    let destination = folder.deletingLastPathComponent()
-        .appendingPathComponent("existing-\(UUID().uuidString).webbyskin")
-    defer { try? FileManager.default.removeItem(at: destination) }
+    let outputDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WebbySkinExportOutput-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: outputDirectory,
+        withIntermediateDirectories: false
+    )
+    defer { try? FileManager.default.removeItem(at: outputDirectory) }
+    let destination = outputDirectory
+        .appendingPathComponent("existing.webbyskin")
 
     try Data("occupied".utf8).write(to: destination)
     do {
@@ -123,8 +129,8 @@ private func exportFolder() throws -> URL {
         }
     }
     #expect(try Data(contentsOf: destination) == Data("occupied".utf8))
-    #expect(try FileManager.default.contentsOfDirectory(atPath: destination.deletingLastPathComponent().path)
-        .contains { $0.hasSuffix(".tmp") } == false)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: outputDirectory.path)
+        == ["existing.webbyskin"])
 }
 
 @Test func exportRejectsMediaThatDoesNotDecode() throws {
