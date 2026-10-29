@@ -106,11 +106,11 @@ public enum SkinArchivePreflight {
     private static func validateRawNames(
         _ entries: [SkinArchiveCentralDirectoryEntry]
     ) throws {
-        var exactNames: Set<String> = []
+        var exactNames: Set<Data> = []
         var normalizedNames: [String: String] = [:]
 
         for entry in entries {
-            guard exactNames.insert(entry.rawPath).inserted else {
+            guard exactNames.insert(Data(entry.rawPath.utf8)).inserted else {
                 throw SkinArchiveError.duplicateEntry(path: entry.rawPath)
             }
 
@@ -132,7 +132,7 @@ public enum SkinArchivePreflight {
         _ entries: [SkinArchiveCentralDirectoryEntry],
         wrapper: String?
     ) throws {
-        var exactNames: Set<String> = []
+        var exactNames: Set<Data> = []
         var normalizedNames: [String: String] = [:]
 
         for entry in entries {
@@ -144,7 +144,7 @@ public enum SkinArchivePreflight {
             guard !path.isEmpty else {
                 throw SkinArchiveError.unsafeEntryPath(path: path, reason: "empty path")
             }
-            guard exactNames.insert(path).inserted else {
+            guard exactNames.insert(Data(path.utf8)).inserted else {
                 throw SkinArchiveError.duplicateEntry(path: path)
             }
 
