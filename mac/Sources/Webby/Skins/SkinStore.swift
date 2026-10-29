@@ -209,6 +209,36 @@ final class SkinStore {
         }
     }
 
+    /// The look of a staged skin in both appearances, selected over the current catalog
+    /// so a skin that builds on another resolves it. Nil when the archive has no manifest.
+    func previewThemes(for preview: StagedSkinPreview) -> NoteThemes? {
+        guard let manifest = preview.manifest else { return nil }
+        let staged = InstalledSkin(
+            id: manifest.id,
+            manifest: manifest,
+            groups: preview.groups,
+            availableImagePaths: preview.validation.availableImagePaths,
+            isAccepted: preview.isAccepted
+        )
+        let others = held.values.compactMap(\.skin).filter { $0.id != manifest.id }
+        let result = SkinSelection(skins: others + [staged], availableBaseIDs: baseIDs)
+            .select(workspaceSkinID: nil, globalSkinID: manifest.id, accessibility: accessibility)
+        return NoteThemes(selection: result)
+    }
+
+    /// Whether installing a skin with `id` would replace one the user already has.
+    func replacesInstalledSkin(id: String) -> Bool {
+        held[id]?.origin == .installed
+    }
+
+    /// A folder provider for the preview: the staged root for the staged id, else the library.
+    func assetFolderProvider(staging id: String, at root: URL) -> SkinAssetCache.FolderProvider {
+        { [weak self] skinID in
+            if skinID == id { return root }
+            return MainActor.assumeIsolated { self?.folder(for: skinID) }
+        }
+    }
+
     /// Copies a skin into the library under a new id, returning that id.
     func duplicate(skinID: String) throws -> String {
         guard let source = held[skinID] else { throw SkinStoreError.unknownSkin(skinID) }

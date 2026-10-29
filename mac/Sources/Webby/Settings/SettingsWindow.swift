@@ -13,10 +13,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let hotkeys: Hotkeys
     private let permission: AccessibilityPermission
     private let general: GeneralSettingsModel
+    private let skins: SkinStore
     private var keyMonitor: Any?
 
-    init(settings: SettingsStore, hotkeys: Hotkeys, permission: AccessibilityPermission, storedShortcutProblem: String?) {
+    init(
+        settings: SettingsStore,
+        skins: SkinStore,
+        importSkin: @escaping @MainActor () -> Void,
+        hotkeys: Hotkeys,
+        permission: AccessibilityPermission,
+        storedShortcutProblem: String?
+    ) {
         self.settings = settings
+        self.skins = skins
         self.hotkeys = hotkeys
         self.permission = permission
         general = GeneralSettingsModel(
@@ -32,6 +41,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         item.label = "General"
         item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         tabs.addTabViewItem(item)
+
+        let appearance = NSHostingController(rootView: AppearanceSettingsView(store: skins, importSkin: importSkin))
+        appearance.sizingOptions = [.preferredContentSize]
+        let appearanceItem = NSTabViewItem(viewController: appearance)
+        appearanceItem.label = "Appearance"
+        appearanceItem.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: nil)
+        tabs.addTabViewItem(appearanceItem)
 
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
