@@ -96,7 +96,7 @@ public enum MarkdownRenderer {
         } else if isOrderedListStart(String(remainder), punctuation: ")"),
                   let punctuation = escaped.firstIndex(of: ")") {
             escaped.insert("\\", at: punctuation)
-        } else if isSetextOrRule(remainder), !escaped.isEmpty {
+        } else if isSetextOrRule(String(remainder)), !escaped.isEmpty {
             escaped.insert("\\", at: escaped.startIndex)
         }
 
