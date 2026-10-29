@@ -60,7 +60,12 @@ final class ContextMonitor {
             let isWebby = running?.processIdentifier == ProcessInfo.processInfo.processIdentifier
             MainActor.assumeIsolated { self?.activated(front, isWebby: isWebby) }
         }
-        let running = NSWorkspace.shared.frontmostApplication
+        // Opening Webby from Finder can make Webby itself frontmost. It never owns the
+        // menu bar, so the menu-bar owner is then the app the user was in.
+        let workspace = NSWorkspace.shared
+        let frontmost = workspace.frontmostApplication
+        let isWebby = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+        let running = isWebby ? workspace.menuBarOwningApplication : frontmost
         activated(running.flatMap(Self.frontApp),
                   isWebby: running?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
     }
