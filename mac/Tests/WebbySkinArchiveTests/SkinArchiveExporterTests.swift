@@ -4,6 +4,10 @@ import Testing
 import WebbyCore
 @testable import WebbySkinArchive
 
+private let bodyPath = "images/note-body.png"
+private let retinaBodyPath = "images/note-body@2x.png"
+private let soundPath = "sounds/note-create.wav"
+
 private func sha256(of url: URL) throws -> String {
     let digest = SHA256.hash(data: try Data(contentsOf: url))
     return digest.map { String(format: "%02x", $0) }.joined()
