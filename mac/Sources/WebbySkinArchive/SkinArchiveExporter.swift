@@ -31,17 +31,26 @@ public enum SkinArchiveExporter {
             throw SkinArchiveError.destinationExists(path: destination.lastPathComponent)
         }
 
-        let snapshot = destinationDirectory.appendingPathComponent(
-            ".webbyskin-export-\(UUID().uuidString)"
-        )
+        // The snapshot must live outside the source tree: a caller may export into
+        // the folder itself, and a new entry there could push a valid skin over the
+        // 400-entry cap before it is read.
+        let snapshot: URL
+        do {
+            snapshot = try fileManager.url(
+                for: .itemReplacementDirectory,
+                in: .userDomainMask,
+                appropriateFor: destinationDirectory,
+                create: true
+            )
+        } catch {
+            throw SkinArchiveError.exportFailed(
+                path: destination.path,
+                reason: "the export snapshot could not be created"
+            )
+        }
         defer { try? fileManager.removeItem(at: snapshot) }
 
         do {
-            try fileManager.createDirectory(
-                at: snapshot,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
             let captured = try capture(
                 folder: folder,
                 into: snapshot,

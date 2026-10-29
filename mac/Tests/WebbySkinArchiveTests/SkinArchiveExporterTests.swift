@@ -235,3 +235,29 @@ private func exportFolder() throws -> URL {
     #expect(try Data(contentsOf: staged.root.appendingPathComponent("skin.json")) == manifestBytes)
     #expect(try Data(contentsOf: staged.root.appendingPathComponent(bodyPath)) == onePixelPNG)
 }
+
+@Test func exportIntoAnAtLimitFolderDoesNotPushItOverTheEntryCap() throws {
+    let folder = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WebbySkinExportCap-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: folder) }
+
+    try archiveManifest().write(to: folder.appendingPathComponent("skin.json"))
+    // 399 directories plus skin.json is exactly the 400-entry visit cap.
+    for index in 0..<399 {
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent(String(format: "d%03d", index)),
+            withIntermediateDirectories: false
+        )
+    }
+
+    let destination = folder.appendingPathComponent("exported.webbyskin")
+    try SkinArchiveExporter.export(
+        folder: folder,
+        to: destination,
+        availableBaseIDs: ["webby.clear"]
+    )
+    #expect(FileManager.default.fileExists(atPath: destination.path))
+    #expect(try SkinArchivePreflight.check(Data(contentsOf: destination))
+        .entries.map(\.path) == ["skin.json"])
+}
