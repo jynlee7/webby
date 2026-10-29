@@ -29,5 +29,7 @@ public enum SkinArchiveError: Error, Equatable, Sendable {
         reason: String,
         underlying: SkinArchiveError
     )
+    case exportSourceRejected(reason: String)
+    case exportFailed(path: String, reason: String)
     case manifestMissing
 }

@@ -15,21 +15,29 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
     private let imageChecks: [String: AssetCheck<ImageAssetMetadata>]
     private let soundChecks: [String: AssetCheck<SoundAssetMetadata>]
 
-    public init(stagingRoot: URL, entries: [SkinArchivePreflightEntry]) {
-        let sortedEntries = entries.sorted { lhs, rhs in
-            Data(lhs.path.utf8).lexicographicallyPrecedes(Data(rhs.path.utf8))
+    /// Checks the admitted files of one staging root or installed skin folder.
+    public init(root: URL, paths: [String]) {
+        let sortedPaths = paths.sorted { lhs, rhs in
+            Data(lhs.utf8).lexicographicallyPrecedes(Data(rhs.utf8))
         }
 
         var records: [SkinAssetRecord] = []
         var imageChecks: [String: AssetCheck<ImageAssetMetadata>] = [:]
         var soundChecks: [String: AssetCheck<SoundAssetMetadata>] = [:]
 
-        for entry in sortedEntries {
-            let url = Self.stagedURL(for: entry.path, in: stagingRoot)
+        for path in sortedPaths {
+            let url = Self.stagedURL(for: path, in: root)
             let bytes = url.flatMap(Self.fileByteCount) ?? 0
-            records.append(SkinAssetRecord(path: entry.path, bytes: bytes))
+            records.append(SkinAssetRecord(path: path, bytes: bytes))
 
-            guard case .accepted(let skinEntry) = SkinEntryRules.classify(entry.path),
+            if path == "preview.png" || path == "preview@2x.png" {
+                imageChecks[path] = url.map {
+                    Self.imageCheck(path: path, url: $0, bytes: bytes)
+                } ?? .invalid(code: "unreadable")
+                continue
+            }
+
+            guard case .accepted(let skinEntry) = SkinEntryRules.classify(path),
                   let asset = skinEntry.asset
             else {
                 continue
@@ -37,24 +45,24 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
 
             switch asset.kind {
             case .image, .orb:
-                imageChecks[entry.path] = url.map {
-                    Self.imageCheck(path: entry.path, url: $0, bytes: bytes)
+                imageChecks[path] = url.map {
+                    Self.imageCheck(path: path, url: $0, bytes: bytes)
                 } ?? .invalid(code: "unreadable")
             case .sound:
-                soundChecks[entry.path] = url.map {
-                    Self.soundCheck(path: entry.path, url: $0, bytes: bytes)
+                soundChecks[path] = url.map {
+                    Self.soundCheck(path: path, url: $0, bytes: bytes)
                 } ?? .invalid(code: "unreadable")
             }
         }
 
-        self.root = stagingRoot
+        self.root = root
         self.records = records
         self.imageChecks = imageChecks
         self.soundChecks = soundChecks
     }
 
     public init(_ staged: StagedSkinArchive) {
-        self.init(stagingRoot: staged.root, entries: staged.entries)
+        self.init(root: staged.root, paths: staged.entries.map(\.path))
     }
 
     public func inventory() -> [SkinAssetRecord] {
@@ -341,16 +349,25 @@ public enum SkinArchiveStaging {
             )
         )
 
-        let diagnostics = sortedDiagnostics(
-            staged.warnings + loaderDiagnostics + validation.diagnostics
-        )
+        var diagnostics = staged.warnings + loaderDiagnostics + validation.diagnostics
+        for path in ["preview.png", "preview@2x.png"] {
+            if case .invalid(let code) = checker.image(path) {
+                diagnostics.append(SkinDiagnostic(
+                    code: "invalid-preview",
+                    severity: .fatal,
+                    path: [],
+                    assetPath: path,
+                    message: "Preview '\(path)' is invalid: \(code)."
+                ))
+            }
+        }
 
         return SkinArchiveValidation(
             manifest: validation.manifest,
             document: document,
             validation: validation,
             checker: checker,
-            diagnostics: diagnostics
+            diagnostics: sortedDiagnostics(diagnostics)
         )
     }
 

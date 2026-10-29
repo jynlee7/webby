@@ -349,6 +349,36 @@ private func hasDiagnostic(
     Issue.record("AVAudioFile did not report the IMA4 CAF as non-PCM: \(result.diagnostics)")
 }
 
+@Test func validPreviewIsCheckedAndAccepted() throws {
+    let stage = try ArchiveMediaStage(files: [
+        "skin.json": archiveManifest(),
+        "preview.png": onePixelPNG,
+    ])
+
+    let result = validation(stage)
+    #expect(result.isAccepted)
+    guard case .available = result.checker.image("preview.png") else {
+        Issue.record("expected the preview to decode")
+        return
+    }
+    #expect(!hasDiagnostic(result, code: "invalid-preview"))
+}
+
+@Test func nonPNGPreviewIsRejectedAtTheArchiveBoundary() throws {
+    let stage = try ArchiveMediaStage(files: [
+        "skin.json": archiveManifest(),
+        "preview.png": Data(repeating: 0x41, count: 64),
+    ])
+
+    let result = validation(stage)
+    #expect(!result.isAccepted)
+    #expect(hasDiagnostic(
+        result,
+        code: "invalid-preview",
+        severity: .fatal
+    ))
+}
+
 @Test func missingAssetsBehaveAsInFolderLoading() throws {
     let stage = try ArchiveMediaStage(files: [
         "skin.json": archiveManifest(extra: archiveSurfaceGroup),
