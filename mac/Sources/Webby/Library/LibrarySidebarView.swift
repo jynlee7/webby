@@ -37,7 +37,7 @@ struct LibrarySidebarView: View {
                     item: .section(.workspaces),
                     title: "All Workspaces",
                     symbol: "rectangle.3.group",
-                    count: model.sidebarCounts[.workspaces]
+                    count: model.sidebarCounts[.workspaces, default: 0]
                 )
 
                 ForEach(model.libraryResult.workspaces, id: \.destination) { group in
