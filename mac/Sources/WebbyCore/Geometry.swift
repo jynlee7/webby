@@ -6,6 +6,11 @@ import CoreGraphics
 /// primary screen with y growing downward. AppKit coordinates (`NSWindow.frame`) put the origin
 /// at the bottom-left with y growing upward. Both share the same x axis.
 public enum Geometry {
+    /// The transparent margin, in points, a note's window extends past its visual frame on
+    /// every side. Decoration overhang and soft shadows draw there; `NoteFrame` stays the
+    /// visual frame (plan.md §5.4.8).
+    public static let decorationMargin: CGFloat = 32
+
     /// Converts a top-left-origin rect to AppKit coordinates.
     /// - Parameter primaryScreenHeight: Height of the screen whose AppKit origin is (0, 0).
     public static func appKitRect(fromTopLeft rect: CGRect, primaryScreenHeight: CGFloat) -> CGRect {

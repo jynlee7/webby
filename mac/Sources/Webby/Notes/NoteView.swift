@@ -12,6 +12,8 @@ final class NoteModel {
     var collapsed: Bool
     var isEditable: Bool
     var themes: NoteThemes
+    /// The note's saved palette slot and decoration choice.
+    var appearance: NoteAppearance?
     /// Bumped to move keyboard focus into the text.
     var focusRequest = 0
 
@@ -20,6 +22,8 @@ final class NoteModel {
     @ObservationIgnored var onHide: @MainActor () -> Void = {}
     @ObservationIgnored var onTrash: @MainActor () -> Void = {}
     @ObservationIgnored var onDone: @MainActor () -> Void = {}
+    @ObservationIgnored var onSelectPalette: @MainActor (Int?) -> Void = { _ in }
+    @ObservationIgnored var onSetDecorationHidden: @MainActor (Bool) -> Void = { _ in }
     @ObservationIgnored var onResizeEnded: @MainActor () -> Void = {}
 
     init(id: UUID, text: String, collapsed: Bool, isEditable: Bool, themes: NoteThemes) {
@@ -39,12 +43,19 @@ final class NoteModel {
 /// `webbyTheme` and none hard-codes styling.
 struct NoteRootView: View {
     let model: NoteModel
+    let assets: SkinAssetCache
 
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        NoteView(model: model)
-            .environment(\.webbyTheme, model.themes.theme(for: scheme))
+        let theme = model.themes.theme(for: scheme)
+        ZStack {
+            DecorationView(decoration: theme.decoration)
+            NoteView(model: model)
+                .padding(Geometry.decorationMargin)
+        }
+        .environment(\.webbyTheme, theme)
+        .environment(\.skinAssetCache, assets)
     }
 }
 
@@ -53,12 +64,23 @@ struct NoteView: View {
     /// `webby.clear`) still need a row for collapse, ⋯ and close.
     static let minimumControlRowHeight = 28.0
 
+    /// The smallest panel: the minimum note plus the decoration margin on every side.
+    static let minimumPanelSize = CGSize(
+        width: OverlayPlanner.minimumNoteSize.width + 2 * Geometry.decorationMargin,
+        height: OverlayPlanner.minimumNoteSize.height + 2 * Geometry.decorationMargin
+    )
+
     let model: NoteModel
 
     @Environment(\.webbyTheme) private var theme
     @State private var hovering = false
 
     private var surface: ResolvedSurface { theme.surface }
+
+    private var palette: RGBAColor? {
+        guard let index = theme.selectedIndex, theme.palette.indices.contains(index) else { return nil }
+        return theme.palette[index]
+    }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: surface.cornerRadius, style: .continuous)
@@ -82,6 +104,9 @@ struct NoteView: View {
                     VisualEffectBackground(material: material, cornerRadius: surface.cornerRadius)
                 }
                 Color(surface.fill)
+                if let image = surface.image {
+                    SurfaceArtwork(image: image, tint: palette)
+                }
                 if model.collapsed {
                     Color(theme.collapsed.fill)
                 }
@@ -120,6 +145,10 @@ struct NoteView: View {
 
             Menu {
                 Button("Hide Here", action: model.onHide)
+                if model.themes.paletteSlotCount > 0 || model.themes.hasDecoration {
+                    Divider()
+                    skinItems
+                }
                 Divider()
                 Button("Move to Trash", action: model.onTrash)
             } label: {
@@ -141,6 +170,29 @@ struct NoteView: View {
         .padding(.horizontal, 6)
         .frame(height: controlRowHeight)
         .background(model.collapsed ? Color.clear : Color(theme.header.fill))
+    }
+
+    @ViewBuilder
+    private var skinItems: some View {
+        let themes = model.themes
+        if themes.paletteSlotCount > 0 {
+            // A saved index past the end of a shrunken palette resolves to slot 1.
+            let saved = model.appearance?.paletteIndex
+            let selected = saved.map { min($0, themes.paletteSlotCount - 1) }
+            Menu("Color") {
+                Toggle("Skin Default", isOn: Binding(get: { saved == nil }, set: { _ in model.onSelectPalette(nil) }))
+                Divider()
+                ForEach(0..<themes.paletteSlotCount, id: \.self) { index in
+                    Toggle("Color \(index + 1)", isOn: Binding(get: { selected == index }, set: { _ in model.onSelectPalette(index) }))
+                }
+            }
+        }
+        if themes.hasDecoration {
+            Toggle("Show Decoration", isOn: Binding(
+                get: { !(model.appearance?.hideDecoration ?? false) },
+                set: { model.onSetDecorationHidden(!$0) }
+            ))
+        }
     }
 
     private var content: some View {
@@ -169,7 +221,7 @@ struct NoteView: View {
         .padding(.bottom, padding.bottom ?? 0)
         .overlay(alignment: .bottomTrailing) {
             if model.isEditable {
-                ResizeGrip(minimumSize: OverlayPlanner.minimumNoteSize, onEnded: model.onResizeEnded)
+                ResizeGrip(minimumSize: Self.minimumPanelSize, onEnded: model.onResizeEnded)
                     .frame(width: 18, height: 18)
                     .overlay {
                         if theme.resizeHandle.visibility.isShown(hovering: hovering) {

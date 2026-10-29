@@ -12,15 +12,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let notes: NotesController
     private let openSettings: @MainActor () -> Void
+    private let importSkin: @MainActor () -> Void
+    private let revealSkinsFolder: @MainActor () -> Void
     private let showMoveToApplications: @MainActor () -> Void
 
     init(
         notes: NotesController,
         openSettings: @escaping @MainActor () -> Void,
+        importSkin: @escaping @MainActor () -> Void,
+        revealSkinsFolder: @escaping @MainActor () -> Void,
         showMoveToApplications: @escaping @MainActor () -> Void
     ) {
         self.notes = notes
         self.openSettings = openSettings
+        self.importSkin = importSkin
+        self.revealSkinsFolder = revealSkinsFolder
         self.showMoveToApplications = showMoveToApplications
         super.init()
         menu.autoenablesItems = false
@@ -92,6 +98,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let library = NSMenuItem(title: "Library", action: nil, keyEquivalent: "")
         library.isEnabled = false
         menu.addItem(library)
+        menu.addItem(ActionMenuItem("Import Skin…", run: importSkin))
+        menu.addItem(ActionMenuItem("Reveal Skins Folder", run: revealSkinsFolder))
         menu.addItem(ActionMenuItem("Settings…", key: ",", run: openSettings))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Webby", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))

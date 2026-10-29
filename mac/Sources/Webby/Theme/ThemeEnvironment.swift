@@ -2,20 +2,28 @@ import AppKit
 import SwiftUI
 import WebbyCore
 
-/// The resolved note look for both appearances.
-///
-/// Step 3b resolves only the built-in skins in `Contents/Resources/Skins`: the global
-/// skin from settings, then `webby.clear`. Choosing, installing and hot-reloading skins
-/// arrive with Step 9b. System accessibility settings are applied by the resolver.
+/// The resolved note look for both appearances, as `SkinStore` selects it for one note.
 struct NoteThemes: Sendable, Equatable {
     var light: ResolvedTheme
     var dark: ResolvedTheme
+    var effectiveSkinID: String
+    /// Palette slots the effective skin offers; zero hides the Color menu.
+    var paletteSlotCount: Int
+    var hasDecoration: Bool
+    /// The palette of the light look, for slot swatches.
+    var palette: [RGBAColor]
+    /// Bumped by every skin reload so artwork edited in place redraws even when the
+    /// resolved values are equal.
+    var revision: Int
 
+    /// The skins shipped in the app bundle.
     static let builtInIDs = ["webby.clear", "webby.mono"]
 
     /// Without any skin folder the resolver still returns its terminal fallback, so a
     /// note always has a complete, readable look.
-    static let fallback = NoteThemes(skins: [], globalSkinID: nil, accessibility: WebbyCore.AccessibilitySettings())
+    static let fallback = NoteThemes(
+        selection: SkinSelection(skins: [], availableBaseIDs: []).select(workspaceSkinID: nil, globalSkinID: nil)
+    )
 
     func theme(for scheme: ColorScheme) -> ResolvedTheme {
         scheme == .dark ? dark : light
@@ -27,20 +35,14 @@ struct NoteThemes: Sendable, Equatable {
         max(light.collapsed.height, dark.collapsed.height)
     }
 
-    init(skins: [InstalledSkin], globalSkinID: String?, accessibility: WebbyCore.AccessibilitySettings) {
-        let resolver = SkinResolver(builtIns: skins, availableBaseIDs: Set(skins.map(\.id)))
-        func resolve(_ appearance: AppearanceMode) -> ResolvedTheme {
-            resolver.resolve(
-                workspaceSkinID: nil,
-                globalSkinID: globalSkinID,
-                requested: appearance,
-                noteAppearance: nil,
-                accessibility: accessibility,
-                textScale: 1
-            ).theme
-        }
-        light = resolve(.light)
-        dark = resolve(.dark)
+    init(selection: SkinSelectionResult, revision: Int = 0) {
+        light = selection.light.theme
+        dark = selection.dark.theme
+        effectiveSkinID = selection.effectiveSkinID
+        paletteSlotCount = selection.paletteSlotCount
+        hasDecoration = selection.hasDecoration
+        palette = selection.light.theme.palette
+        self.revision = revision
     }
 
     /// The system's Reduce Transparency, Increase Contrast and Reduce Motion settings.
@@ -52,35 +54,6 @@ struct NoteThemes: Sendable, Equatable {
             increaseContrast: workspace.accessibilityDisplayShouldIncreaseContrast,
             reduceMotion: workspace.accessibilityDisplayShouldReduceMotion
         )
-    }
-
-    /// Loads the built-in skin folders that `build-app.sh` copies into the bundle.
-    /// Returns none when Webby runs outside an app bundle.
-    static func loadBuiltInSkins(from directory: URL?) -> [InstalledSkin] {
-        guard let directory else { return [] }
-        let bases = Set(builtInIDs)
-        return builtInIDs.compactMap { id in
-            let loaded = SkinFolderLoader.load(
-                folder: directory.appendingPathComponent(id, isDirectory: true),
-                origin: .builtIn,
-                availableBaseIDs: bases
-            )
-            guard let document = loaded.document, let manifest = loaded.manifest else { return nil }
-            // The load result reports diagnostics but not group statuses; validating the
-            // same document again yields them.
-            let validation = SkinValidator.validate(
-                document: document,
-                assets: loaded.assetChecker,
-                context: SkinValidationContext(isBuiltIn: true, availableBaseIDs: bases)
-            )
-            return InstalledSkin(
-                id: manifest.id,
-                manifest: manifest,
-                groups: validation.groups,
-                availableImagePaths: Set(loaded.assetChecker.inventory().map(\.path)),
-                isAccepted: loaded.isAccepted && validation.isAccepted
-            )
-        }
     }
 
     static var bundledSkinsDirectory: URL? {
