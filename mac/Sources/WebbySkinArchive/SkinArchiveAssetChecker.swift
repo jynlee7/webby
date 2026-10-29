@@ -194,8 +194,8 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
             return .invalid(code: "png-decode")
         }
 
-        guard CGImageGetWidth(image) == header.width,
-              CGImageGetHeight(image) == header.height
+        guard image.width == header.width,
+              image.height == header.height
         else {
             return .invalid(code: "png-dimension-mismatch")
         }
