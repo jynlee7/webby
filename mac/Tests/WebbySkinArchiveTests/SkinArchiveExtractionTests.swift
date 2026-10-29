@@ -450,8 +450,9 @@ private func extractionError(
     defer { harness.cleanup() }
 
     // Sixteen images of exactly the per-image limit plus the 16-byte manifest
-    // exceed the 64 MB total on the sixteenth image. Every declared size is
-    // forged below preflight.
+    // exceed the 64 MB total on the sixteenth image. The first fifteen declarations
+    // are honest; only the final one is forged so the aggregate check wins before
+    // the post-extraction declared-size check.
     var entries = [
         StreamingZIPEntry(path: "skin.json", actualByteCount: 16, declaredByteCount: 16),
     ]
@@ -459,7 +460,9 @@ private func extractionError(
         entries.append(StreamingZIPEntry(
             path: "images/orb-idle-\(frame).png",
             actualByteCount: SkinArchiveLimits.imageByteCount,
-            declaredByteCount: 1
+            declaredByteCount: frame == 15
+                ? 1
+                : UInt32(SkinArchiveLimits.imageByteCount)
         ))
     }
     let data = try StreamingZIPFixture.make(entries: entries)
