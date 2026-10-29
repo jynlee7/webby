@@ -39,6 +39,9 @@ allowed_for() {
     WebbySkinArchiveTests)
       printf '%s\n' "Testing Foundation CryptoKit WebbyCore WebbySkinArchive ZIPFoundation"
       ;;
+    WebbyTests)
+      printf '%s\n' "Testing Foundation AppKit SwiftUI Webby WebbyCore"
+      ;;
     *)
       return 1
       ;;
