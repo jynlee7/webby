@@ -44,7 +44,6 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
         )
         let model = LibraryModel(
             controller: notes,
-            userQueryRules: userQueryRules,
             workspaceDisplayName: { key in
                 LibraryWorkspaceNames.displayName(for: key) { bundleID in
                     guard let url = NSWorkspace.shared
@@ -52,7 +51,8 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
                     else { return nil }
                     return FileManager.default.displayName(atPath: url.path)
                 }
-            }
+            },
+            userQueryRules: userQueryRules
         )
         self.init(model: model, actions: actions)
     }
