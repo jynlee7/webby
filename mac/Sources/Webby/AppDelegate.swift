@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeys: Hotkeys!
     private var settingsStore: SettingsStore!
     private var settingsWindow: SettingsWindowController?
+    private var libraryWindow: LibraryWindowController?
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusMenu = StatusMenu(
             notes: notes,
+            openLibrary: { [weak self] in self?.showLibrary() },
             openSettings: { [weak self] in self?.showSettings() },
             showMoveToApplications: { [weak self] in self?.showMoveToApplications() }
         )
@@ -63,7 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        notes.terminationReply()
+        // The Library keeps its own draft; commit it before quit captures the request.
+        libraryWindow?.commitPendingEdits()
+        return notes.terminationReply()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -77,6 +85,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             globalSkinID: settingsStore.settings.globalSkinID,
             accessibility: NoteThemes.systemAccessibility
         )
+    }
+
+    private func showLibrary() {
+        if libraryWindow == nil {
+            libraryWindow = LibraryWindowController(
+                notes: notes,
+                currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
+                userQueryRules: settingsStore.settings.queryRules
+            )
+        }
+        libraryWindow?.present()
     }
 
     private func showSettings() {

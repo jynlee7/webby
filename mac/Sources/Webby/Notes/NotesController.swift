@@ -2,6 +2,13 @@ import AppKit
 import OSLog
 import WebbyCore
 
+/// Where a Library-created note belongs.
+enum LibraryDestination: Equatable, Sendable {
+    case inbox
+    case workspace(WorkspaceKey)
+    case record(UUID)
+}
+
 /// Owns the notes: the store, the overlays for the current app, autosave with retry,
 /// trash with Undo, and the quit flush.
 ///
@@ -10,17 +17,27 @@ import WebbyCore
 /// note, and before quitting; each commit is one content revision.
 @MainActor
 final class NotesController {
+    /// Notes older than this are purged from Trash once, when the app starts.
+    static let trashRetentionPeriod: TimeInterval = 30 * 24 * 60 * 60
+
     let store: NoteStore
     /// Called when the save or read-only status changes.
     var onStatusChange: (@MainActor () -> Void)?
+    /// Called after a note or workspace mutation, never for save-status changes alone.
+    /// Kept for the existing app-level callback; Library consumers should register with
+    /// `addLibraryObserver(_:)` so more than one can listen at a time.
+    var onLibraryChange: (@MainActor () -> Void)?
+    private var libraryObservers: [UUID: @MainActor () -> Void] = [:]
 
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
+    private let now: @MainActor () -> Date
     private var themes: NoteThemes
     private let latestSave: LatestSave
     private let logger = Logger(subsystem: Webby.bundleID, category: "notes")
     private lazy var autosave = AutosaveDebouncer { [weak self] in self?.saveNow() }
     private(set) lazy var quit = makeQuitCoordinator()
+    private var started = false
 
     private var windows: [UUID: NoteWindowController] = [:]
     private var toasts: [UUID: UndoToast] = [:]
@@ -36,11 +53,18 @@ final class NotesController {
     /// The latest save error, while saving keeps failing.
     private(set) var saveFailure: String?
 
-    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, themes: NoteThemes) {
+    init(
+        store: NoteStore,
+        monitor: ContextMonitor,
+        permission: AccessibilityPermission,
+        themes: NoteThemes,
+        now: @escaping @MainActor () -> Date = { Date() }
+    ) {
         self.store = store
         self.monitor = monitor
         self.permission = permission
         self.themes = themes
+        self.now = now
         latestSave = LatestSave(store.saveRequest())
     }
 
@@ -56,6 +80,8 @@ final class NotesController {
     }
 
     func start() {
+        guard !started else { return }
+        started = true
         monitor.onChange = { [weak self] in self?.layout() }
         permission.onChange { [weak self] in
             self?.monitor.permissionChanged()
@@ -76,11 +102,22 @@ final class NotesController {
             MainActor.assumeIsolated { self?.layout() }
         }
         _ = quit
+        purgeExpiredTrash()
         monitor.start()
         layout()
         if let problem = readOnlyProblem {
             showReadOnlyBanner(problem)
+        } else if case let .recovered(backupURL) = store.outcome {
+            showRecoveredBanner(backupURL)
         }
+    }
+
+    private func purgeExpiredTrash() {
+        guard isWritable else { return }
+        let cutoff = now().addingTimeInterval(-Self.trashRetentionPeriod)
+        guard store.purgeTrash(olderThan: cutoff, includingEphemeral: false) > 0 else { return }
+        didMutate()
+        onStatusChange?()
     }
 
     // MARK: State for the menu bar and Settings
@@ -100,6 +137,171 @@ final class NotesController {
     func currentContextNotes() -> ContextNotes {
         commitDrafts()
         return OverlayPlanner.contextNotes(store.notes, context: monitor.context)
+    }
+
+    // MARK: Library bridge
+
+    /// Registers a Library observer and returns its removal token. The callback runs
+    /// after a note or workspace mutation, alongside the legacy `onLibraryChange`.
+    @discardableResult
+    func addLibraryObserver(_ observer: @escaping @MainActor () -> Void) -> UUID {
+        let token = UUID()
+        libraryObservers[token] = observer
+        return token
+    }
+
+    func removeLibraryObserver(_ token: UUID) {
+        libraryObservers.removeValue(forKey: token)
+    }
+
+    /// The number of currently registered Library observers, for tests and diagnostics.
+    var libraryObserverCount: Int { libraryObservers.count }
+
+    private func notifyLibraryChange() {
+        onLibraryChange?()
+        // Snapshot the callbacks so an observer may remove itself while being called.
+        for observer in Array(libraryObservers.values) {
+            observer()
+        }
+    }
+
+    /// Read-only Library snapshots. Ephemeral notes are overlay-only until Step 7b.
+    var libraryNotes: [Note] {
+        store.notes.filter { !$0.ephemeral }
+    }
+
+    var libraryWorkspaces: [WorkspaceRecord] {
+        store.workspaces
+    }
+
+    private func libraryNoteForMutation(id: UUID) -> Note? {
+        guard isWritable, let note = store.note(id: id), !note.ephemeral else { return nil }
+        return note
+    }
+
+    private func finishLibraryMutation(changed: Bool, draftsChanged: Bool, relayout: Bool = false) {
+        guard changed || draftsChanged else { return }
+        didMutate()
+        if changed && relayout { layout() }
+    }
+
+    func updateLibraryText(id: UUID, text: String) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(id: id, change: .text(text), now: now())
+        if changed {
+            // A stale overlay draft must not replace the Library's newer text.
+            windows[id]?.model.setTextSilently(text)
+        }
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    /// Replaces a note's anchor and clears any tab binding. A nil workspace clears the
+    /// override so the anchor decides the workspace (Inbox only when there is no anchor);
+    /// a workspace ID must already exist.
+    func setLibraryAttachment(id: UUID, anchor: Anchor?, workspace: UUID?) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        if let workspace, !store.workspaces.contains(where: { $0.id == workspace }) { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(
+            id: id,
+            changes: [
+                .attachment(anchor: anchor, tab: nil),
+                .workspaceOverride(workspace),
+            ],
+            now: now()
+        )
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    func setPinned(id: UUID, pinned: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .pinnedAt(pinned ? now() : nil))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    func setHidden(id: UUID, hidden: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .hidden(hidden))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    func setExcludedFromAgent(id: UUID, excluded: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .excludedFromAgent(excluded))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    /// Library Trash has no overlay panel, so it deliberately shows no Undo toast.
+    /// The overlay menu keeps its existing 10-second Undo path.
+    func trashLibraryNote(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt == nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.trash(id: id, now: now())
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    func restoreLibraryNote(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.restore(id: id)
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    /// Permanently removes the given trashed non-ephemeral notes and returns the count.
+    /// IDs that were restored or newly trashed after the confirmation are not included.
+    @discardableResult
+    func emptyTrash(ids: Set<UUID>) -> Int {
+        guard isWritable else { return 0 }
+        let draftsChanged = commitDrafts()
+        let removed = store.purgeTrash(ids: ids, includingEphemeral: false)
+        finishLibraryMutation(changed: removed > 0, draftsChanged: draftsChanged, relayout: removed > 0)
+        return removed
+    }
+
+    /// Creates an anchorless, tabless note for the Inbox or a workspace. This does not
+    /// require a current app context, unlike `newNote()`.
+    func createLibraryNote(destination: LibraryDestination) -> UUID? {
+        guard isWritable else { return nil }
+
+        var newWorkspace: WorkspaceRecord?
+        var workspaceOverride: UUID?
+        switch destination {
+        case .inbox:
+            break
+        case .record(let id):
+            guard store.workspaces.contains(where: { $0.id == id }) else { return nil }
+            workspaceOverride = id
+        case .workspace(let key):
+            if let existing = store.workspaces
+                .filter({ $0.keys.contains(key) })
+                .min(by: { $0.id.uuidString.lowercased() < $1.id.uuidString.lowercased() }) {
+                workspaceOverride = existing.id
+            } else {
+                let record = WorkspaceRecord(keys: [key], createdAt: now())
+                newWorkspace = record
+                workspaceOverride = record.id
+            }
+        }
+
+        let draftsChanged = commitDrafts()
+        let createdAt = now()
+        let note = Note(
+            workspaceOverride: workspaceOverride,
+            frame: NoteFrame(),
+            placement: .screen,
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
+        guard store.add(note, workspace: newWorkspace) else {
+            if draftsChanged { didMutate() }
+            return nil
+        }
+        didMutate()
+        return note.id
     }
 
     // MARK: Note actions
@@ -236,12 +438,18 @@ final class NotesController {
 
         for plan in plans {
             guard let note = store.note(id: plan.noteID) else { continue }
-            let controller = windows[plan.noteID] ?? makeWindow(for: note)
+            let controller = overlayController(for: note)
             controller.model.collapsed = plan.collapsed
             controller.model.isEditable = isWritable
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
+    }
+
+    /// The overlay controller for a note, created on demand. The overlay layout uses
+    /// this, and tests use it to verify that a Library edit syncs an open draft.
+    func overlayController(for note: Note) -> NoteWindowController {
+        windows[note.id] ?? makeWindow(for: note)
     }
 
     private func makeWindow(for note: Note) -> NoteWindowController {
@@ -271,13 +479,18 @@ final class NotesController {
         for (id, controller) in windows where store.note(id: id)?.text != controller.model.text {
             changed = store.updateContent(id: id, change: .text(controller.model.text)) || changed
         }
-        if changed { quit.noteMutation(generation: store.mutationGeneration) }
+        if changed {
+            quit.noteMutation(generation: store.mutationGeneration)
+            // An overlay edit becomes visible to an open Library as soon as it commits.
+            notifyLibraryChange()
+        }
         return changed
     }
 
     private func didMutate() {
         quit.noteMutation(generation: store.mutationGeneration)
         autosave.schedule()
+        notifyLibraryChange()
     }
 
     private func currentSaveRequest() -> NoteStore.SaveRequest {
@@ -344,6 +557,18 @@ final class NotesController {
             guard !Task.isCancelled else { return }
             self?.saveNow()
         }
+    }
+
+    /// The store kept a copy of an unreadable file before starting empty. Say so
+    /// instead of silently appearing to have lost the notes.
+    private func showRecoveredBanner(_ backupURL: URL) {
+        banner.show(
+            title: "Webby couldn't read notes.json",
+            message: "The unreadable file was kept. Webby started with an empty note list.",
+            actions: [StatusBanner.Action(title: "Show Backup in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+            }]
+        )
     }
 
     private func showReadOnlyBanner(_ problem: String) {

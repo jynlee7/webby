@@ -30,6 +30,13 @@ final class NoteModel {
         self.themes = themes
     }
 
+    /// Replaces the draft without reporting an edit, so a Library write can sync an
+    /// open overlay without scheduling another commit or changing the revision again.
+    func setTextSilently(_ text: String) {
+        guard self.text != text else { return }
+        self.text = text
+    }
+
     var title: String {
         Note.summaryLine(of: text) ?? "Empty note"
     }

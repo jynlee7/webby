@@ -113,9 +113,17 @@ public final class NoteStore {
         notes.filter { NoteVisibility.isAttached($0, to: context) }
     }
 
+    /// Adds a note, optionally materializing one workspace record in the same
+    /// generation. The record is validated with the existing workspace rules.
     @discardableResult
-    public func add(_ note: Note) -> Bool {
+    public func add(_ note: Note, workspace: WorkspaceRecord? = nil) -> Bool {
         guard mode == .writable, self.note(id: note.id) == nil else { return false }
+        if let workspace {
+            var records = workspaces
+            records.append(workspace)
+            guard (try? NotesDocument.validateWorkspaces(records)) != nil else { return false }
+            workspaces = records
+        }
         notes.append(note)
         advanceGeneration()
         return true
@@ -123,24 +131,44 @@ public final class NoteStore {
 
     @discardableResult
     public func updateContent(id: UUID, change: ContentChange, now: Date = Date()) -> Bool {
-        guard mode == .writable, let index = notes.firstIndex(where: { $0.id == id }) else { return false }
+        updateContent(id: id, changes: [change], now: now)
+    }
+
+    /// Applies several content changes as one revision, for actions that change both
+    /// an attachment and its workspace override.
+    @discardableResult
+    public func updateContent(id: UUID, changes: [ContentChange], now: Date = Date()) -> Bool {
+        guard mode == .writable,
+              !changes.isEmpty,
+              let index = notes.firstIndex(where: { $0.id == id }) else { return false }
         var candidate = notes[index]
-        switch change {
-        case .text(let text):
-            guard candidate.text != text else { return false }
-            candidate.text = text
-        case .anchor(let anchor):
-            guard candidate.anchor != anchor else { return false }
-            candidate.anchor = anchor
-        case .workspaceOverride(let workspace):
-            guard candidate.workspaceOverride != workspace else { return false }
-            candidate.workspaceOverride = workspace
-        case .attachment(let anchor, let tab):
-            guard candidate.anchor != anchor || (candidate.tab == nil) != (tab == nil) else { return false }
-            candidate.anchor = anchor
-            candidate.tab = tab
+        var changed = false
+        for change in changes {
+            switch change {
+            case .text(let text):
+                if candidate.text != text {
+                    candidate.text = text
+                    changed = true
+                }
+            case .anchor(let anchor):
+                if candidate.anchor != anchor {
+                    candidate.anchor = anchor
+                    changed = true
+                }
+            case .workspaceOverride(let workspace):
+                if candidate.workspaceOverride != workspace {
+                    candidate.workspaceOverride = workspace
+                    changed = true
+                }
+            case .attachment(let anchor, let tab):
+                if candidate.anchor != anchor || (candidate.tab == nil) != (tab == nil) {
+                    candidate.anchor = anchor
+                    candidate.tab = tab
+                    changed = true
+                }
+            }
         }
-        guard candidate.revision < Int.max else { return false }
+        guard changed, candidate.revision < Int.max else { return false }
         candidate.revision += 1
         candidate.updatedAt = now
         notes[index] = candidate
@@ -202,11 +230,36 @@ public final class NoteStore {
     }
 
     /// Permanently removes only notes trashed before the cutoff. Read-only stores never purge.
+    /// Library paths pass `includingEphemeral: false` so in-memory notes stay overlay-only.
     @discardableResult
-    public func purgeTrash(olderThan cutoff: Date) -> Int {
+    public func purgeTrash(olderThan cutoff: Date, includingEphemeral: Bool = true) -> Int {
         guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in note.trashedAt.map { $0 < cutoff } ?? false },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    /// Permanently removes only the given notes that are still in Trash. A note
+    /// trashed after a confirmation was requested is not part of that confirmation.
+    @discardableResult
+    public func purgeTrash(ids: Set<UUID>, includingEphemeral: Bool = false) -> Int {
+        guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in ids.contains(note.id) && note.trashedAt != nil },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    private func purgeTrash(
+        where isIncluded: (Note) -> Bool,
+        includingEphemeral: Bool
+    ) -> Int {
         let oldCount = notes.count
-        notes.removeAll { note in note.trashedAt.map { $0 < cutoff } ?? false }
+        notes.removeAll { note in
+            guard isIncluded(note) else { return false }
+            return includingEphemeral || !note.ephemeral
+        }
         let removed = oldCount - notes.count
         if removed > 0 { advanceGeneration() }
         return removed

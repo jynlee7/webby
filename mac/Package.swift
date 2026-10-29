@@ -25,6 +25,7 @@ let package = Package(
         .executableTarget(name: "WebbyBridge", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyCoreTests", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbySkinArchiveTests", dependencies: ["WebbyCore", "WebbySkinArchive"]),
+        .testTarget(name: "WebbyTests", dependencies: ["Webby", "WebbyCore"]),
     ],
     swiftLanguageModes: [.v6]
 )
