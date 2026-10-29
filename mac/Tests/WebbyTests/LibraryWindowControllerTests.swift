@@ -158,6 +158,7 @@ private func makeWindowController(_ model: LibraryModel) -> LibraryWindowControl
     }
 }
 
+@MainActor
 @Test func quittingCommitsThePendingLibraryDraft() throws {
     let directory = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

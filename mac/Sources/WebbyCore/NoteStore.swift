@@ -265,6 +265,15 @@ public final class NoteStore {
         return removed
     }
 
+    public func replaceWorkspaces(_ records: [WorkspaceRecord]) throws {
+        if case .readOnly(let reason) = mode { throw StoreError.readOnly(reason) }
+        try NotesDocument.validateWorkspaces(records)
+        guard records != workspaces else { return }
+        workspaces = records
+        advanceGeneration()
+    }
+
+    /// Writes the current state through the shared gate on the calling thread.
     public func save() throws {
         _ = try saveRequest().commitNow()
     }
