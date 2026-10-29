@@ -39,12 +39,19 @@ final class NoteModel {
 /// `webbyTheme` and none hard-codes styling.
 struct NoteRootView: View {
     let model: NoteModel
+    let assets: SkinAssetCache
 
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        NoteView(model: model)
-            .environment(\.webbyTheme, model.themes.theme(for: scheme))
+        let theme = model.themes.theme(for: scheme)
+        ZStack {
+            DecorationView(decoration: theme.decoration)
+            NoteView(model: model)
+                .padding(Geometry.decorationMargin)
+        }
+        .environment(\.webbyTheme, theme)
+        .environment(\.skinAssetCache, assets)
     }
 }
 
@@ -53,12 +60,23 @@ struct NoteView: View {
     /// `webby.clear`) still need a row for collapse, ⋯ and close.
     static let minimumControlRowHeight = 28.0
 
+    /// The smallest panel: the minimum note plus the decoration margin on every side.
+    static let minimumPanelSize = CGSize(
+        width: OverlayPlanner.minimumNoteSize.width + 2 * Geometry.decorationMargin,
+        height: OverlayPlanner.minimumNoteSize.height + 2 * Geometry.decorationMargin
+    )
+
     let model: NoteModel
 
     @Environment(\.webbyTheme) private var theme
     @State private var hovering = false
 
     private var surface: ResolvedSurface { theme.surface }
+
+    private var palette: RGBAColor? {
+        guard let index = theme.selectedIndex, theme.palette.indices.contains(index) else { return nil }
+        return theme.palette[index]
+    }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: surface.cornerRadius, style: .continuous)
@@ -82,6 +100,9 @@ struct NoteView: View {
                     VisualEffectBackground(material: material, cornerRadius: surface.cornerRadius)
                 }
                 Color(surface.fill)
+                if let image = surface.image {
+                    SurfaceArtwork(image: image, tint: palette)
+                }
                 if model.collapsed {
                     Color(theme.collapsed.fill)
                 }
@@ -169,7 +190,7 @@ struct NoteView: View {
         .padding(.bottom, padding.bottom ?? 0)
         .overlay(alignment: .bottomTrailing) {
             if model.isEditable {
-                ResizeGrip(minimumSize: OverlayPlanner.minimumNoteSize, onEnded: model.onResizeEnded)
+                ResizeGrip(minimumSize: Self.minimumPanelSize, onEnded: model.onResizeEnded)
                     .frame(width: 18, height: 18)
                     .overlay {
                         if theme.resizeHandle.visibility.isShown(hovering: hovering) {

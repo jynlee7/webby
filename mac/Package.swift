@@ -21,7 +21,7 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ]
         ),
-        .executableTarget(name: "Webby", dependencies: ["WebbyCore"]),
+        .executableTarget(name: "Webby", dependencies: ["WebbyCore", "WebbySkinArchive"]),
         .executableTarget(name: "WebbyBridge", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyCoreTests", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbySkinArchiveTests", dependencies: ["WebbyCore", "WebbySkinArchive"]),

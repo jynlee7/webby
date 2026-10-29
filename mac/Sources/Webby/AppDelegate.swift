@@ -27,7 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if builtInSkins.count < NoteThemes.builtInIDs.count {
             logger.error("Loaded \(self.builtInSkins.count) of \(NoteThemes.builtInIDs.count) built-in skins; notes use the fallback look")
         }
-        notes = NotesController(store: NoteStore(), monitor: monitor, permission: permission, themes: resolveThemes())
+        // Built-ins only until Step 9b adds installed skins.
+        let assets = SkinAssetCache { id in
+            NoteThemes.bundledSkinsDirectory?.appendingPathComponent(id, isDirectory: true)
+        }
+        notes = NotesController(store: NoteStore(), monitor: monitor, permission: permission, themes: resolveThemes(), assets: assets)
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil,

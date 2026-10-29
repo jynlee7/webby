@@ -17,6 +17,7 @@ final class NotesController {
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
     private var themes: NoteThemes
+    private let assets: SkinAssetCache
     private let latestSave: LatestSave
     private let logger = Logger(subsystem: Webby.bundleID, category: "notes")
     private lazy var autosave = AutosaveDebouncer { [weak self] in self?.saveNow() }
@@ -36,11 +37,12 @@ final class NotesController {
     /// The latest save error, while saving keeps failing.
     private(set) var saveFailure: String?
 
-    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, themes: NoteThemes) {
+    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, themes: NoteThemes, assets: SkinAssetCache) {
         self.store = store
         self.monitor = monitor
         self.permission = permission
         self.themes = themes
+        self.assets = assets
         latestSave = LatestSave(store.saveRequest())
     }
 
@@ -118,7 +120,7 @@ final class NotesController {
 
         let window = monitor.windowFrame
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) } ?? Self.mouseLocation)
-        let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.panel.frame, primaryScreenHeight: Self.primaryScreenHeight) }
+        let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.visualFrame, primaryScreenHeight: Self.primaryScreenHeight) }
         let absolute = OverlayPlanner.newNoteFrame(window: window, screens: screens, occupied: occupied)
         let placement = OverlayPlanner.placement(window: window)
         let note = Note(
@@ -134,7 +136,7 @@ final class NotesController {
         controller.focus()
         if !permission.isTrusted, !onboardingShown {
             onboardingShown = true
-            permission.showOnboarding(near: controller.panel.frame)
+            permission.showOnboarding(near: controller.visualFrame)
         }
     }
 
@@ -174,7 +176,7 @@ final class NotesController {
 
     private func trash(_ id: UUID) {
         commitDrafts()
-        let frame = windows[id]?.panel.frame
+        let frame = windows[id]?.visualFrame
         guard store.trash(id: id) else { return }
         didMutate()
         layout()
@@ -205,7 +207,7 @@ final class NotesController {
 
     private func userLaidOut(_ id: UUID) {
         guard let controller = windows[id], let note = store.note(id: id) else { return }
-        let panel = Geometry.topLeftRect(fromAppKit: controller.panel.frame, primaryScreenHeight: Self.primaryScreenHeight)
+        let panel = Geometry.topLeftRect(fromAppKit: controller.visualFrame, primaryScreenHeight: Self.primaryScreenHeight)
         let frame = OverlayPlanner.storedFrame(forPanel: panel, note: note, window: monitor.windowFrame)
         guard store.updateLayout(id: id, change: .frame(frame)) else { return }
         didMutate()
@@ -254,7 +256,7 @@ final class NotesController {
         model.onDone = { [weak self] in self?.done(id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
 
-        let controller = NoteWindowController(model: model)
+        let controller = NoteWindowController(model: model, assets: assets)
         controller.onUserLayout = { [weak self] in self?.userLaidOut(id) }
         // Autosave on blur.
         controller.onResignKey = { [weak self] in self?.autosave.fireNow() }
