@@ -408,6 +408,7 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
         == "example.com")
 }
 
+@MainActor
 @Test func searchSpansSectionsAndRevealClearsTheQuery() throws {
     let directory = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -432,6 +433,7 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     #expect(model.selectedNoteID == workspace.id)
 }
 
+@MainActor
 @Test func emptyTrashDeletesOnlyTheConfirmedNotes() throws {
     let directory = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -455,6 +457,7 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     #expect(store.note(id: late.id)?.trashedAt != nil)
 }
 
+@MainActor
 @Test func effectiveQueryRulesKeepStoredAnchorQueries() throws {
     let directory = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
