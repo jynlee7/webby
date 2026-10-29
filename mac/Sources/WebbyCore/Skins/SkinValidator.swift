@@ -168,6 +168,13 @@ public enum SkinValidator {
         value.range(of: semverPattern, options: .regularExpression) != nil
     }
 
+    /// Whether `value` follows the manifest id grammar: two or more lowercase
+    /// dot-separated labels, each starting with a letter. Such an id is also a
+    /// safe single path component.
+    public static func isValidSkinID(_ value: String) -> Bool {
+        isReverseDNS(value)
+    }
+
     private static func isReverseDNS(_ value: String) -> Bool {
         let labels = value.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2 else {
