@@ -222,38 +222,73 @@ public final class NoteStore {
 
     /// Writes the current state through the shared gate on the calling thread.
     public func save() throws {
-        _ = try commit()
+        _ = try saveRequest().commitNow()
     }
 
     /// Queues the current state for the ordered background writer.
     public func enqueueSave() async {
-        await writer.enqueue(snapshot())
+        await saveRequest().enqueue()
     }
 
     /// Waits until the newest in-memory state is on disk.
     public func flush() async throws {
-        try await writer.flush(snapshot())
+        _ = try await saveRequest().flush()
     }
 
     /// Synchronous quit fallback. Uses the same gate as the background writer, so an
     /// in-flight commit cannot be duplicated or overtaken.
     public func saveSynchronously() throws {
-        _ = try commit()
+        _ = try saveRequest().commitNow()
     }
 
-    private func snapshot() -> SaveGate<NotesDocument>.Snapshot {
-        SaveGate<NotesDocument>.Snapshot(generation: mutationGeneration, content: document)
+    /// Captures the current state so it can be written from any actor.
+    ///
+    /// The store itself is not `Sendable`, so an actor that owns it cannot pass it to
+    /// an async save. A request carries only the snapshot, the ordered writer and the
+    /// gate, and writes through the same paths as the store's own save methods.
+    public func saveRequest() -> SaveRequest {
+        SaveRequest(
+            snapshot: SaveGate<NotesDocument>.Snapshot(generation: mutationGeneration, content: document),
+            writer: writer,
+            gate: gate
+        )
     }
 
-    private func commit() throws -> SaveGate<NotesDocument>.Acknowledgement {
-        do {
-            return try gate.commit(snapshot())
-        } catch let error as SaveFailure {
-            switch error {
-            case .readOnly(let problem): throw StoreError.readOnly(problem)
-            case .sourceChanged: throw StoreError.sourceChanged
-            case .backupChanged: throw StoreError.backupChanged
-            case .backupNameUnavailable: throw StoreError.backupNameUnavailable
+    /// The store's state at one generation, ready to be written.
+    public struct SaveRequest: Sendable {
+        fileprivate let snapshot: SaveGate<NotesDocument>.Snapshot
+        fileprivate let writer: DiskWriter<NotesDocument>
+        fileprivate let gate: SaveGate<NotesDocument>
+
+        public var generation: UInt64 { snapshot.generation }
+
+        /// True while the file holds an older generation than this request.
+        public var isUnsaved: Bool { snapshot.generation > gate.generation }
+
+        /// Queues the state for the ordered background writer without waiting.
+        public func enqueue() async {
+            await writer.enqueue(snapshot)
+        }
+
+        /// Waits until this state, or a newer one, is on disk. Returns the committed
+        /// generation.
+        public func flush() async throws -> UInt64 {
+            try await writer.flush(snapshot)
+            return max(gate.generation, snapshot.generation)
+        }
+
+        /// Writes on the calling thread through the shared gate and returns the
+        /// committed generation. An older request never replaces a newer commit.
+        public func commitNow() throws -> UInt64 {
+            do {
+                return try gate.commit(snapshot).generation
+            } catch let error as SaveFailure {
+                switch error {
+                case .readOnly(let problem): throw StoreError.readOnly(problem)
+                case .sourceChanged: throw StoreError.sourceChanged
+                case .backupChanged: throw StoreError.backupChanged
+                case .backupNameUnavailable: throw StoreError.backupNameUnavailable
+                }
             }
         }
     }

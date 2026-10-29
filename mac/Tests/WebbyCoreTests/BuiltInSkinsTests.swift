@@ -401,7 +401,7 @@ private func schemaEnum(_ path: [String], in root: [String: Any]) -> [String]? {
     let skinList = try #require(script.range(of: "for skin in webby.clear webby.mono; do"))
     let preflight = try #require(script.range(of: "Resources/Skins/$skin/skin.json"))
     let copy = try #require(script.range(of: "cp -R Resources/Skins \"$app/Contents/Resources/Skins\""))
-    let signing = try #require(script.range(of: "codesign --force --sign - \"$app/Contents/MacOS/webby-bridge\""))
+    let signing = try #require(script.range(of: "codesign --force --sign \"$identity\" \"$app/Contents/MacOS/webby-bridge\""))
 
     #expect(skinList.lowerBound < preflight.lowerBound)
     #expect(preflight.lowerBound < copy.lowerBound)

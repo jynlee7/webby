@@ -50,7 +50,10 @@ public enum QuitOutcome: Sendable, Equatable {
 /// falls back to a synchronous save through the same `SaveGate` on the calling
 /// thread. It also keeps sudden termination disabled only while there are
 /// unsaved changes. All time is injected, so tests never sleep.
-public final class QuitFlushCoordinator {
+///
+/// It is `Sendable` so the app's main actor can await `handleTermination()`: every
+/// mutable property is guarded by `stateLock`, and every injected closure is `@Sendable`.
+public final class QuitFlushCoordinator: @unchecked Sendable {
     public typealias Now = @Sendable () -> Duration
     public typealias Sleep = @Sendable (Duration) async throws -> Void
 
