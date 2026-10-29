@@ -444,3 +444,40 @@ private func hasDiagnostic(
     #expect(metadata.bytes == onePixelPNG.count)
     #expect(checker.inventory().contains { $0.path == "skin.json" })
 }
+
+@Test func imagePixelBudgetIsCheckedBeforeAnyDecode() throws {
+    // 2048 x 2048 = 4,194,304 pixels each; six images exceed the 24 MP budget.
+    var files: [String: Data] = [
+        "skin.json": archiveManifest(extra: archiveSurfaceGroup),
+    ]
+    for frame in 0..<6 {
+        files["images/orb-idle-\(frame).png"] = headerOnlyPNG(width: 2_048, height: 2_048)
+    }
+    let stage = try ArchiveMediaStage(files: files)
+
+    let checker = SkinAssetChecker(stage.staged)
+    #expect(checker.pixelBudgetExceeded)
+    #expect(checker.image("images/orb-idle-0.png") == .invalid(code: "pixel-budget-exceeded"))
+
+    let result = validation(stage)
+    #expect(!result.isAccepted)
+    #expect(hasDiagnostic(result, code: "pixel-budget-exceeded", severity: .fatal))
+}
+
+@Test func previewPixelsCountTowardTheBudget() throws {
+    // Five 2048-square images are 20,971,520 pixels; the preview pushes the skin
+    // over 24 MP even though SkinValidator does not treat previews as assets.
+    var files: [String: Data] = [
+        "skin.json": archiveManifest(extra: archiveSurfaceGroup),
+        "preview.png": headerOnlyPNG(width: 2_048, height: 2_048),
+    ]
+    for frame in 0..<5 {
+        files["images/orb-idle-\(frame).png"] = headerOnlyPNG(width: 2_048, height: 2_048)
+    }
+    let stage = try ArchiveMediaStage(files: files)
+
+    let checker = SkinAssetChecker(stage.staged)
+    #expect(checker.pixelBudgetExceeded)
+    #expect(checker.image("preview.png") == .invalid(code: "pixel-budget-exceeded"))
+    #expect(!validation(stage).isAccepted)
+}

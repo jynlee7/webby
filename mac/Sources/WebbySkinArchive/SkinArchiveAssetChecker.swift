@@ -10,6 +10,9 @@ import WebbyCore
 /// repeatedly is cheap, thread-safe and never writes anything.
 public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
     public let root: URL
+    /// True when the admitted images, previews included, exceed the decoded-pixel
+    /// budget. No image is decoded in that case.
+    public let pixelBudgetExceeded: Bool
 
     private let records: [SkinAssetRecord]
     private let imageChecks: [String: AssetCheck<ImageAssetMetadata>]
@@ -22,8 +25,8 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
         }
 
         var records: [SkinAssetRecord] = []
-        var imageChecks: [String: AssetCheck<ImageAssetMetadata>] = [:]
-        var soundChecks: [String: AssetCheck<SoundAssetMetadata>] = [:]
+        var imagePaths: [String] = []
+        var soundPaths: [String] = []
 
         for path in sortedPaths {
             let url = Self.stagedURL(for: path, in: root)
@@ -31,9 +34,7 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
             records.append(SkinAssetRecord(path: path, bytes: bytes))
 
             if path == "preview.png" || path == "preview@2x.png" {
-                imageChecks[path] = url.map {
-                    Self.imageCheck(path: path, url: $0, bytes: bytes)
-                } ?? .invalid(code: "unreadable")
+                imagePaths.append(path)
                 continue
             }
 
@@ -45,17 +46,67 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
 
             switch asset.kind {
             case .image, .orb:
-                imageChecks[path] = url.map {
-                    Self.imageCheck(path: path, url: $0, bytes: bytes)
-                } ?? .invalid(code: "unreadable")
+                imagePaths.append(path)
             case .sound:
-                soundChecks[path] = url.map {
-                    Self.soundCheck(path: path, url: $0, bytes: bytes)
-                } ?? .invalid(code: "unreadable")
+                soundPaths.append(path)
             }
         }
 
+        // Headers first, before any decode. One skin cannot make ImageIO decode
+        // more pixels than the validator's aggregate budget allows.
+        var headers: [String: PNGHeader] = [:]
+        var declaredPixels = 0
+        var budgetExceeded = false
+        for path in imagePaths {
+            guard let url = Self.stagedURL(for: path, in: root) else {
+                continue
+            }
+            let bytes = records.first { $0.path == path }?.bytes ?? 0
+            switch Self.imageHeader(path: path, url: url, bytes: bytes) {
+            case .available(let header):
+                headers[path] = header
+                let (sum, overflow) = declaredPixels.addingReportingOverflow(header.pixelCount ?? 0)
+                if overflow || sum > SkinValidator.maximumImagePixels {
+                    budgetExceeded = true
+                } else {
+                    declaredPixels = sum
+                }
+            case .invalid, .missing:
+                break
+            }
+        }
+
+        var imageChecks: [String: AssetCheck<ImageAssetMetadata>] = [:]
+        for path in imagePaths {
+            guard let url = Self.stagedURL(for: path, in: root) else {
+                imageChecks[path] = .invalid(code: "unreadable")
+                continue
+            }
+            let bytes = records.first { $0.path == path }?.bytes ?? 0
+            if budgetExceeded {
+                imageChecks[path] = .invalid(code: "pixel-budget-exceeded")
+            } else {
+                imageChecks[path] = Self.imageCheck(
+                    path: path,
+                    url: url,
+                    bytes: bytes,
+                    header: headers[path]
+                )
+            }
+        }
+
+        var soundChecks: [String: AssetCheck<SoundAssetMetadata>] = [:]
+        for path in soundPaths {
+            guard let url = Self.stagedURL(for: path, in: root) else {
+                soundChecks[path] = .invalid(code: "unreadable")
+                continue
+            }
+            let bytes = records.first { $0.path == path }?.bytes ?? 0
+            soundChecks[path] = Self.soundCheck(path: path, url: url, bytes: bytes)
+        }
+
         self.root = root
+        self.pixelBudgetExceeded = budgetExceeded
         self.records = records
         self.imageChecks = imageChecks
         self.soundChecks = soundChecks
@@ -115,11 +166,11 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
 
     // MARK: - Images
 
-    private static func imageCheck(
+    private static func imageHeader(
         path: String,
         url: URL,
         bytes: Int
-    ) -> AssetCheck<ImageAssetMetadata> {
+    ) -> AssetCheck<PNGHeader> {
         guard bytes <= SkinValidator.maximumImageBytes else {
             return .invalid(code: "image-too-large")
         }
@@ -142,14 +193,37 @@ public struct SkinAssetChecker: SkinAssetChecking, Sendable, Equatable {
             return .invalid(code: "png-header")
         }
 
-        // PNGHeader already bounds the dimensions. Keep the validator's public cap
-        // as the authority here so the two cannot drift apart.
         guard header.width <= SkinValidator.maximumImageDimension,
               header.height <= SkinValidator.maximumImageDimension
         else {
             return .invalid(code: "image-dimension-exceeded")
         }
+        return .available(header)
+    }
 
+    private static func imageCheck(
+        path: String,
+        url: URL,
+        bytes: Int,
+        header parsedHeader: PNGHeader?
+    ) -> AssetCheck<ImageAssetMetadata> {
+        let header: PNGHeader
+        if let parsedHeader {
+            header = parsedHeader
+        } else {
+            switch imageHeader(path: path, url: url, bytes: bytes) {
+            case .available(let available):
+                header = available
+            case .invalid(let code):
+                return .invalid(code: code)
+            case .missing:
+                return .missing
+            }
+        }
+
+        guard bytes <= SkinValidator.maximumImageBytes else {
+            return .invalid(code: "image-too-large")
+        }
         return decodeImage(path: path, url: url, bytes: bytes, header: header)
     }
 
@@ -350,6 +424,14 @@ public enum SkinArchiveStaging {
         )
 
         var diagnostics = staged.warnings + loaderDiagnostics + validation.diagnostics
+        if checker.pixelBudgetExceeded {
+            diagnostics.append(SkinDiagnostic(
+                code: "pixel-budget-exceeded",
+                severity: .fatal,
+                path: [],
+                message: "Decoded skin images exceed \(SkinValidator.maximumImagePixels) pixels."
+            ))
+        }
         for path in ["preview.png", "preview@2x.png"] {
             if case .invalid(let code) = checker.image(path) {
                 diagnostics.append(SkinDiagnostic(

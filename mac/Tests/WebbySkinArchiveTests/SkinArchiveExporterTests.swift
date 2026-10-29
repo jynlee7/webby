@@ -206,3 +206,26 @@ private func exportFolder() throws -> URL {
     }
     #expect(!FileManager.default.fileExists(atPath: destination.path))
 }
+
+@Test func exportWritesTheBytesItValidated() throws {
+    let folder = try exportFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let destination = folder.deletingLastPathComponent()
+        .appendingPathComponent("snapshot-\(UUID().uuidString).webbyskin")
+    defer { try? FileManager.default.removeItem(at: destination) }
+
+    let manifestBytes = try Data(contentsOf: folder.appendingPathComponent("skin.json"))
+    try SkinArchiveExporter.export(
+        folder: folder,
+        to: destination,
+        availableBaseIDs: ["webby.clear"]
+    )
+
+    let harness = try StagedExtractionHarness()
+    defer { harness.cleanup() }
+    let staged = try harness.extract(try Data(contentsOf: destination))
+    defer { try? staged.discard() }
+
+    #expect(try Data(contentsOf: staged.root.appendingPathComponent("skin.json")) == manifestBytes)
+    #expect(try Data(contentsOf: staged.root.appendingPathComponent(bodyPath)) == onePixelPNG)
+}
