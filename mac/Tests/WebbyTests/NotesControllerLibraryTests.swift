@@ -124,7 +124,8 @@ private func makeController(_ store: NoteStore, now: Date = fixedNow) -> NotesCo
         #expect(updated.text == "library")
         #expect(updated.revision == original.revision + 2)
         #expect(model.text == "library")
-        #expect(changes.value == 1)
+        // One notification for the committed overlay draft, one for the Library edit.
+        #expect(changes.value == 2)
         #expect(textChanges.value == 0)
         #expect(store.hasUnsavedChanges)
 
@@ -135,7 +136,7 @@ private func makeController(_ store: NoteStore, now: Date = fixedNow) -> NotesCo
         #expect(store.note(id: original.id)?.text == "library")
         #expect(store.note(id: original.id)?.revision == original.revision + 2)
         #expect(model.text == "library")
-        #expect(changes.value == 2)
+        #expect(changes.value == 3)
     }
 
     @Test func attachmentOverrideAndLibraryTogglesUseTheExpectedChanges() throws {
