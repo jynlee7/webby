@@ -337,8 +337,8 @@ private func fixtureData(_ name: String) throws -> Data {
     )
     let rendered = MarkdownRenderer.render(document)
 
-    #expect(rendered.contains("\\-&#9;item"))
+    #expect(rendered.contains("\\-\titem"))
     #expect(rendered.contains("\\=="))
     #expect(rendered.contains("&#9;indented"))
-    #expect(rendered.contains("\\-&#32;&#32;spaced bullet"))
+    #expect(rendered.contains("\\-  spaced bullet"))
 }
