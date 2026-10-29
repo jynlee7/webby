@@ -21,8 +21,8 @@ allowed_for() {
       printf '%s\n' "Foundation CoreGraphics"
       ;;
     Webby)
-      # OSLog: Logger keeps URLs and titles private in the unified log (plan.md §6.1).
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog WebbyCore"
+      # OSLog keeps URLs private; ApplicationServices verifies focused Chrome window bounds.
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics ApplicationServices OSLog WebbyCore"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"

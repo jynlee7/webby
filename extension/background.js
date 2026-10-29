@@ -148,13 +148,16 @@ chrome.tabs.onActivated.addListener(({ windowId }) => {
   });
 });
 
-chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-  enqueueBrowserEvent(async () => {
-    const [tab] = await chrome.tabs.query({ active: true, windowId });
-    if (tab) await send(activeMessage(tab));
-  });
-});
+// Refresh window focus and bounds, including focus lost to an inaccessible private
+// window. An inventory with no focused window clears the previous page in the app.
+async function refreshWindows() {
+  if (await ensureConnected()) return;
+  await post(inventoryMessage(await chrome.windows.getAll({ populate: true })));
+}
+
+chrome.windows.onFocusChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
+chrome.windows.onBoundsChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
+chrome.windows.onRemoved.addListener(() => enqueueBrowserEvent(refreshWindows));
 
 chrome.tabs.onCreated.addListener((tab) => {
   enqueueBrowserEvent(() => send(tabCreatedMessage(tab)));
@@ -174,13 +177,19 @@ chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
 });
 
 chrome.tabs.onMoved.addListener((tabId, { windowId, toIndex }) => {
-  enqueueBrowserEvent(() => send(tabMovedMessage(tabId, windowId, toIndex)));
+  enqueueBrowserEvent(refreshWindows);
 });
 
 chrome.tabs.onAttached.addListener((tabId, { newWindowId, newPosition }) => {
-  enqueueBrowserEvent(() => send(tabMovedMessage(tabId, newWindowId, newPosition)));
+  enqueueBrowserEvent(async () => {
+    await send(tabMovedMessage(tabId, newWindowId, newPosition));
+    await refreshWindows();
+  });
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
-  enqueueBrowserEvent(() => send(tabReplacedMessage(addedTabId, removedTabId)));
+  enqueueBrowserEvent(async () => {
+    await send(tabReplacedMessage(addedTabId, removedTabId));
+    await refreshWindows();
+  });
 });

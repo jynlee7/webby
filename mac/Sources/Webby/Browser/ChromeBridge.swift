@@ -2,15 +2,12 @@ import Foundation
 import OSLog
 import WebbyCore
 
-/// Connects Webby to the Chrome extension: registers the native-messaging host, listens on
-/// the bridge socket and writes what arrives to the debug log. Nothing consumes the
-/// messages yet; web notes arrive in Step 4b. To watch the log:
-///
-///     log stream --level debug --predicate 'subsystem == "com.webby.app" AND category == "bridge"'
+/// Registers the host and delivers ordered bridge events on the main actor.
 @MainActor
 final class ChromeBridge {
     private let logger = Logger(subsystem: Webby.bundleID, category: "bridge")
     private var server: BridgeServer?
+    var onEvent: ((BridgeEvent) -> Void)?
     private var eventsTask: Task<Void, Never>?
 
     /// True when Webby runs from a translocated location and can't register the bridge.
@@ -62,6 +59,7 @@ final class ChromeBridge {
         eventsTask = Task { [weak self] in
             for await event in events {
                 self?.log(event)
+                self?.onEvent?(event)
             }
         }
     }

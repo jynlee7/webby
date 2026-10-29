@@ -1,0 +1,147 @@
+[
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 210655768,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 210655769,
+            "index": 0,
+            "active": true,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235476525.193
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "active",
+    "windowId": 210655768,
+    "incognito": false,
+    "tab": {
+      "id": 210655770,
+      "index": 1,
+      "active": true,
+      "url": "",
+      "title": "",
+      "lastAccessed": 1793235477271.651
+    }
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 210655770,
+    "url": "https://xn--bcher-kva.invalid/example"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 210655770,
+    "title": "bücher.invalid"
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 210655768,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 210655769,
+            "index": 0,
+            "active": false,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235476525.193
+          },
+          {
+            "id": 210655770,
+            "index": 1,
+            "active": true,
+            "url": "https://xn--bcher-kva.invalid/example",
+            "title": "bücher.invalid",
+            "lastAccessed": 1793235477271.651
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 210655770,
+    "url": "https://example.invalid/second"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 210655770,
+    "title": "example.invalid"
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 210655768,
+        "focused": false,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 210655769,
+            "index": 0,
+            "active": false,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235476525.193
+          },
+          {
+            "id": 210655770,
+            "index": 1,
+            "active": true,
+            "url": "https://example.invalid/second",
+            "title": "example.invalid",
+            "lastAccessed": 1793235477271.651
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tabClosed",
+    "tabId": 210655770,
+    "windowClosing": false
+  },
+  {
+    "type": "active",
+    "windowId": 210655768,
+    "incognito": false,
+    "tab": {
+      "id": 210655769,
+      "index": 0,
+      "active": true,
+      "url": "about:blank",
+      "title": "about:blank",
+      "lastAccessed": 1793235481449.117
+    }
+  }
+]

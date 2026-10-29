@@ -1,0 +1,113 @@
+[
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 2140443795,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 2140443796,
+            "index": 0,
+            "active": true,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793234386120.585
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "active",
+    "windowId": 2140443795,
+    "incognito": false,
+    "tab": {
+      "id": 2140443797,
+      "index": 1,
+      "active": true,
+      "url": "",
+      "title": "",
+      "lastAccessed": 1793234386481.492
+    }
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 2140443797,
+    "url": "https://xn--bcher-kva.invalid/example"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 2140443797,
+    "title": "bücher.invalid"
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 2140443795,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 2140443796,
+            "index": 0,
+            "active": false,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793234386120.585
+          },
+          {
+            "id": 2140443797,
+            "index": 1,
+            "active": true,
+            "url": "https://xn--bcher-kva.invalid/example",
+            "title": "bücher.invalid",
+            "lastAccessed": 1793234386481.492
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 2140443797,
+    "url": "https://example.invalid/second"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 2140443797,
+    "title": "example.invalid"
+  },
+  {
+    "type": "tabClosed",
+    "tabId": 2140443797,
+    "windowClosing": false
+  },
+  {
+    "type": "active",
+    "windowId": 2140443795,
+    "incognito": false,
+    "tab": {
+      "id": 2140443796,
+      "index": 0,
+      "active": true,
+      "url": "about:blank",
+      "title": "about:blank",
+      "lastAccessed": 1793234389517.163
+    }
+  }
+]
