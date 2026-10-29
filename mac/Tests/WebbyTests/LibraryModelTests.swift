@@ -313,7 +313,8 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
         let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
 
         model.requestEmptyTrash()
-        #expect(model.pendingEmptyTrash == LibraryModel.EmptyTrashConfirmation(count: 2))
+        #expect(model.pendingEmptyTrash?.count == 2)
+        #expect(model.pendingEmptyTrash?.ids == [first.id, second.id])
         model.cancelEmptyTrash()
         #expect(model.pendingEmptyTrash == nil)
         #expect(store.note(id: first.id) != nil)

@@ -163,7 +163,7 @@ private func makeWindowController(_ model: LibraryModel) -> LibraryWindowControl
     let directory = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
-    let note = Note(frame: NoteFrame(), placement: .screen, text: "saved")
+    let note = Note(text: "saved", frame: NoteFrame(), placement: .screen)
     #expect(store.add(note))
     let controller = makeController(store)
     let window = makeWindowController(LibraryModel(controller: controller, clock: { fixedNow }))
