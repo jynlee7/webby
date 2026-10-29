@@ -259,7 +259,7 @@ private func fixtureData(_ name: String) throws -> Data {
         isCollapsed: false,
         isExcludedFromAgent: false,
         tags: [],
-        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: goldenUUID("F1")).absoluteString),
+        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: goldenUUID("F1"))),
         pageLink: nil
     )
     let document = CompiledDocument(
@@ -289,7 +289,7 @@ private func fixtureData(_ name: String) throws -> Data {
         isCollapsed: true,
         isExcludedFromAgent: true,
         tags: [],
-        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: id).absoluteString),
+        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: id)),
         pageLink: CompiledLink(title: "Open page", url: "https://example.com/a)b")
     )
     let document = CompiledDocument(
