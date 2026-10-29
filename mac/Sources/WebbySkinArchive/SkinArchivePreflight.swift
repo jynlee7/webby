@@ -51,7 +51,13 @@ public struct SkinArchivePreflightResult: Sendable, Equatable {
 /// perform filesystem I/O; extraction belongs to a later slice.
 public enum SkinArchivePreflight {
     public static func check(_ data: Data) throws -> SkinArchivePreflightResult {
-        let centralEntries = try SkinArchiveCentralDirectoryReader.read(data)
+        try check(data, centralEntries: SkinArchiveCentralDirectoryReader.read(data))
+    }
+
+    static func check(
+        _ data: Data,
+        centralEntries: [SkinArchiveCentralDirectoryEntry]
+    ) throws -> SkinArchivePreflightResult {
         try validateRawNames(centralEntries)
 
         let wrapper = try wrapperDirectory(in: centralEntries)

@@ -34,8 +34,8 @@ public enum SkinArchiveExtractor {
         stagingNear appropriateURL: URL,
         environment: SkinArchiveExtractionEnvironment
     ) throws -> StagedSkinArchive {
-        let preflight = try SkinArchivePreflight.check(data)
         let centralEntries = try SkinArchiveCentralDirectoryReader.read(data)
+        let preflight = try SkinArchivePreflight.check(data, centralEntries: centralEntries)
 
         let archive: Archive
         do {
@@ -79,10 +79,6 @@ public enum SkinArchiveExtractor {
         }
 
         do {
-            try environment.fileManager.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: stagingRoot.path
-            )
             var budget = SkinArchiveByteBudget()
             for (item, entry) in admitted {
                 try extract(

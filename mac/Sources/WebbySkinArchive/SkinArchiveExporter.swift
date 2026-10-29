@@ -23,11 +23,12 @@ public enum SkinArchiveExporter {
             origin: .installed,
             availableBaseIDs: availableBaseIDs
         )
-        guard !loaded.diagnostics.contains(where: { $0.severity == .fatal }),
-              let document = loaded.document
+        guard let document = loaded.document,
+              !loaded.diagnostics.contains(where: { $0.severity == .fatal })
         else {
+            let code = loaded.diagnostics.first { $0.severity == .fatal }?.code
             throw SkinArchiveError.exportSourceRejected(
-                reason: "the skin folder did not load"
+                reason: "the skin folder did not load: \(code ?? "unknown")"
             )
         }
 

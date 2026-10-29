@@ -174,10 +174,11 @@ private func exportFolder() throws -> URL {
         )
         Issue.record("expected a symlinked skin folder to be rejected")
     } catch let error as SkinArchiveError {
-        guard case .exportSourceRejected = error else {
+        guard case .exportSourceRejected(let reason) = error else {
             Issue.record("expected exportSourceRejected, got \(error)")
             return
         }
+        #expect(reason.contains("symlink"))
     }
     #expect(!FileManager.default.fileExists(atPath: destination.path))
 }
