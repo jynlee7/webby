@@ -169,7 +169,13 @@ final class LibraryModel {
 
     /// Read-only browsing stays available; mutations and Trash actions do not.
     var isWritable: Bool { controller.isWritable }
+    var isImporting: Bool { controller.isImporting }
     var readOnlyProblem: String? { controller.readOnlyProblem }
+
+    /// The footer shows whichever operation started or finished most recently.
+    var portabilityStatus: String? {
+        importStatus ?? exportStatus
+    }
 
     var libraryResult: LibraryResult { result }
     var sidebarCounts: [LibrarySection: Int] { result.counts }
@@ -775,9 +781,14 @@ final class LibraryModel {
 
     // MARK: Mutations
 
-    func updateText(id: UUID, text: String) {
+    /// Returns false when the change was rejected, such as during an import.
+    @discardableResult
+    func updateText(id: UUID, text: String) -> Bool {
+        guard !controller.isImporting, controller.isWritable else { return false }
+        let before = controller.libraryNotes.first { $0.id == id }?.text
         controller.updateLibraryText(id: id, text: text)
         refresh()
+        return controller.libraryNotes.first { $0.id == id }?.text != before
     }
 
     func attach(id: UUID, anchor: Anchor?, workspace: UUID?) {

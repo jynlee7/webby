@@ -162,6 +162,7 @@ final class ExportController {
         format: Format,
         includeCanonicalSourceURLs: Bool = false
     ) throws -> URL? {
+        model.importStatus = nil
         let document = try makeDocument(
             selection: selection,
             format: format,

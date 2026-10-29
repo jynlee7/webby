@@ -270,3 +270,23 @@ private func selectionIDs(_ notes: [LibraryNote]) -> Set<UUID> {
         #expect(Set(workspaceDocument.sections.flatMap { $0.notes.map(\.id) }) == [pageNote.id])
     }
 }
+
+@MainActor
+@Test func portabilityStatusShowsTheMostRecentOperation() {
+    let directory = try FileManager.default.temporaryDirectory
+        .appendingPathComponent("WebbyPortabilityStatus-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let model = LibraryModel(controller: makeSelectionController(store), clock: { selectionNow })
+
+    #expect(model.portabilityStatus == nil)
+    model.exportStatus = "Exported notes.md"
+    #expect(model.portabilityStatus == "Exported notes.md")
+
+    model.importStatus = "Importing..."
+    #expect(model.portabilityStatus == "Importing...")
+
+    model.importStatus = nil
+    #expect(model.portabilityStatus == "Exported notes.md")
+}

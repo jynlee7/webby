@@ -64,6 +64,7 @@ final class ImportController {
     func importJSON() async {
         guard let url = openPanel() else { return }
 
+        model.exportStatus = nil
         model.importStatus = "Importing..."
         do {
             let payload = try loadPayload(url)

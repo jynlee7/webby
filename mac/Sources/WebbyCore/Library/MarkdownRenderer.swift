@@ -81,22 +81,32 @@ public enum MarkdownRenderer {
     /// Leading indentation creates code blocks even when punctuation is escaped.
     /// Renderer-owned numeric entities preserve the spaces as text instead.
     private static func escapeBodyLine(_ line: String) -> String {
-        let leadingSpaces = line.prefix { $0 == " " }.count
-        let remainder = String(line.dropFirst(leadingSpaces))
-        var escaped = escape(remainder)
+        var entityPrefix = ""
+        var remainder = Substring(line)
+        while let first = remainder.first, first == " " || first == "\t" {
+            entityPrefix += first == " " ? "&#32;" : "&#9;"
+            remainder = remainder.dropFirst()
+        }
+        var escaped = escape(String(remainder))
 
-        if remainder.hasPrefix("- ") || remainder.hasPrefix("+ ") {
+        if isBulletStart(remainder) {
             escaped = "\\" + escaped
-        } else if isOrderedListStart(remainder), let punctuation = escaped.firstIndex(of: ".") {
+        } else if isOrderedListStart(String(remainder)), let punctuation = escaped.firstIndex(of: ".") {
             escaped.insert("\\", at: punctuation)
-        } else if isOrderedListStart(remainder, punctuation: ")"),
+        } else if isOrderedListStart(String(remainder), punctuation: ")"),
                   let punctuation = escaped.firstIndex(of: ")") {
             escaped.insert("\\", at: punctuation)
         } else if isSetextOrRule(remainder), !escaped.isEmpty {
             escaped.insert("\\", at: escaped.startIndex)
         }
 
-        return String(repeating: "&#32;", count: leadingSpaces) + escaped
+        return entityPrefix + escaped
+    }
+
+    private static func isBulletStart(_ line: Substring) -> Bool {
+        guard let first = line.first, first == "-" || first == "+" else { return false }
+        let after = line.index(after: line.startIndex)
+        return after < line.endIndex && (line[after] == " " || line[after] == "\t")
     }
 
     private static func isOrderedListStart(
@@ -115,9 +125,10 @@ public enum MarkdownRenderer {
 
     private static func isSetextOrRule(_ line: String) -> Bool {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.count >= 3, let first = trimmed.first,
+        guard !trimmed.isEmpty, let first = trimmed.first,
               first == "-" || first == "="
         else { return false }
+        // One or two characters are a setext underline; three or more are a rule.
         return trimmed.allSatisfy { $0 == first }
     }
 

@@ -20,7 +20,7 @@ struct LibraryContentView: View {
                 noteTable
             }
 
-            if let status = model.exportStatus ?? model.importStatus {
+            if let status = model.portabilityStatus {
                 Divider()
                 Text(status)
                     .font(.caption)

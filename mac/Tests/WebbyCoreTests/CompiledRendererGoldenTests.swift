@@ -314,3 +314,31 @@ private func fixtureData(_ name: String) throws -> Data {
     #expect(markdown.hasSuffix("\n"))
     #expect(html.hasSuffix("\n"))
 }
+
+@Test func markdownTabsBulletsAndShortUnderlinesStayLiteral() {
+    let id = goldenUUID("F3")
+    let note = CompiledNote(
+        id: id,
+        title: "More plain text",
+        body: "-\titem\nHeading\n==\n\tindented\n-  spaced bullet",
+        createdAt: goldenDate(0),
+        isPinned: false,
+        isHidden: false,
+        isCollapsed: false,
+        isExcludedFromAgent: false,
+        tags: [],
+        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: id)),
+        pageLink: nil
+    )
+    let document = CompiledDocument(
+        scope: .workspace(.inbox),
+        title: "Safety",
+        sections: [CompiledSection(kind: .workspaceNotes, heading: "Notes", notes: [note])]
+    )
+    let rendered = MarkdownRenderer.render(document)
+
+    #expect(rendered.contains("\\-&#9;item"))
+    #expect(rendered.contains("\\=="))
+    #expect(rendered.contains("&#9;indented"))
+    #expect(rendered.contains("\\-&#32;&#32;spaced bullet"))
+}

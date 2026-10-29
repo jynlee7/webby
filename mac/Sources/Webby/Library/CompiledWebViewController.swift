@@ -55,6 +55,9 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
 
     private var contentRuleList: WKContentRuleList?
     private var allowsInitialNavigation = false
+    /// Identifies the newest requested document so a slow older callback cannot
+    /// replace content that has since been superseded.
+    private var loadGeneration = 0
     private(set) var lastLoadedHTML: String?
     private(set) var lastLoadedBaseURL: URL?
 
@@ -70,9 +73,11 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
         lastLoadedHTML = html
         lastLoadedBaseURL = nil
         allowsInitialNavigation = false
+        loadGeneration &+= 1
+        let generation = loadGeneration
 
         if let contentRuleList {
-            loadNow(html: html, contentRuleList: contentRuleList)
+            loadNow(html: html, contentRuleList: contentRuleList, generation: generation)
             return
         }
 
@@ -81,18 +86,23 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
             encodedContentRuleList: Self.contentRuleJSON
         ) { [weak self] list, _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.loadGeneration == generation else { return }
                 guard let list else {
                     self.onFailure?(LoadError.contentRuleUnavailable)
                     return
                 }
                 self.contentRuleList = list
-                self.loadNow(html: html, contentRuleList: list)
+                self.loadNow(html: html, contentRuleList: list, generation: generation)
             }
         }
     }
 
-    private func loadNow(html: String, contentRuleList: WKContentRuleList) {
+    private func loadNow(
+        html: String,
+        contentRuleList: WKContentRuleList,
+        generation: Int
+    ) {
+        guard generation == loadGeneration else { return }
         let userContentController = webView.configuration.userContentController
         if self.contentRuleList == nil {
             userContentController.add(contentRuleList)

@@ -34,8 +34,8 @@ final class LibraryTextDraft {
         guard isDirty else { return }
 
         let value = text
+        guard model.updateText(id: noteID, text: value) else { return }
         committedText = value
-        model.updateText(id: noteID, text: value)
     }
 
     func scheduleCommit(to model: LibraryModel) {
@@ -244,7 +244,7 @@ private struct NoteDetailContent: View {
     }
 
     private var isTrashed: Bool { note.trashedAt != nil }
-    private var canEdit: Bool { model.isWritable && !isTrashed }
+    private var canEdit: Bool { model.isWritable && !isTrashed && !model.isImporting }
     private var tags: [LibraryTag] { Tags.parse(note.text) }
 
     private func focusIfRouted() {

@@ -39,7 +39,7 @@ final class NotesController {
     /// The latest import state, for a future import UI. Nothing renders it yet.
     private(set) var importState: ImportState = .idle
     /// True while a serialized import transaction owns the store.
-    private var isImporting = false
+    private(set) var isImporting = false
     /// Set by the retained Library window so an import can commit its editor draft
     /// before the barrier, exactly as quit does.
     var commitLibraryDrafts: (@MainActor () -> Void)?
@@ -519,6 +519,9 @@ final class NotesController {
 
     /// Shows the current app's notes where the planner puts them and closes the rest.
     func layout() {
+        // Importing freezes the editor surfaces; closing or re-planning overlay
+        // windows here would discard drafts that cannot be committed yet.
+        guard !isImporting else { return }
         let window = monitor.windowFrame
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) })
         let plans = OverlayPlanner.plan(
@@ -542,7 +545,7 @@ final class NotesController {
             guard let note = store.note(id: plan.noteID) else { continue }
             let controller = overlayController(for: note)
             controller.model.collapsed = plan.collapsed
-            controller.model.isEditable = isWritable
+            controller.model.isEditable = isWritable && !isImporting
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
@@ -578,6 +581,7 @@ final class NotesController {
     /// Competing drafts stay in their editors while an import owns the store.
     @discardableResult
     private func commitDrafts(force: Bool = false) -> Bool {
+        if isImporting, !force { return false }
         guard force || !isImporting else { return false }
         var changed = false
         for (id, controller) in windows where store.note(id: id)?.text != controller.model.text {
