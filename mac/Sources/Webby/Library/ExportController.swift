@@ -35,14 +35,35 @@ final class ExportController {
         }
     }
 
+    enum PDFExportError: LocalizedError, Equatable {
+        case rendererUnavailable
+        case invalidPDF
+
+        var errorDescription: String? {
+            switch self {
+            case .rendererUnavailable:
+                return "PDF export is not available in this build."
+            case .invalidPDF:
+                return "The PDF renderer did not produce a PDF file."
+            }
+        }
+    }
+
     struct Document: Equatable {
         let data: Data
         let filename: String
         let format: Format
     }
 
+    struct PDFDocument: Equatable {
+        let html: String
+        let filename: String
+    }
+
     typealias SnapshotProvider = @MainActor () -> LibraryModel.ExportSnapshot
     typealias SavePanelProvider = @MainActor (String, Format) -> URL?
+    typealias PDFSavePanelProvider = @MainActor (String) -> URL?
+    typealias PDFRenderer = @MainActor (String, URL) async throws -> Void
     typealias Writer = @MainActor (Data, URL, Bool) throws -> Void
     typealias OverwriteConfirmation = @MainActor (URL) -> Bool
 
@@ -50,6 +71,8 @@ final class ExportController {
     private let commitDrafts: @MainActor () -> Void
     private let snapshot: SnapshotProvider
     private let savePanel: SavePanelProvider
+    private let pdfSavePanel: PDFSavePanelProvider
+    private let pdfRenderer: PDFRenderer?
     private let writer: Writer
     private let confirmOverwrite: OverwriteConfirmation
 
@@ -58,6 +81,8 @@ final class ExportController {
         commitDrafts: @escaping @MainActor () -> Void = {},
         snapshot: SnapshotProvider? = nil,
         savePanel: @escaping SavePanelProvider = ExportController.presentSavePanel,
+        pdfSavePanel: @escaping PDFSavePanelProvider = ExportController.presentPDFSavePanel,
+        pdfRenderer: PDFRenderer? = CompiledPDFRenderer.render,
         writer: @escaping Writer = ExportController.writeAtomically,
         confirmOverwrite: @escaping OverwriteConfirmation = { _ in true }
     ) {
@@ -65,6 +90,8 @@ final class ExportController {
         self.commitDrafts = commitDrafts
         self.snapshot = snapshot ?? { model.exportSnapshot() }
         self.savePanel = savePanel
+        self.pdfSavePanel = pdfSavePanel
+        self.pdfRenderer = pdfRenderer
         self.writer = writer
         self.confirmOverwrite = confirmOverwrite
     }
@@ -169,6 +196,59 @@ final class ExportController {
         }
     }
 
+    /// Builds the locked-down HTML and deterministic `.pdf` name. Drafts are
+    /// committed before the snapshot, like every other export.
+    func makePDFDocument(selection: LibraryExportSelection) throws -> PDFDocument {
+        commitDrafts()
+        let snapshot = snapshot()
+        let document = compiledDocument(for: selection, snapshot: snapshot)
+        return PDFDocument(
+            html: HTMLRenderer.render(document),
+            filename: "\(filenameBase(for: selection, snapshot: snapshot)).pdf"
+        )
+    }
+
+    /// Renders through the injected WebKit seam into a sibling temporary `.pdf`, then
+    /// writes that file through the existing atomic writer after the save panel.
+    @discardableResult
+    func exportPDF(selection: LibraryExportSelection) async throws -> URL? {
+        let document = try makePDFDocument(selection: selection)
+        guard let pdfRenderer else { throw PDFExportError.rendererUnavailable }
+        guard let url = pdfSavePanel(document.filename) else { return nil }
+
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        if exists && !confirmOverwrite(url) {
+            return nil
+        }
+
+        let directory = url.deletingLastPathComponent()
+        let temporary = directory.appendingPathComponent(
+            ".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString).pdf"
+        )
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        try await pdfRenderer(document.html, temporary)
+        let data = try Data(contentsOf: temporary)
+        guard data.starts(with: Data("%PDF".utf8)) else {
+            throw PDFExportError.invalidPDF
+        }
+
+        try writer(data, url, exists)
+        model.exportStatus = "Exported \(document.filename)"
+        return url
+    }
+
+    /// Async UI entry point for the menu.
+    func runPDF(selection: LibraryExportSelection) {
+        Task { @MainActor in
+            do {
+                _ = try await exportPDF(selection: selection)
+            } catch {
+                Self.present(error: error)
+            }
+        }
+    }
+
     static func presentSavePanel(filename: String, format: Format) -> URL? {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = filename
@@ -176,6 +256,16 @@ final class ExportController {
         panel.isExtensionHidden = false
         panel.allowsOtherFileTypes = false
         panel.allowedFileTypes = [format.fileExtension]
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    static func presentPDFSavePanel(filename: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowsOtherFileTypes = false
+        panel.allowedFileTypes = ["pdf"]
         return panel.runModal() == .OK ? panel.url : nil
     }
 
@@ -361,6 +451,13 @@ final class ExportController {
         format: Format,
         snapshot: LibraryModel.ExportSnapshot
     ) -> String {
+        "\(filenameBase(for: selection, snapshot: snapshot)).\(format.fileExtension)"
+    }
+
+    private func filenameBase(
+        for selection: LibraryExportSelection,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> String {
         let base: String
         switch selection {
         case .workspace(let destination):
@@ -372,7 +469,7 @@ final class ExportController {
         case .selected:
             base = "selected-notes"
         }
-        return "webby-\(base).\(format.fileExtension)"
+        return "webby-\(base)"
     }
 
     private func workspaceName(

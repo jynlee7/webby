@@ -5,11 +5,12 @@ import WebbyCore
 /// The one Library window. The model, actions and draft are created once, so repeated
 /// presentations show the same store and selection instead of rebuilding state.
 ///
-/// Closing the window only orders it out. The app remains a menu-bar accessory, and
-/// this controller registers no URL scheme or external link handling.
+/// Closing the window only orders it out. The app remains a menu-bar accessory; the
+/// controller owns deep-link routing through `showNote`.
 @MainActor
 final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     typealias Presentation = @MainActor (LibraryWindowController) -> Void
+    typealias DetailFocus = @MainActor (UUID) -> Void
 
     let model: LibraryModel
     let draft = LibraryTextDraft()
@@ -25,16 +26,19 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     private let actions: LibraryAnchorActions
     private let presentation: Presentation
+    private let focusDetail: DetailFocus
     private var hostingController: NSHostingController<LibraryView>?
 
     init(
         model: LibraryModel,
         actions: LibraryAnchorActions,
-        presentation: @escaping Presentation = { $0.showLibraryWindow() }
+        presentation: @escaping Presentation = { $0.showLibraryWindow() },
+        focusDetail: @escaping DetailFocus = { _ in }
     ) {
         self.model = model
         self.actions = actions
         self.presentation = presentation
+        self.focusDetail = focusDetail
         super.init(window: nil)
     }
 
@@ -91,7 +95,14 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     @discardableResult
     func showNote(_ id: UUID) -> Bool {
+        // Route against the committed text, not a draft that a later save would drop.
+        commitPendingEdits()
         guard model.revealNote(id) else { return false }
+
+        // A link always lands in List mode with its detail ready to read or edit.
+        model.contentMode = .list
+        model.requestDetailFocus(id)
+        focusDetail(id)
         present()
         return true
     }

@@ -15,6 +15,14 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
         case note(UUID)
     }
 
+    enum LoadError: LocalizedError {
+        case contentRuleUnavailable
+
+        var errorDescription: String? {
+            "The compiled-view content rule could not be installed."
+        }
+    }
+
     /// Tests inspect this exact string. `^https?://` covers both schemes.
     static let contentRuleJSON = #"[{"trigger":{"url-filter":"^https?://"},"action":{"type":"block"}}]"#
 
@@ -42,6 +50,8 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
     let webView: WKWebView
     var onOpenExternalURL: ((URL) -> Void)?
     var onOpenNote: ((UUID) -> Void)?
+    var onFinish: (() -> Void)?
+    var onFailure: ((Error) -> Void)?
 
     private var contentRuleList: WKContentRuleList?
     private var allowsInitialNavigation = false
@@ -70,9 +80,12 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
             forIdentifier: "Webby.Compiled.BlockHTTP",
             encodedContentRuleList: Self.contentRuleJSON
         ) { [weak self] list, _ in
-            guard let list else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard let list else {
+                    self.onFailure?(LoadError.contentRuleUnavailable)
+                    return
+                }
                 self.contentRuleList = list
                 self.loadNow(html: html, contentRuleList: list)
             }
@@ -114,6 +127,22 @@ final class CompiledWebViewController: NSObject, WKNavigationDelegate {
             }
         }
         decisionHandler(.cancel)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onFinish?()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        onFailure?(error)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        onFailure?(error)
     }
 }
 

@@ -323,6 +323,9 @@ private struct LibraryExportMenu: View {
                 Button("Workspace as HTML...") {
                     exportController.run(selection: selection, format: .html)
                 }
+                Button("Workspace as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
                 Button("Workspace as JSON...") {
                     exportController.run(selection: selection, format: .json)
                 }
@@ -343,6 +346,9 @@ private struct LibraryExportMenu: View {
                 Button("Page as HTML...") {
                     exportController.run(selection: selection, format: .html)
                 }
+                Button("Page as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
                 Button("Page as JSON...") {
                     exportController.run(selection: selection, format: .json)
                 }
@@ -353,6 +359,9 @@ private struct LibraryExportMenu: View {
                 Button("Selected Notes as Markdown...") {
                     exportController.run(selection: selection, format: .markdown)
                 }
+                Button("Selected Notes as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
                 Button("Selected Notes as JSON...") {
                     exportController.run(selection: selection, format: .json)
                 }
@@ -361,6 +370,9 @@ private struct LibraryExportMenu: View {
             Divider()
             Button("All Notes as Markdown...") {
                 exportController.run(selection: .all, format: .markdown)
+            }
+            Button("All Notes as PDF...") {
+                exportController.runPDF(selection: .all)
             }
             Button("All Notes as JSON...") {
                 exportController.run(selection: .all, format: .json)

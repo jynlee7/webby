@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsStore: SettingsStore!
     private var settingsWindow: SettingsWindowController?
     private var libraryWindow: LibraryWindowController?
+    private let linkRouter = NoteLinkRouter()
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
@@ -62,6 +63,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         notes.start()
+
+        linkRouter.onRoute = { [weak self] id in
+            guard let self else { return false }
+            self.ensureLibraryWindow()
+            return self.libraryWindow?.showNote(id) ?? false
+        }
+        linkRouter.onUnroutable = { [weak self] _ in self?.showMissingNoteLinkAlert() }
+        linkRouter.markReady()
+    }
+
+    /// External `webby://note/<uuid>` links. Links that arrive before launch finishes
+    /// are queued by the router and flushed once `notes.start()` has completed.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            linkRouter.receive(url)
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -88,6 +105,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showLibrary() {
+        ensureLibraryWindow()
+        libraryWindow?.present()
+    }
+
+    /// Creates the one retained Library without presenting it. Both the status menu
+    /// and external URL routing use this so a link never waits for a menu action.
+    private func ensureLibraryWindow() {
         if libraryWindow == nil {
             libraryWindow = LibraryWindowController(
                 notes: notes,
@@ -95,7 +119,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 userQueryRules: settingsStore.settings.queryRules
             )
         }
-        libraryWindow?.present()
+    }
+
+    private func showMissingNoteLinkAlert() {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Note Not Found"
+        alert.informativeText = "This link points to a note that is not in the Library anymore. Nothing was changed."
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     private func showSettings() {

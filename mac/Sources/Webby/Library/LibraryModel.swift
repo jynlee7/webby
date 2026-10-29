@@ -76,6 +76,8 @@ final class LibraryModel {
     /// The table's multi-selection. Repaired on every refresh so it never keeps a
     /// trashed, purged, ephemeral or filtered-out note.
     var selectedNoteIDs: Set<UUID> = []
+    /// Set when a deep link routes to a note, so the detail editor can take focus.
+    private(set) var detailFocusRequest: UUID?
     var contentMode: LibraryContentMode = .list
     var exportStatus: String?
     var importStatus: String?
@@ -197,6 +199,19 @@ final class LibraryModel {
     /// The detail pane focuses the existing single-note selection. Multi-selection
     /// never replaces it unless the focused row disappears.
     var focusedNoteID: UUID? { selectedNoteID }
+
+    /// Requests focus for the detail editor after a deep link selects its note.
+    func requestDetailFocus(_ id: UUID) {
+        detailFocusRequest = id
+    }
+
+    /// Consumes a matching focus request. The detail view calls this once it has
+    /// loaded the routed note.
+    func consumeDetailFocus(_ id: UUID) -> Bool {
+        guard detailFocusRequest == id else { return false }
+        detailFocusRequest = nil
+        return true
+    }
 
     /// The store owner, exposed only so the app-level import controller can plan
     /// against the same live snapshot the Library shows.
