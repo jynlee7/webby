@@ -41,7 +41,18 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
             overlayPresentation: NotesControllerLibraryOverlayPresenter(controller: notes),
             currentApp: currentApp
         )
-        self.init(model: LibraryModel(controller: notes), actions: actions)
+        let model = LibraryModel(
+            controller: notes,
+            workspaceDisplayName: { key in
+                LibraryWorkspaceNames.displayName(for: key) { bundleID in
+                    guard let url = NSWorkspace.shared
+                        .urlForApplication(withBundleIdentifier: bundleID)
+                    else { return nil }
+                    return FileManager.default.displayName(atPath: url.path)
+                }
+            }
+        )
+        self.init(model: model, actions: actions)
     }
 
     @available(*, unavailable)

@@ -11,6 +11,21 @@ enum LibraryPageSelection: Hashable, Sendable {
     case page(PageURL)
 }
 
+/// Human-readable workspace names, including an honest marker for missing apps.
+enum LibraryWorkspaceNames {
+    static func displayName(for key: WorkspaceKey, appName: (String) -> String?) -> String {
+        guard case let .app(bundleID) = key else {
+            return key.displayName
+        }
+        if let name = appName(bundleID)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !name.isEmpty {
+            return name
+        }
+        return "\(bundleID) (not installed)"
+    }
+}
+
 /// Library presentation state. The model never owns note copies or writes the store
 /// directly; `NotesController` remains the only owner of notes and mutations.
 @MainActor @Observable

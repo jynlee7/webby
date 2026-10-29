@@ -396,3 +396,14 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
         #expect(model.displayName(for: group) == "TextEdit")
     }
 }
+
+@Test func workspaceNamesMarkMissingApps() {
+    let textEdit = WorkspaceKey.app(bundleID: "com.apple.TextEdit")
+    #expect(LibraryWorkspaceNames.displayName(for: textEdit) { _ in "TextEdit" } == "TextEdit")
+    #expect(LibraryWorkspaceNames.displayName(for: textEdit) { _ in nil }
+        == "com.apple.TextEdit (not installed)")
+    #expect(LibraryWorkspaceNames.displayName(for: textEdit) { _ in "   " }
+        == "com.apple.TextEdit (not installed)")
+    #expect(LibraryWorkspaceNames.displayName(for: .host(name: "example.com")) { _ in nil }
+        == "example.com")
+}
