@@ -107,6 +107,8 @@ final class NotesController {
         layout()
         if let problem = readOnlyProblem {
             showReadOnlyBanner(problem)
+        } else if case let .recovered(backupURL) = store.outcome {
+            showRecoveredBanner(backupURL)
         }
     }
 
@@ -554,6 +556,18 @@ final class NotesController {
             guard !Task.isCancelled else { return }
             self?.saveNow()
         }
+    }
+
+    /// The store kept a copy of an unreadable file before starting empty. Say so
+    /// instead of silently appearing to have lost the notes.
+    private func showRecoveredBanner(_ backupURL: URL) {
+        banner.show(
+            title: "Webby couldn't read notes.json",
+            message: "The unreadable file was kept. Webby started with an empty note list.",
+            actions: [StatusBanner.Action(title: "Show Backup in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+            }]
+        )
     }
 
     private func showReadOnlyBanner(_ problem: String) {
