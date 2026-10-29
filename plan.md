@@ -1926,6 +1926,14 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Current test surface:** use the existing `WebbyTests` target for draft-before-export, multi-selection, observer refresh, cold/warm routing, Trash/missing IDs and WebKit configuration. Add Core golden/migration/import-transaction suites. CI must keep the standard and CLT lanes green; manual checks cover packaged external links, clipboard, panels, zero compiled-view network requests and 200-note PDF pagination if retained.
 - **PR setup:** planning updates remain on `main`. Do not create the #15 branch or draft PR until implementation is explicitly authorized; an empty/plan-only PR would violate the issue-branch rule and provide no verifiable implementation surface.
 
+**Post-rebase review clarifications (2026-10-29).**
+
+- **WebKit import guards:** the implementation PR explicitly changes `scripts/check-imports.sh`: allow `WebKit` in `Webby`, and in `WebbyTests` only for direct compiled-view/security tests. `WebbyCore` remains Foundation/CoreGraphics-only. Add the guard change to Step 6's key files and verify both standard and CLT test lanes before any WebKit UI commit is considered complete.
+- **Cold-start routing:** `AppDelegate` adds one `ensureLibraryWindow()` method used by both the status menu and `application(_:open:)`. Valid links received before launch readiness are stored in one bounded pending slot/list; after `NotesController.start()` and Library construction, flush through `LibraryWindowController.showNote`. The router never waits for a menu action to create the window.
+- **Trashed and unavailable links:** merged #13 already makes Trash detail read-only (`canEdit` excludes trashed notes). #15 preserves that guard. Missing or ephemeral IDs leave selection/search unchanged and show an error; they are never created, restored or exported implicitly.
+- **Multi-selection repair:** `selectedNoteIDs` is pruned whenever notes are trashed, purged, imported, filtered out of the active export scope or become ephemeral. The focused/detail ID remains separate. Export takes an immutable validated snapshot of the selected durable IDs, never a stale UI set.
+- **Cut-line checkboxes:** split issue #15 acceptance into separate Markdown/JSON selected-export, PDF, and YAML-front-matter checkboxes before implementation. If PDF or YAML is cut, its own checkbox stays open and the follow-up issue is linked; completed Markdown/JSON work remains independently visible.
+
 ### Step 7a: "Just this tab" notes and Closed tabs
 
 - **Size:** M.
