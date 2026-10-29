@@ -5,6 +5,10 @@ import WebbyCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let chromeBridge = ChromeBridge()
+    private let browser = BrowserMonitor()
+    private var notes: WebNotesController!
+    private var saveError: String?
+    private var saveStatus: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -15,9 +19,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         title.isEnabled = false
         menu.addItem(title)
         menu.addItem(.separator())
+        for (title, action) in [("New Chrome Note", #selector(newNote)),
+                                ("Enable Window Access…", #selector(enableWindowAccess)),
+                                ("Retry Saving Notes", #selector(retrySave))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        saveStatus = NSMenuItem(title: "Notes saved", action: nil, keyEquivalent: "")
+        menu.addItem(saveStatus)
         menu.addItem(NSMenuItem(title: "Quit Webby", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
 
+        notes = WebNotesController(browser: browser)
+        notes.onSaveError = { [weak self] error in
+            self?.saveError = error
+            self?.saveStatus.title = error == nil ? "Notes saved" : "Notes not saved — retry saving"
+            self?.saveStatus.toolTip = error
+        }
+        browser.onChange = { [weak self] in self?.notes.refresh() }
+        chromeBridge.onEvent = { [weak self] in self?.browser.receive($0) }
+        browser.start()
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
             let item = NSMenuItem(title: "Move Webby to Applications…", action: #selector(showMoveToApplications), keyEquivalent: "")
@@ -28,7 +50,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        browser.stop()
         chromeBridge.stop()
+    }
+
+    @objc private func newNote() {
+        guard browser.isChromeActive else {
+            let alert = NSAlert()
+            alert.messageText = "Open a Chrome window first"
+            alert.informativeText = "Switch to Chrome, then choose New Chrome Note from Webby's menu."
+            alert.runModal()
+            return
+        }
+        guard browser.frame != nil else { browser.requestAccessibility(); return }
+        notes.createNote()
+    }
+    @objc private func enableWindowAccess() { browser.requestAccessibility() }
+    @objc private func retrySave() {
+        if !notes.saveNow() {
+            let alert = NSAlert()
+            alert.messageText = "Could not save notes"
+            alert.informativeText = saveError ?? "Your edits are still in memory."
+            alert.runModal()
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !notes.saveNow() else { return .terminateNow }
+        let alert = NSAlert()
+        alert.messageText = "Your notes have unsaved changes"
+        alert.informativeText = saveError ?? "The notes file could not be saved."
+        alert.addButton(withTitle: "Keep Webby Open")
+        alert.addButton(withTitle: "Quit Without Saving")
+        return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// Webby is running from a temporary App Translocation mount, so Chrome can't be

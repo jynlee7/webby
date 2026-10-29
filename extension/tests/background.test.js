@@ -26,7 +26,7 @@ async function worker() {
       session: { get: async () => { throw new Error("quota storage must not be needed"); } },
     },
     extension: { isAllowedIncognitoAccess: async () => false },
-    windows: { getAll: async () => windows, onFocusChanged: event(), WINDOW_ID_NONE: -1 },
+    windows: { getAll: async () => windows, onFocusChanged: event(), onBoundsChanged: event(), onRemoved: event(), WINDOW_ID_NONE: -1 },
     tabs: Object.fromEntries(["onActivated", "onCreated", "onUpdated", "onRemoved", "onMoved", "onAttached", "onReplaced"].map((name) => [name, event()])),
   };
   await import(`../background.js?test=${serial++}`);
@@ -108,4 +108,25 @@ test("failed initial snapshot is retried on the next event", async () => {
   await w.drain();
   assert.equal(w.ports.length, 2);
   assert.deepEqual(w.messages.map((m) => m.type), ["hello", "inventory", "active"]);
+});
+
+test("focus lost to an inaccessible incognito window clears the reported focus", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  w.chrome.windows.getAll = async () => [{ id: 1, focused: false, incognito: false, tabs: [w.tab] }];
+  w.chrome.windows.onFocusChanged.fire(-1);
+  await w.drain();
+  assert.equal(w.messages.at(-1).type, "inventory");
+  assert.equal(w.messages.at(-1).windows[0].focused, false);
+});
+
+test("window movement publishes fresh bounds", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  w.chrome.windows.getAll = async () => [{ id: 1, focused: true, incognito: false, left: 42, top: 80, width: 1000, height: 700, tabs: [w.tab] }];
+  w.chrome.windows.onBoundsChanged.fire({ id: 1 });
+  await w.drain();
+  assert.deepEqual(w.messages.at(-1).windows[0].bounds, { left: 42, top: 80, width: 1000, height: 700 });
 });
