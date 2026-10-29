@@ -124,6 +124,11 @@ extension Note {
     /// The first non-blank line of the text, trimmed and cut to `limit` characters
     /// with an ellipsis. `nil` for a note with no visible text.
     public func summaryLine(limit: Int = 40) -> String? {
+        Self.summaryLine(of: text, limit: limit)
+    }
+
+    /// `summaryLine(limit:)` for text that isn't in a note yet, such as a draft.
+    public static func summaryLine(of text: String, limit: Int = 40) -> String? {
         let line = text.split(whereSeparator: \.isNewline)
             .lazy
             .map { $0.trimmingCharacters(in: .whitespaces) }
