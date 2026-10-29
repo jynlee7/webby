@@ -358,8 +358,8 @@ private func malformedReason(_ data: Data) -> String? {
             path: "skin.json",
             contents: [0x41],
             compressedSize: 200,
-            localCompressedSize: 200,
             uncompressedSize: 1,
+            localCompressedSize: 200,
             localUncompressedSize: 1
         ),
     ])
@@ -375,8 +375,8 @@ private func malformedReason(_ data: Data) -> String? {
         path: "a.bin",
         contents: [1, 2, 3, 4],
         compressedSize: 42,
-        localCompressedSize: 42,
         uncompressedSize: 4,
+        localCompressedSize: 42,
         localUncompressedSize: 4
     )
     let data = archive([first, file("skin.json")])
@@ -424,8 +424,8 @@ private func malformedReason(_ data: Data) -> String? {
             path: "skin.json",
             contents: [0x78],
             compressedSize: 1,
-            localCompressedSize: 1,
             uncompressedSize: declared,
+            localCompressedSize: 1,
             localUncompressedSize: declared
         )
     }
