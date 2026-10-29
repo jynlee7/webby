@@ -80,7 +80,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     @discardableResult
     func showNote(_ id: UUID) -> Bool {
-        guard model.selectNote(id) else { return false }
+        guard model.revealNote(id) else { return false }
         present()
         return true
     }

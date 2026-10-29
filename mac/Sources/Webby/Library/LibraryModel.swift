@@ -453,11 +453,6 @@ final class LibraryModel {
         guard let note = controller.libraryNotes.first(where: { $0.id == id }), !note.ephemeral else {
             return false
         }
-        // An explicit reveal must not be hidden by a stale toolbar query.
-        if !searchText.isEmpty {
-            searchText = ""
-        }
-
         if note.trashedAt != nil {
             selectedSection = .trash
             selectedWorkspace = nil
@@ -481,6 +476,16 @@ final class LibraryModel {
         selectedNoteID = id
         repairSelection()
         return selectedNoteID == id
+    }
+
+    /// Explicit reveal: clears a stale query, then selects. Table row selection uses
+    /// `selectNote` so clicking a search result keeps the query and the result list.
+    @discardableResult
+    func revealNote(_ id: UUID) -> Bool {
+        if !searchText.isEmpty {
+            searchText = ""
+        }
+        return selectNote(id)
     }
 
     private func pageSelection(for note: Note) -> LibraryPageSelection {
@@ -614,7 +619,7 @@ final class LibraryModel {
         let id = controller.createLibraryNote(destination: destination)
         refresh()
         if let id {
-            _ = selectNote(id)
+            _ = revealNote(id)
         }
         return id
     }

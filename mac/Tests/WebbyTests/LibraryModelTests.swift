@@ -429,7 +429,14 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     model.searchText = "needle"
     #expect(model.visibleNotes.map(\.id) == [workspace.id])
 
+    // Ordinary row selection keeps the query and the other matches.
     #expect(model.selectNote(workspace.id))
+    #expect(model.searchText == "needle")
+    #expect(model.selectedNoteID == workspace.id)
+
+    // Explicit reveal clears the query.
+    model.searchText = "needle"
+    #expect(model.revealNote(workspace.id))
     #expect(model.searchText.isEmpty)
     #expect(model.selectedNoteID == workspace.id)
 }
