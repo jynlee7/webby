@@ -24,6 +24,9 @@ jobs:
       - name: Check imports
         run: scripts/check-imports.sh
 
+      - name: Check skin archive dependency
+        run: scripts/check-skin-dependency.sh
+
       - name: Cache SwiftPM build
         uses: actions/cache@v6
         with:
@@ -34,6 +37,22 @@ jobs:
       - name: Build
         working-directory: mac
         run: swift build
+
+      - name: Build and test skin archive with Command Line Tools
+        run: |
+          clt=/Library/Developer/CommandLineTools
+          if [[ ! -d "$clt" ]]; then
+            echo "::error::Command Line Tools are required for the archive CI lane"
+            exit 1
+          fi
+          frameworks="$clt/Library/Developer/Frameworks"
+          export DEVELOPER_DIR="$clt"
+          cd mac
+          swift build --target WebbySkinArchive --scratch-path .build/clt
+          swift test --scratch-path .build/clt --filter WebbySkinArchiveTests \
+            -Xswiftc -F -Xswiftc "$frameworks" \
+            -Xlinker -rpath -Xlinker "$frameworks" \
+            -Xswiftc -Xfrontend -Xswiftc -disable-cross-import-overlays
 
       - name: Test
         run: scripts/test.sh --parallel

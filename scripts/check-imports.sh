@@ -28,9 +28,16 @@ allowed_for() {
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"
       ;;
+    WebbySkinArchive)
+      # ImageIO and AVFAudio are decode-level checks in SkinAssetChecker (plan.md §5.4.6).
+      printf '%s\n' "Foundation WebbyCore ZIPFoundation ImageIO AVFAudio"
+      ;;
     WebbyCoreTests)
       # Darwin/Glibc are platform shims used behind #if canImport.
       printf '%s\n' "Testing Foundation CoreGraphics WebbyCore Darwin Glibc"
+      ;;
+    WebbySkinArchiveTests)
+      printf '%s\n' "Testing Foundation CryptoKit WebbyCore WebbySkinArchive ZIPFoundation"
       ;;
     *)
       return 1
@@ -153,6 +160,8 @@ check_webbycore_dependencies() {
   # SwiftPM also accepts a product as a plain string ("SomePackage") or as
   # .byName("SomePackage"), so inspect the dependencies list for those forms.
   local names entry
+  # WebbyCore may depend only on the pre-existing dependency-free local targets.
+  # In particular, allowing WebbySkinArchive here would let ZIPFoundation leak into Core.
   local localTargets=" WebbyCore Webby WebbyBridge WebbyCoreTests "
   names="$(printf '%s\n' "$deps" | grep -oE '\.byName[[:space:]]*\([[:space:]]*"[^"]*"|"[^"]*"' | sed -E 's/^\.byName[[:space:]]*\([[:space:]]*"//; s/^"//; s/"$//' || true)"
 
