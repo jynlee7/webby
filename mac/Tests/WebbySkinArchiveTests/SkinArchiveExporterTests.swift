@@ -262,7 +262,7 @@ private func exportFolder() throws -> URL {
         .entries.map(\.path) == ["skin.json"])
 }
 
-@Test func exportRejectsOversizedSourceFilesWithABoundedRead() throws {
+@Test func exportRejectsOversizedSourceFilesThroughTheBoundedRead() throws {
     let folder = try exportFolder()
     defer { try? FileManager.default.removeItem(at: folder) }
     try Data(repeating: 0x41, count: SkinArchiveLimits.imageByteCount + 1)

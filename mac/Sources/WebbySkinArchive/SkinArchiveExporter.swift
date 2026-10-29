@@ -268,17 +268,8 @@ public enum SkinArchiveExporter {
             }
         }
 
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        if let size = (attributes[.size] as? NSNumber)?.intValue, size > limit {
-            throw SkinArchiveError.declaredSizeExceeded(
-                path: path,
-                declared: UInt64(size),
-                limit: limit
-            )
-        }
-
-        // Read through a handle with a hard ceiling so a file that grows after the
-        // attribute check cannot force an unbounded allocation.
+        // Read through a handle with a hard ceiling, without trusting the file's
+        // current attributes, so a growing file cannot force an unbounded allocation.
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var data = Data()
