@@ -276,7 +276,19 @@ public enum SkinArchiveExporter {
                 limit: limit
             )
         }
-        let data = try Data(contentsOf: url)
+
+        // Read through a handle with a hard ceiling so a file that grows after the
+        // attribute check cannot force an unbounded allocation.
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var data = Data()
+        while data.count <= limit {
+            let chunk = try handle.read(upToCount: limit + 1 - data.count) ?? Data()
+            if chunk.isEmpty {
+                break
+            }
+            data.append(chunk)
+        }
         guard data.count <= limit else {
             throw SkinArchiveError.declaredSizeExceeded(
                 path: path,

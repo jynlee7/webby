@@ -261,3 +261,30 @@ private func exportFolder() throws -> URL {
     #expect(try SkinArchivePreflight.check(Data(contentsOf: destination))
         .entries.map(\.path) == ["skin.json"])
 }
+
+@Test func exportRejectsOversizedSourceFilesWithABoundedRead() throws {
+    let folder = try exportFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try Data(repeating: 0x41, count: SkinArchiveLimits.imageByteCount + 1)
+        .write(to: folder.appendingPathComponent(bodyPath))
+    let destination = folder.deletingLastPathComponent()
+        .appendingPathComponent("oversized-\(UUID().uuidString).webbyskin")
+    defer { try? FileManager.default.removeItem(at: destination) }
+
+    do {
+        try SkinArchiveExporter.export(
+            folder: folder,
+            to: destination,
+            availableBaseIDs: ["webby.clear"]
+        )
+        Issue.record("expected the oversized image to be rejected")
+    } catch let error as SkinArchiveError {
+        guard case .declaredSizeExceeded(let path, let declared, let limit) = error else {
+            Issue.record("expected declaredSizeExceeded, got \(error)")
+            return
+        }
+        #expect(path == bodyPath)
+        #expect(declared > UInt64(limit))
+    }
+    #expect(!FileManager.default.fileExists(atPath: destination.path))
+}
