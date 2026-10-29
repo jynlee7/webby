@@ -163,6 +163,7 @@ private func selectionIDs(_ notes: [LibraryNote]) -> Set<UUID> {
         model.setSelection([firstID, ephemeralID])
         #expect(model.selectedNoteIDs == [firstID])
 
+        model.setSelection([])
         #expect(model.toggleSelection(firstID))
         #expect(model.toggleSelection(secondID))
         #expect(model.selectedNoteIDs == [firstID, secondID])
