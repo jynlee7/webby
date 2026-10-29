@@ -98,11 +98,16 @@ private func hasDiagnostic(
     #expect(check.value == nil)
 }
 
-@Test func headerDimensionsMustMatchTheDecodedImage() throws {
-    let mismatched = pngWithRewrittenIHDR(width: 2, height: 2)
+@Test func corruptImageDataFailsTheDecodeCheck() throws {
+    // Keep the IHDR intact and its CRC valid, then damage the IDAT payload. ImageIO
+    // must refuse the stream rather than reporting a partial image.
+    var bytes = [UInt8](onePixelPNG)
+    let idatStart = 8 + 25
+    bytes[idatStart + 8] ^= 0xFF
+    bytes[idatStart + 9] ^= 0xFF
     let stage = try ArchiveMediaStage(files: [
         "skin.json": archiveManifest(),
-        bodyPath: mismatched,
+        bodyPath: Data(bytes),
     ])
 
     let check = SkinAssetChecker(stage.staged).image(bodyPath)
