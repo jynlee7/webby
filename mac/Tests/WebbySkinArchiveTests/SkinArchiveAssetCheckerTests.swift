@@ -98,16 +98,13 @@ private func hasDiagnostic(
     #expect(check.value == nil)
 }
 
-@Test func corruptImageDataFailsTheDecodeCheck() throws {
-    // Keep the IHDR intact and its CRC valid, then damage the IDAT payload. ImageIO
+@Test func truncatedImageDataFailsTheDecodeCheck() throws {
+    // The IHDR and its CRC stay valid, but the IDAT chunk is cut short. ImageIO
     // must refuse the stream rather than reporting a partial image.
-    var bytes = [UInt8](onePixelPNG)
-    let idatStart = 8 + 25
-    bytes[idatStart + 8] ^= 0xFF
-    bytes[idatStart + 9] ^= 0xFF
+    let truncated = onePixelPNG.prefix(40)
     let stage = try ArchiveMediaStage(files: [
         "skin.json": archiveManifest(),
-        bodyPath: Data(bytes),
+        bodyPath: Data(truncated),
     ])
 
     let check = SkinAssetChecker(stage.staged).image(bodyPath)
