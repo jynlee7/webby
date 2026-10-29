@@ -418,6 +418,29 @@ private func malformedReason(_ data: Data) -> String? {
     #expect(result.entries[0].compressedSize == UInt32(contents.count))
 }
 
+@Test func rejectsDataDescriptorDisagreement() {
+    let valid = archive([
+        ZIPFixtureEntry(
+            path: "skin.json",
+            contents: [1, 2, 3],
+            flags: 0x0808,
+            localCRC32: 0,
+            localCompressedSize: 0,
+            localUncompressedSize: 0
+        ),
+    ])
+    guard let descriptor = ZIPFixture.findSignature(0x0807_4B50, in: valid) else {
+        Issue.record("fixture has no data descriptor")
+        return
+    }
+    let corrupted = ZIPFixture.patch(
+        valid,
+        at: descriptor + 4,
+        with: ZIPFixture.u32Bytes(0)
+    )
+    #expect(malformedReason(corrupted)?.contains("data descriptor differs") == true)
+}
+
 @Test func boundsDeclaredUncompressedTotalsWithoutAllocatingThem() throws {
     func entry(declared: UInt32) -> ZIPFixtureEntry {
         ZIPFixtureEntry(

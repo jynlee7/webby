@@ -23,6 +23,7 @@ enum SkinArchiveCentralDirectoryReader {
     private static let zip64EndOfCentralDirectoryLocatorSignature: UInt32 = 0x0706_4B50
     private static let centralDirectoryEntrySignature: UInt32 = 0x0201_4B50
     private static let localFileHeaderSignature: UInt32 = 0x0403_4B50
+    private static let dataDescriptorSignature: UInt32 = 0x0807_4B50
     private static let zip64ExtraFieldID: UInt16 = 0x0001
 
     static func read(_ data: Data) throws -> [SkinArchiveCentralDirectoryEntry] {
@@ -484,7 +485,8 @@ enum SkinArchiveCentralDirectoryReader {
                 reason: "local header flags or method differ from the central directory for '\(path)'"
             )
         }
-        if flags & 0x0008 == 0,
+        let usesDataDescriptor = flags & 0x0008 != 0
+        if !usesDataDescriptor,
            (localCRC32 != crc32
             || localCompressedSize != compressedSize
             || localUncompressedSize != uncompressedSize) {
@@ -499,7 +501,56 @@ enum SkinArchiveCentralDirectoryReader {
             end: extraEnd,
             path: path
         )
-        return start..<dataEnd
+
+        let storageEnd: Int
+        if usesDataDescriptor {
+            storageEnd = try validateDataDescriptor(
+                reader,
+                start: dataEnd,
+                crc32: crc32,
+                compressedSize: compressedSize,
+                uncompressedSize: uncompressedSize,
+                path: path,
+                directoryStart: directoryStart
+            )
+        } else {
+            storageEnd = dataEnd
+        }
+        return start..<storageEnd
+    }
+
+    private static func validateDataDescriptor(
+        _ reader: ByteReader,
+        start: Int,
+        crc32: UInt32,
+        compressedSize: UInt32,
+        uncompressedSize: UInt32,
+        path: String,
+        directoryStart: Int
+    ) throws -> Int {
+        guard start <= directoryStart, directoryStart - start >= 12 else {
+            throw SkinArchiveError.malformedArchive(
+                reason: "data descriptor is missing or truncated for '\(path)'"
+            )
+        }
+
+        if reader.u32(start) == dataDescriptorSignature,
+           directoryStart - start >= 16,
+           reader.u32(start + 4) == crc32,
+           reader.u32(start + 8) == compressedSize,
+           reader.u32(start + 12) == uncompressedSize {
+            return start + 16
+        }
+
+        guard reader.u32(start) == crc32,
+              reader.u32(start + 4) == compressedSize,
+              reader.u32(start + 8) == uncompressedSize
+        else {
+            throw SkinArchiveError.malformedArchive(
+                reason: "data descriptor differs from the central directory for '\(path)'"
+            )
+        }
+        return start + 12
     }
 }
 

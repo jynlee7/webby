@@ -42,8 +42,8 @@ jobs:
         run: |
           clt=/Library/Developer/CommandLineTools
           if [[ ! -d "$clt" ]]; then
-            echo "::notice::Command Line Tools not installed on this runner; skipping the archive-only check"
-            exit 0
+            echo "::error::Command Line Tools are required for the archive CI lane"
+            exit 1
           fi
           frameworks="$clt/Library/Developer/Frameworks"
           export DEVELOPER_DIR="$clt"

@@ -100,6 +100,18 @@ enum ZIPFixture {
             let localOffset = UInt32(bytes.count)
             bytes.append(contentsOf: localHeaderBytes(for: entry))
             bytes.append(contentsOf: entry.contents)
+            if entry.flags & 0x0008 != 0 {
+                appendU32(0x0807_4B50, to: &bytes)
+                appendU32(entry.crc32 ?? crc32(entry.contents), to: &bytes)
+                appendU32(
+                    entry.compressedSize ?? UInt32(entry.contents.count),
+                    to: &bytes
+                )
+                appendU32(
+                    entry.uncompressedSize ?? UInt32(entry.contents.count),
+                    to: &bytes
+                )
+            }
 
             records.append((
                 entry: entry,
