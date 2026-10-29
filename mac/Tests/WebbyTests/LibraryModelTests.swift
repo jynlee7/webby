@@ -430,7 +430,7 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     #expect(model.visibleNotes.map(\.id) == [workspace.id])
 
     // Ordinary row selection keeps the query and the other matches.
-    #expect(model.selectNote(workspace.id))
+    #expect(model.selectRow(workspace.id))
     #expect(model.searchText == "needle")
     #expect(model.selectedNoteID == workspace.id)
 
@@ -478,4 +478,58 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
     #expect(model.effectiveQueryRules.contains(QueryRule(host: "example.com", key: "v")))
     #expect(model.effectiveQueryRules.contains(QueryRule(host: "youtube.com", key: "v")))
+}
+
+@MainActor
+@Test func rowSelectionKeepsTheSidebarContext() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let record = WorkspaceRecord(keys: [.host(name: "example.com")], createdAt: fixedNow)
+    try store.replaceWorkspaces([record])
+    let inbox = makeNote(text: "inbox")
+    let page = makeNote(
+        text: "tagged #work",
+        anchor: .web(page: PageURL(host: "example.com", path: "/docs"), scope: .page),
+        workspaceOverride: record.id
+    )
+    #expect(store.add(inbox))
+    #expect(store.add(page))
+
+    let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
+    model.refresh()
+
+    // All: clicking an Inbox note must not switch the sidebar to Inbox.
+    model.select(section: .all)
+    #expect(model.selectRow(inbox.id))
+    #expect(model.selectedSection == .all)
+    #expect(model.selectedNoteID == inbox.id)
+
+    // A workspace "All pages" view must not narrow to the note's page.
+    model.select(section: .workspaces)
+    model.select(workspace: .record(record.id))
+    model.select(page: .all)
+    #expect(model.selectRow(page.id))
+    #expect(model.selectedPage == .all)
+
+    // A tag view must keep the tag selected.
+    model.select(tagKey: Tags.parse("tagged #work").first?.searchKey ?? "work")
+    #expect(model.selectRow(page.id))
+    #expect(model.selectedSection == .tags)
+    #expect(model.selectedTagKey != nil)
+}
+
+@MainActor
+@Test func revealKeepsTheQueryWhenTheNoteIsMissing() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let note = makeNote(text: "needle")
+    #expect(store.add(note))
+
+    let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
+    model.searchText = "needle"
+
+    #expect(!model.revealNote(UUID()))
+    #expect(model.searchText == "needle")
 }

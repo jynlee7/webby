@@ -184,7 +184,7 @@ struct LibraryContentView: View {
                 // Commit the current draft before the detail pane changes note.
                 draft.commit(to: model)
                 if let newValue {
-                    _ = model.selectNote(newValue)
+                    _ = model.selectRow(newValue)
                 } else {
                     model.selectedNoteID = nil
                 }

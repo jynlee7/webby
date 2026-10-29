@@ -478,10 +478,25 @@ final class LibraryModel {
         return selectedNoteID == id
     }
 
-    /// Explicit reveal: clears a stale query, then selects. Table row selection uses
-    /// `selectNote` so clicking a search result keeps the query and the result list.
+    /// Ordinary table row selection: changes only the detail selection, so the sidebar
+    /// context and the rest of the rows stay put.
+    @discardableResult
+    func selectRow(_ id: UUID) -> Bool {
+        guard let note = controller.libraryNotes.first(where: { $0.id == id }), !note.ephemeral else {
+            return false
+        }
+        selectedNoteID = id
+        repairSelection()
+        return selectedNoteID == id
+    }
+
+    /// Explicit reveal: clears a stale query, then navigates. Missing and ephemeral IDs
+    /// leave the selection and the query untouched.
     @discardableResult
     func revealNote(_ id: UUID) -> Bool {
+        guard controller.libraryNotes.contains(where: { $0.id == id && !$0.ephemeral }) else {
+            return false
+        }
         if !searchText.isEmpty {
             searchText = ""
         }
