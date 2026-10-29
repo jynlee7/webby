@@ -23,7 +23,8 @@ allowed_for() {
     Webby)
       # OSLog: Logger keeps URLs and titles private in the unified log (plan.md §6.1).
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon WebbyCore"
+      # Observation: @Observable models such as LibraryModel (its plugin ships with the CLT).
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon Observation WebbyCore"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"

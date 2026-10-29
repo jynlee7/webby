@@ -24,7 +24,10 @@ final class NotesController {
     /// Called when the save or read-only status changes.
     var onStatusChange: (@MainActor () -> Void)?
     /// Called after a note or workspace mutation, never for save-status changes alone.
+    /// Kept for the existing app-level callback; Library consumers should register with
+    /// `addLibraryObserver(_:)` so more than one can listen at a time.
     var onLibraryChange: (@MainActor () -> Void)?
+    private var libraryObservers: [UUID: @MainActor () -> Void] = [:]
 
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
@@ -135,6 +138,30 @@ final class NotesController {
     }
 
     // MARK: Library bridge
+
+    /// Registers a Library observer and returns its removal token. The callback runs
+    /// after a note or workspace mutation, alongside the legacy `onLibraryChange`.
+    @discardableResult
+    func addLibraryObserver(_ observer: @escaping @MainActor () -> Void) -> UUID {
+        let token = UUID()
+        libraryObservers[token] = observer
+        return token
+    }
+
+    func removeLibraryObserver(_ token: UUID) {
+        libraryObservers.removeValue(forKey: token)
+    }
+
+    /// The number of currently registered Library observers, for tests and diagnostics.
+    var libraryObserverCount: Int { libraryObservers.count }
+
+    private func notifyLibraryChange() {
+        onLibraryChange?()
+        // Snapshot the callbacks so an observer may remove itself while being called.
+        for observer in Array(libraryObservers.values) {
+            observer()
+        }
+    }
 
     /// Read-only Library snapshots. Ephemeral notes are overlay-only until Step 7b.
     var libraryNotes: [Note] {
@@ -452,7 +479,7 @@ final class NotesController {
         if changed {
             quit.noteMutation(generation: store.mutationGeneration)
             // An overlay edit becomes visible to an open Library as soon as it commits.
-            onLibraryChange?()
+            notifyLibraryChange()
         }
         return changed
     }
@@ -460,7 +487,7 @@ final class NotesController {
     private func didMutate() {
         quit.noteMutation(generation: store.mutationGeneration)
         autosave.schedule()
-        onLibraryChange?()
+        notifyLibraryChange()
     }
 
     private func currentSaveRequest() -> NoteStore.SaveRequest {
