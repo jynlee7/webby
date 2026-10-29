@@ -194,7 +194,7 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
 
         #expect(ids(model.visibleNotes) == [trashed.id])
         #expect(model.searchQuery.clauses == [.text("alpha")])
-        #expect(!model.searchQuery.clauses.contains(.state(.trashed)))
+        #expect(model.effectiveSearchQuery.clauses.contains(.state(.trashed)))
     }
 
     @Test func pageSelectionUsesThePageTree() throws {

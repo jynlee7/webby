@@ -194,11 +194,27 @@ final class LibraryModel {
         let universe = result.all + result.trash
         let byID = Dictionary(uniqueKeysWithValues: universe.map { ($0.id, $0) })
         let matches = searchCache.search(
-            searchQuery,
+            effectiveSearchQuery,
             notes: universe.map(\.note),
             workspaces: controller.libraryWorkspaces
         )
         return matches.compactMap { byID[$0] }
+    }
+
+    /// Trash searches only Trash unless the query already names another state.
+    var effectiveSearchQuery: SearchQuery {
+        guard selectedSection == .trash,
+              !searchQuery.clauses.contains(where: { clause in
+                  if case .state = clause { return true }
+                  return false
+              })
+        else {
+            return searchQuery
+        }
+        return SearchQuery(
+            clauses: searchQuery.clauses + [.state(.trashed)],
+            diagnostics: searchQuery.diagnostics
+        )
     }
 
     /// Built-ins, the user's rules, and every key still used by a page anchor.
