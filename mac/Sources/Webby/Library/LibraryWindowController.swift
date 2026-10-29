@@ -31,7 +31,8 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init(
         notes: NotesController,
-        currentAppBundleID: @escaping @MainActor () -> String?
+        currentAppBundleID: @escaping @MainActor () -> String?,
+        userQueryRules: [QueryRule] = []
     ) {
         let currentApp = LiveLibraryCurrentAppProvider(currentBundleID: currentAppBundleID)
         let actions = LibraryAnchorActions(
@@ -43,6 +44,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
         )
         let model = LibraryModel(
             controller: notes,
+            userQueryRules: userQueryRules,
             workspaceDisplayName: { key in
                 LibraryWorkspaceNames.displayName(for: key) { bundleID in
                     guard let url = NSWorkspace.shared
@@ -62,6 +64,11 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     func present() {
         presentation(self)
+    }
+
+    /// Commits the retained editor draft before quit captures the save request.
+    func commitPendingEdits() {
+        draft.commit(to: model)
     }
 
     /// Implements the #15 navigation contract: select the note's destination and show

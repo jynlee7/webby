@@ -157,3 +157,20 @@ private func makeWindowController(_ model: LibraryModel) -> LibraryWindowControl
         #expect(window.model.notes.contains { $0.id == second.id })
     }
 }
+
+@Test func quittingCommitsThePendingLibraryDraft() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let note = Note(frame: NoteFrame(), placement: .screen, text: "saved")
+    #expect(store.add(note))
+    let controller = makeController(store)
+    let window = makeWindowController(LibraryModel(controller: controller, clock: { fixedNow }))
+
+    window.draft.load(note: note)
+    window.draft.text = "typed before quit"
+    window.commitPendingEdits()
+
+    #expect(store.note(id: note.id)?.text == "typed before quit")
+    #expect(!window.draft.isDirty)
+}

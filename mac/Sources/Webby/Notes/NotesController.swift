@@ -251,12 +251,13 @@ final class NotesController {
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
     }
 
-    /// Permanently removes every trashed non-ephemeral note and returns the count.
+    /// Permanently removes the given trashed non-ephemeral notes and returns the count.
+    /// IDs that were restored or newly trashed after the confirmation are not included.
     @discardableResult
-    func emptyTrash() -> Int {
+    func emptyTrash(ids: Set<UUID>) -> Int {
         guard isWritable else { return 0 }
         let draftsChanged = commitDrafts()
-        let removed = store.purgeTrash(olderThan: .distantFuture, includingEphemeral: false)
+        let removed = store.purgeTrash(ids: ids, includingEphemeral: false)
         finishLibraryMutation(changed: removed > 0, draftsChanged: draftsChanged, relayout: removed > 0)
         return removed
     }

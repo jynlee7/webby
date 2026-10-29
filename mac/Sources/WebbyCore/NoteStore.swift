@@ -234,9 +234,30 @@ public final class NoteStore {
     @discardableResult
     public func purgeTrash(olderThan cutoff: Date, includingEphemeral: Bool = true) -> Int {
         guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in note.trashedAt.map { $0 < cutoff } ?? false },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    /// Permanently removes only the given notes that are still in Trash. A note
+    /// trashed after a confirmation was requested is not part of that confirmation.
+    @discardableResult
+    public func purgeTrash(ids: Set<UUID>, includingEphemeral: Bool = false) -> Int {
+        guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in ids.contains(note.id) && note.trashedAt != nil },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    private func purgeTrash(
+        where isIncluded: (Note) -> Bool,
+        includingEphemeral: Bool
+    ) -> Int {
         let oldCount = notes.count
         notes.removeAll { note in
-            guard note.trashedAt.map({ $0 < cutoff }) == true else { return false }
+            guard isIncluded(note) else { return false }
             return includingEphemeral || !note.ephemeral
         }
         let removed = oldCount - notes.count
@@ -244,15 +265,6 @@ public final class NoteStore {
         return removed
     }
 
-    public func replaceWorkspaces(_ records: [WorkspaceRecord]) throws {
-        if case .readOnly(let reason) = mode { throw StoreError.readOnly(reason) }
-        try NotesDocument.validateWorkspaces(records)
-        guard records != workspaces else { return }
-        workspaces = records
-        advanceGeneration()
-    }
-
-    /// Writes the current state through the shared gate on the calling thread.
     public func save() throws {
         _ = try saveRequest().commitNow()
     }

@@ -407,3 +407,64 @@ private func ids(_ notes: [LibraryNote]) -> Set<UUID> {
     #expect(LibraryWorkspaceNames.displayName(for: .host(name: "example.com")) { _ in nil }
         == "example.com")
 }
+
+@Test func searchSpansSectionsAndRevealClearsTheQuery() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let inbox = makeNote(text: "inbox note")
+    let workspace = makeNote(text: "workspace needle")
+    #expect(store.add(inbox))
+    #expect(store.add(workspace))
+    let record = WorkspaceRecord(keys: [.host(name: "example.com")], createdAt: fixedNow)
+    try store.replaceWorkspaces([record])
+    #expect(store.updateContent(id: workspace.id, change: .workspaceOverride(record.id)))
+
+    let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
+    model.refresh()
+    #expect(model.selectedSection == .inbox)
+
+    model.searchText = "needle"
+    #expect(model.visibleNotes.map(\.id) == [workspace.id])
+
+    #expect(model.selectNote(workspace.id))
+    #expect(model.searchText.isEmpty)
+    #expect(model.selectedNoteID == workspace.id)
+}
+
+@Test func emptyTrashDeletesOnlyTheConfirmedNotes() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let first = makeNote(text: "first")
+    let late = makeNote(text: "late")
+    #expect(store.add(first))
+    #expect(store.add(late))
+    #expect(store.trash(id: first.id))
+
+    let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
+    model.refresh()
+    model.requestEmptyTrash()
+    #expect(model.pendingEmptyTrash?.ids == [first.id])
+
+    // A note trashed after the confirmation is not part of the confirmed set.
+    #expect(store.trash(id: late.id))
+    model.confirmEmptyTrash()
+
+    #expect(store.note(id: first.id) == nil)
+    #expect(store.note(id: late.id)?.trashedAt != nil)
+}
+
+@Test func effectiveQueryRulesKeepStoredAnchorQueries() throws {
+    let directory = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+    let page = PageURL(string: "https://example.com/watch?v=7", queryRules: [QueryRule(host: "example.com", key: "v")])!
+    let note = makeNote(text: "query")
+    #expect(store.add(note))
+    #expect(store.updateContent(id: note.id, change: .anchor(.web(page: page, scope: .page))))
+
+    let model = LibraryModel(controller: makeController(store), clock: { fixedNow })
+    #expect(model.effectiveQueryRules.contains(QueryRule(host: "example.com", key: "v")))
+    #expect(model.effectiveQueryRules.contains(QueryRule(host: "youtube.com", key: "v")))
+}

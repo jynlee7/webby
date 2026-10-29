@@ -97,7 +97,7 @@ private func makeController(_ store: NoteStore, now: Date = fixedNow) -> NotesCo
         #expect(changes.value == 0)
 
         #expect(store.trash(id: ephemeral.id, now: fixedNow))
-        #expect(controller.emptyTrash() == 0)
+        #expect(controller.emptyTrash(ids: Set(store.notes.filter { $0.trashedAt != nil }.map(\.id))) == 0)
         #expect(store.note(id: ephemeral.id) != nil)
         #expect(changes.value == 0)
     }
@@ -281,12 +281,12 @@ private func makeController(_ store: NoteStore, now: Date = fixedNow) -> NotesCo
         controller.restoreLibraryNote(id: active.id)
         #expect(changes.value == 2)
 
-        #expect(controller.emptyTrash() == 1)
+        #expect(controller.emptyTrash(ids: Set(store.notes.filter { $0.trashedAt != nil }.map(\.id))) == 1)
         #expect(store.note(id: trashed.id) == nil)
         #expect(store.note(id: active.id) != nil)
         #expect(store.note(id: ephemeralTrashed.id) != nil)
         #expect(changes.value == 3)
-        #expect(controller.emptyTrash() == 0)
+        #expect(controller.emptyTrash(ids: Set(store.notes.filter { $0.trashedAt != nil }.map(\.id))) == 0)
         #expect(changes.value == 3)
     }
 
@@ -308,7 +308,7 @@ private func makeController(_ store: NoteStore, now: Date = fixedNow) -> NotesCo
         controller.setPinned(id: UUID(), pinned: true)
         controller.trashLibraryNote(id: UUID())
         controller.restoreLibraryNote(id: UUID())
-        #expect(controller.emptyTrash() == 0)
+        #expect(controller.emptyTrash(ids: Set(store.notes.filter { $0.trashedAt != nil }.map(\.id))) == 0)
         #expect(changes.value == 0)
         #expect(store.mutationGeneration == 0)
     }

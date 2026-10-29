@@ -32,11 +32,13 @@ enum LibraryWorkspaceNames {
 final class LibraryModel {
     struct EmptyTrashConfirmation: Equatable, Sendable {
         let count: Int
+        let ids: Set<UUID>
     }
 
     @ObservationIgnored private let controller: NotesController
     @ObservationIgnored private let clock: @MainActor () -> Date
     @ObservationIgnored private let workspaceDisplayName: (WorkspaceKey) -> String
+    @ObservationIgnored private let userQueryRules: [QueryRule]
     @ObservationIgnored private var observerToken: UUID?
     @ObservationIgnored private var searchCache: LibrarySearchCache
     @ObservationIgnored private var cacheBuilt: Bool
@@ -65,7 +67,8 @@ final class LibraryModel {
     init(
         controller: NotesController,
         clock: @escaping @MainActor () -> Date = { Date() },
-        workspaceDisplayName: @escaping (WorkspaceKey) -> String = { $0.displayName }
+        workspaceDisplayName: @escaping (WorkspaceKey) -> String = { $0.displayName },
+        userQueryRules: [QueryRule] = []
     ) {
         let notes = controller.libraryNotes
         assert(notes.allSatisfy { !$0.ephemeral }, "Library snapshots must not contain ephemeral notes")
@@ -73,6 +76,7 @@ final class LibraryModel {
         self.controller = controller
         self.clock = clock
         self.workspaceDisplayName = workspaceDisplayName
+        self.userQueryRules = userQueryRules
         self.result = LibraryQuery.evaluate(
             notes: notes,
             workspaces: controller.libraryWorkspaces,
@@ -181,8 +185,28 @@ final class LibraryModel {
         )
     }
 
+    /// Toolbar search spans the whole Library, not just the selected sidebar row.
+    /// Trash stays out unless the query asks for it with `is:trashed`.
     var visibleNotes: [LibraryNote] {
-        filteredNotes(baseNotesForSelection)
+        guard !searchText.isEmpty else {
+            return filteredNotes(baseNotesForSelection)
+        }
+        let universe = result.all + result.trash
+        let byID = Dictionary(uniqueKeysWithValues: universe.map { ($0.id, $0) })
+        let matches = searchCache.search(
+            searchQuery,
+            notes: universe.map(\.note),
+            workspaces: controller.libraryWorkspaces
+        )
+        return matches.compactMap { byID[$0] }
+    }
+
+    /// Built-ins, the user's rules, and every key still used by a page anchor.
+    var effectiveQueryRules: [QueryRule] {
+        QueryRules.effective(
+            rules: QueryRules.builtIns + userQueryRules,
+            anchors: controller.libraryNotes.compactMap(\.anchor)
+        )
     }
 
     /// Short alias for views and tests.
@@ -413,6 +437,10 @@ final class LibraryModel {
         guard let note = controller.libraryNotes.first(where: { $0.id == id }), !note.ephemeral else {
             return false
         }
+        // An explicit reveal must not be hidden by a stale toolbar query.
+        if !searchText.isEmpty {
+            searchText = ""
+        }
 
         if note.trashedAt != nil {
             selectedSection = .trash
@@ -509,12 +537,14 @@ final class LibraryModel {
     // MARK: Destructive confirmation
 
     func requestEmptyTrash() {
-        pendingEmptyTrash = EmptyTrashConfirmation(count: result.trash.count)
+        let ids = Set(result.trash.map(\.id))
+        pendingEmptyTrash = EmptyTrashConfirmation(count: ids.count, ids: ids)
     }
 
     func confirmEmptyTrash() {
+        guard let pending = pendingEmptyTrash else { return }
         pendingEmptyTrash = nil
-        controller.emptyTrash()
+        controller.emptyTrash(ids: pending.ids)
         refresh()
     }
 
@@ -561,8 +591,15 @@ final class LibraryModel {
 
     @discardableResult
     func createNote(destination: LibraryDestination) -> UUID? {
+        // A blank note cannot match the current query, so clear it before revealing.
+        if !searchText.isEmpty {
+            searchText = ""
+        }
         let id = controller.createLibraryNote(destination: destination)
         refresh()
+        if let id {
+            _ = selectNote(id)
+        }
         return id
     }
 

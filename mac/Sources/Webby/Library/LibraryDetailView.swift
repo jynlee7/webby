@@ -187,6 +187,40 @@ private struct NoteDetailContent: View {
         )
     }
 
+    /// Reloads the anchor editor from the saved note.
+    private func loadAnchorFields() {
+        validationMessage = nil
+        switch note.anchor {
+        case let .app(bundleID)?:
+            anchorKind = .app
+            self.bundleID = bundleID
+            webURL = ""
+            webScopeKind = .page
+            prefixPath = ""
+        case let .web(page, scope)?:
+            anchorKind = .web
+            bundleID = ""
+            webURL = "https://\(page.description)"
+            switch scope {
+            case .page:
+                webScopeKind = .page
+                prefixPath = ""
+            case .prefix(let path):
+                webScopeKind = .prefix
+                prefixPath = path
+            case .site:
+                webScopeKind = .site
+                prefixPath = ""
+            }
+        case nil:
+            anchorKind = .none
+            bundleID = ""
+            webURL = ""
+            webScopeKind = .page
+            prefixPath = ""
+        }
+    }
+
     private var isTrashed: Bool { note.trashedAt != nil }
     private var canEdit: Bool { model.isWritable && !isTrashed }
     private var tags: [LibraryTag] { Tags.parse(note.text) }
@@ -207,6 +241,15 @@ private struct NoteDetailContent: View {
             if draft.noteID != note.id {
                 draft.load(note: note)
             }
+            loadAnchorFields()
+        }
+        .onChange(of: note.anchor) { _, _ in
+            // Attach or an external edit replaced the saved anchor; the editor must
+            // not keep showing stale fields that a later save would write back.
+            loadAnchorFields()
+        }
+        .onChange(of: note.workspaceOverride) { _, override in
+            workspaceChoice = override.map(WorkspaceChoice.record) ?? .automatic
         }
         .onChange(of: editorFocused) { _, focused in
             if !focused {
@@ -533,7 +576,7 @@ private struct NoteDetailContent: View {
     }
 
     private func validatedWebAnchor() -> AnchorValidation {
-        guard let page = PageURL(string: webURL, queryRules: QueryRules.builtIns) else {
+        guard let page = PageURL(string: webURL, queryRules: model.effectiveQueryRules) else {
             return .invalid("Enter an http, https or file URL.")
         }
 

@@ -65,7 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        notes.terminationReply()
+        // The Library keeps its own draft; commit it before quit captures the request.
+        libraryWindow?.commitPendingEdits()
+        return notes.terminationReply()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -89,7 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if libraryWindow == nil {
             libraryWindow = LibraryWindowController(
                 notes: notes,
-                currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID }
+                currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
+                userQueryRules: settingsStore.settings.queryRules
             )
         }
         libraryWindow?.present()
