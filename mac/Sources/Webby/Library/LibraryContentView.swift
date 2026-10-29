@@ -120,13 +120,16 @@ struct LibraryContentView: View {
     private var noteTable: some View {
         Group {
             if model.visibleNotes.isEmpty {
-                ContentUnavailableView(
-                    model.searchText.isEmpty ? "No Notes Here" : "No Search Results",
-                    systemImage: model.searchText.isEmpty ? "note.text" : "magnifyingglass",
-                    description: Text(model.searchText.isEmpty
+                ContentUnavailableView {
+                    Label(
+                        model.searchText.isEmpty ? "No Notes Here" : "No Search Results",
+                        systemImage: model.searchText.isEmpty ? "note.text" : "magnifyingglass"
+                    )
+                } description: {
+                    Text(model.searchText.isEmpty
                         ? "Notes in this section appear here."
                         : "Try another search or clear the search field.")
-                )
+                }
             } else {
                 Table(model.visibleNotes, selection: noteSelection) {
                     TableColumn("Note") { item in

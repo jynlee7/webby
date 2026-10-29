@@ -51,7 +51,7 @@ final class LibraryTextDraft {
 
 /// Human-readable scope and status used in both the note table and the detail pane.
 enum LibraryNotePresentation {
-    static func scopeDescription(_ anchor: Anchor?) -> String {
+    static func scopeDescription(_ anchor: WebbyCore.Anchor?) -> String {
         guard let anchor else { return "Inbox" }
         switch anchor {
         case let .app(bundleID):
@@ -108,7 +108,7 @@ private enum WebScopeKind: String, CaseIterable, Hashable {
 }
 
 private enum AnchorValidation {
-    case valid(Anchor?)
+    case valid(WebbyCore.Anchor?)
     case invalid(String)
 }
 
