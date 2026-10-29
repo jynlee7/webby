@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>example.com</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; padding: 24px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+main { max-width: 720px; margin: 0 auto; }
+h1 { margin: 0 0 24px; font-size: 24px; }
+h2 { margin: 28px 0 12px; font-size: 18px; }
+h3 { margin: 0 0 8px; font-size: 15px; }
+.note { padding: 16px 0; border-top: 1px solid #8884; }
+.body { white-space: pre-wrap; }
+.meta { margin: 8px 0 0; color: #666; font-size: 13px; }
+.states { font-weight: 600; }
+a { color: inherit; }
+.tag { margin-right: 4px; }
+</style>
+</head>
+<body>
+<main>
+<h1>example.com</h1>
+<section>
+<h2>Not attached to a page</h2>
+<article class="note">
+<h3>Standalone thought</h3>
+<div class="body">Remember to revisit the notes. #inbox</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000001">Open note</a> · created 2001-01-01 · <span class="tag">#inbox</span></p>
+</article>
+</section>
+<section>
+<h2>Just this tab</h2>
+<article class="note">
+<h3>Tab note</h3>
+<div class="body">While reading the docs.</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000002">Open note</a> · <a href="https://example.com/tab">Open page</a> · created 2001-01-02</p>
+</article>
+</section>
+<section>
+<h2>Whole site</h2>
+<article class="note">
+<h3>Site wide</h3>
+<div class="body">Use Python for interviews. #lang</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000003">Open note</a> · <a href="https://example.com/">Open page</a> · created 2001-01-03 · <span class="tag">#lang</span></p>
+</article>
+</section>
+<section>
+<h2>/problems (and below)</h2>
+<article class="note">
+<h3>Prefix note</h3>
+<div class="body">Applies to every problem. #algo</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000004">Open note</a> · <a href="https://example.com/problems">Open page</a> · created 2001-01-04 · <span class="tag">#algo</span></p>
+</article>
+</section>
+<section>
+<h2>/problems/two-sum (this page)</h2>
+<article class="note">
+<h3>Hash map approach</h3>
+<div class="body">Store each value&#39;s index. #lang #algo</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000005">Open note</a> · <a href="https://example.com/problems/two-sum">Open page</a> · created 2001-01-05 · <span class="tag">#lang</span> <span class="tag">#algo</span></p>
+</article>
+</section>
+<section>
+<h2>/problems/two-sum?v=2 (this page)</h2>
+<article class="note">
+<h3>Query variant</h3>
+<div class="body">Same path, different query.</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000006">Open note</a> · <a href="https://example.com/problems/two-sum?v=2">Open page</a> · created 2001-01-06</p>
+</article>
+</section>
+</main>
+</body>
+</html>
