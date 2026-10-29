@@ -61,6 +61,8 @@ public enum CanonicalExportURL {
               })
         else { return nil }
 
+        guard hasValidPort(host) else { return nil }
+
         var authorityInput = host
         if host.hasPrefix("[") {
             guard host.contains("]") else { return nil }
@@ -99,6 +101,29 @@ public enum CanonicalExportURL {
         let end = rendered.index(before: rendered.endIndex)
         let authority = String(rendered[start..<end])
         return authority.isEmpty ? nil : authority
+    }
+
+    private static func hasValidPort(_ host: String) -> Bool {
+        func valid(_ text: Substring) -> Bool {
+            !text.isEmpty
+                && text.allSatisfy { $0.isNumber }
+                && Int(text).map { (1...65_535).contains($0) } == true
+        }
+
+        if host.hasPrefix("[") {
+            guard let close = host.firstIndex(of: "]") else { return false }
+            let rest = host[host.index(after: close)...]
+            if rest.isEmpty { return true }
+            guard rest.hasPrefix(":") else { return false }
+            return valid(rest.dropFirst())
+        }
+
+        let colonCount = host.filter { $0 == ":" }.count
+        guard colonCount == 1, let colon = host.lastIndex(of: ":") else {
+            // No colon, or an unbracketed IPv6 authority without a port.
+            return true
+        }
+        return valid(host[host.index(after: colon)...])
     }
 
     private static func validatedPath(_ rawPath: String) -> String? {
