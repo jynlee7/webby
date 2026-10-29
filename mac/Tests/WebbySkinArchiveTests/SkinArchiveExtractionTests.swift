@@ -90,7 +90,7 @@ private func extractionError(
     }
 }
 
-@Test func byteBudgetRejectsArithmeticOverflowAndNegativeCounts() {
+@Test func byteBudgetRejectsArithmeticOverflowAndNegativeCounts() throws {
     var overflowingFile = SkinArchiveByteBudget()
     do {
         _ = try overflowingFile.charge(
