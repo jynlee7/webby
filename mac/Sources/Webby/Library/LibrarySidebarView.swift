@@ -86,7 +86,7 @@ struct LibrarySidebarView: View {
                     item: .section(.trash),
                     title: "Trash",
                     symbol: "trash",
-                    count: model.sidebarCounts[.trash]
+                    count: model.sidebarCounts[.trash, default: 0]
                 )
             }
         }
