@@ -258,9 +258,10 @@ private func makeImportFlowController(_ store: NoteStore) -> NotesController {
         #expect(store.notes.map(\.id).contains(existing.id))
         #expect(store.notes.contains { $0.id == imported.id && $0.text == "imported heading" })
         // New workspaces receive fresh IDs; the imported key and override are preserved.
-        let importedRecord = store.workspaces.first { $0.keys.contains(.host(name: "example.com")) }
-        let record = try #require(importedRecord)
-        #expect(store.notes.first { $0.id == imported.id }?.workspaceOverride == record.id)
+        let importedRecord = try #require(
+            store.workspaces.first { $0.keys.contains(.host(name: "example.com")) }
+        )
+        #expect(store.notes.first { $0.id == imported.id }?.workspaceOverride == importedRecord.id)
         #expect(alerts.count == 1)
         #expect(alerts.first?.0 == "Import Complete")
         #expect(alerts.first?.1 == "1 note, 1 workspace")
