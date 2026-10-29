@@ -10,6 +10,7 @@ public enum SkinArchiveError: Error, Equatable, Sendable {
     case multiDiskUnsupported
     case entryCountExceeded(count: Int, limit: Int)
     case declaredSizeExceeded(path: String?, declared: UInt64, limit: Int)
+    case decompressedSizeExceeded(path: String, actual: Int, limit: Int)
     case unsupportedCompression(method: UInt16, path: String)
     case encryptedEntry(path: String)
     case unsupportedEntryType(path: String, reason: String)
@@ -18,5 +19,15 @@ public enum SkinArchiveError: Error, Equatable, Sendable {
     case collidingEntry(path: String, existing: String)
     case ambiguousWrapper(candidates: [String])
     case rejectedEntry(path: String, reason: String)
+    case archiveOpenFailed(reason: String)
+    case archiveEntryMismatch(path: String?, reason: String)
+    case destinationExists(path: String)
+    case extractionFailed(path: String, reason: String)
+    case crcMismatch(path: String, expected: UInt32, actual: UInt32)
+    indirect case cleanupFailed(
+        path: String,
+        reason: String,
+        underlying: SkinArchiveError
+    )
     case manifestMissing
 }
