@@ -16,7 +16,7 @@ final class NotesController {
 
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
-    private var themes: NoteThemes
+    private let skins: SkinStore
     private let assets: SkinAssetCache
     private let latestSave: LatestSave
     private let logger = Logger(subsystem: Webby.bundleID, category: "notes")
@@ -37,24 +37,52 @@ final class NotesController {
     /// The latest save error, while saving keeps failing.
     private(set) var saveFailure: String?
 
-    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, themes: NoteThemes, assets: SkinAssetCache) {
+    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, skins: SkinStore, assets: SkinAssetCache) {
         self.store = store
         self.monitor = monitor
         self.permission = permission
-        self.themes = themes
+        self.skins = skins
         self.assets = assets
         latestSave = LatestSave(store.saveRequest())
     }
 
-    /// Applies a new look, for example after an accessibility display setting changed.
-    func updateThemes(_ themes: NoteThemes) {
-        guard themes != self.themes else { return }
-        self.themes = themes
-        for controller in windows.values {
-            controller.model.themes = themes
-            controller.themesChanged()
+    /// Re-reads every open note's look after a skin, accessibility or workspace change.
+    func refreshThemes() {
+        for (id, controller) in windows {
+            guard let note = store.note(id: id) else { continue }
+            applyAppearance(of: note, to: controller)
         }
         layout()
+    }
+
+    private func applyAppearance(of note: Note, to controller: NoteWindowController) {
+        let themes = skins.themes(for: note)
+        controller.model.appearance = note.appearance
+        guard themes != controller.model.themes else { return }
+        controller.model.themes = themes
+        controller.themesChanged()
+    }
+
+    /// Chooses a palette slot for one note, or the skin default with nil.
+    private func setPaletteIndex(_ index: Int?, for id: UUID) {
+        updateAppearance(id) { $0.paletteIndex = index }
+    }
+
+    private func setDecorationHidden(_ hidden: Bool, for id: UUID) {
+        updateAppearance(id) { $0.hideDecoration = hidden }
+    }
+
+    private func updateAppearance(_ id: UUID, _ change: (inout NoteAppearance) -> Void) {
+        guard let note = store.note(id: id) else { return }
+        var appearance = note.appearance ?? NoteAppearance()
+        change(&appearance)
+        let stored: NoteAppearance? = appearance == NoteAppearance() ? nil : appearance
+        commitDrafts()
+        guard store.updateLayout(id: id, change: .appearance(stored)) else { return }
+        didMutate()
+        if let updated = store.note(id: id), let controller = windows[id] {
+            applyAppearance(of: updated, to: controller)
+        }
     }
 
     func start() {
@@ -224,7 +252,7 @@ final class NotesController {
             context: monitor.context,
             window: window,
             screens: screens,
-            collapsedHeight: themes.collapsedHeight
+            collapsedHeight: collapsedHeight
         )
 
         let planned = Set(plans.map(\.noteID))
@@ -246,14 +274,23 @@ final class NotesController {
         }
     }
 
+    /// The tallest collapsed bar among all notes' skins, so the planner's bar height
+    /// fits whichever skin a note uses.
+    private var collapsedHeight: Double {
+        store.notes.reduce(skins.themes().collapsedHeight) { max($0, skins.themes(for: $1).collapsedHeight) }
+    }
+
     private func makeWindow(for note: Note) -> NoteWindowController {
         let id = note.id
-        let model = NoteModel(id: id, text: note.text, collapsed: note.collapsed, isEditable: isWritable, themes: themes)
+        let model = NoteModel(id: id, text: note.text, collapsed: note.collapsed, isEditable: isWritable, themes: skins.themes(for: note))
+        model.appearance = note.appearance
         model.onTextChange = { [weak self] in self?.autosave.schedule() }
         model.onToggleCollapsed = { [weak self] in self?.toggleCollapsed(id) }
         model.onHide = { [weak self] in self?.hideHere(id) }
         model.onTrash = { [weak self] in self?.trash(id) }
         model.onDone = { [weak self] in self?.done(id) }
+        model.onSelectPalette = { [weak self] index in self?.setPaletteIndex(index, for: id) }
+        model.onSetDecorationHidden = { [weak self] hidden in self?.setDecorationHidden(hidden, for: id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
 
         let controller = NoteWindowController(model: model, assets: assets)
@@ -275,6 +312,11 @@ final class NotesController {
         }
         if changed { quit.noteMutation(generation: store.mutationGeneration) }
         return changed
+    }
+
+    /// A workspace record changed outside the controller; save it like any other edit.
+    func workspacesMutated() {
+        didMutate()
     }
 
     private func didMutate() {

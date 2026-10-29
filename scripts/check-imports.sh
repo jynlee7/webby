@@ -23,7 +23,8 @@ allowed_for() {
     Webby)
       # OSLog: Logger keeps URLs and titles private in the unified log (plan.md §6.1).
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon WebbyCore WebbySkinArchive"
+      # CoreServices: FSEvents watches the user skins folder for hot reload (plan.md §5.4.8).
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics CoreServices OSLog Carbon WebbyCore WebbySkinArchive"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"

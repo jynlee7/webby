@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
-    private var builtInSkins: [InstalledSkin] = []
+    private var skins: SkinStore!
     private var accessibilityObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: Webby.bundleID, category: "app")
 
@@ -23,15 +23,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permission = AccessibilityPermission()
         monitor = ContextMonitor(permission: permission)
         settingsStore = SettingsStore()
-        builtInSkins = NoteThemes.loadBuiltInSkins(from: NoteThemes.bundledSkinsDirectory)
-        if builtInSkins.count < NoteThemes.builtInIDs.count {
-            logger.error("Loaded \(self.builtInSkins.count) of \(NoteThemes.builtInIDs.count) built-in skins; notes use the fallback look")
+        let noteStore = NoteStore()
+        skins = SkinStore(
+            userRoot: Self.userSkinsRoot,
+            builtInDirectory: NoteThemes.bundledSkinsDirectory,
+            settings: settingsStore,
+            noteStore: noteStore
+        )
+        if skins.rows.filter({ !$0.isUserSkin && $0.isAccepted }).count < NoteThemes.builtInIDs.count {
+            logger.error("Fewer than \(NoteThemes.builtInIDs.count) built-in skins loaded; notes use the fallback look")
         }
-        // Built-ins only until Step 9b adds installed skins.
-        let assets = SkinAssetCache { id in
-            NoteThemes.bundledSkinsDirectory?.appendingPathComponent(id, isDirectory: true)
-        }
-        notes = NotesController(store: NoteStore(), monitor: monitor, permission: permission, themes: resolveThemes(), assets: assets)
+        if let notice = skins.notice { logger.notice("\(notice, privacy: .public)") }
+        let assets = SkinAssetCache(folder: skins.assetFolderProvider)
+        skins.assetCache = assets
+        notes = NotesController(store: noteStore, monitor: monitor, permission: permission, skins: skins, assets: assets)
+        skins.onThemesChanged = { [weak self] in self?.notes.refreshThemes() }
+        skins.onNotesMutated = { [weak self] in self?.notes.workspacesMutated() }
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil,
@@ -39,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.notes.updateThemes(self.resolveThemes())
+                self.skins.accessibilityChanged()
             }
         }
 
@@ -71,16 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        skins.stop()
         chromeBridge.stop()
         monitor.stop()
     }
 
-    private func resolveThemes() -> NoteThemes {
-        NoteThemes(
-            skins: builtInSkins,
-            globalSkinID: settingsStore.settings.globalSkinID,
-            accessibility: NoteThemes.systemAccessibility
-        )
+    private static var userSkinsRoot: URL {
+        SettingsStore.defaultFileURL.deletingLastPathComponent().appendingPathComponent("Skins", isDirectory: true)
     }
 
     private func showSettings() {
