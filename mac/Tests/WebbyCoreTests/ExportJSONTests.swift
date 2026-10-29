@@ -115,7 +115,7 @@ private func exportWeb(
     let explicitData = try ExportJSON.encode(
         notes: notes,
         workspaces: workspaces,
-        options: ExportJSONOptions(selection: .notes([exportNoteC.id]))
+        options: ExportJSONOptions(selection: .notes([exportNoteC]))
     )
     let explicitDocument = try NotesDocument.decode(explicitData, version: 2)
     #expect(explicitDocument.notes.map(\.id) == [exportNoteC])
