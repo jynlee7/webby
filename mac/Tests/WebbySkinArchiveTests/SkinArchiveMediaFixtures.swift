@@ -229,6 +229,13 @@ func appendUInt32LE(_ value: UInt32, to data: inout Data) {
     data.append(UInt8((value >> 24) & 0xFF))
 }
 
+func appendUInt32BE(_ value: UInt32, to bytes: inout [UInt8]) {
+    bytes.append(UInt8((value >> 24) & 0xFF))
+    bytes.append(UInt8((value >> 16) & 0xFF))
+    bytes.append(UInt8((value >> 8) & 0xFF))
+    bytes.append(UInt8(value & 0xFF))
+}
+
 func appendUInt32BE(_ value: UInt32, to data: inout Data) {
     data.append(contentsOf: [
         UInt8((value >> 24) & 0xFF),
