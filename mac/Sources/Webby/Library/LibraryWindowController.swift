@@ -13,6 +13,15 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     let model: LibraryModel
     let draft = LibraryTextDraft()
+    private(set) lazy var exportController = ExportController(
+        model: model,
+        commitDrafts: { [weak self] in self?.commitPendingEdits() }
+    )
+    private(set) lazy var importController = ImportController(
+        model: model,
+        notes: model.notesController,
+        commitDrafts: { [weak self] in self?.commitPendingEdits() }
+    )
 
     private let actions: LibraryAnchorActions
     private let presentation: Presentation
@@ -103,7 +112,13 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
         guard window == nil else { return }
 
         let hosting = NSHostingController(
-            rootView: LibraryView(model: model, actions: actions, draft: draft)
+            rootView: LibraryView(
+                model: model,
+                actions: actions,
+                draft: draft,
+                exportController: exportController,
+                importController: importController
+            )
         )
         hosting.sizingOptions = []
 

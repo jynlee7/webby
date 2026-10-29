@@ -5,6 +5,8 @@ struct LibraryView: View {
     let model: LibraryModel
     let actions: LibraryAnchorActions
     let draft: LibraryTextDraft
+    let exportController: ExportController
+    let importController: ImportController
 
     @State private var showingNewNote = false
 
@@ -17,6 +19,8 @@ struct LibraryView: View {
                 model: model,
                 actions: actions,
                 draft: draft,
+                exportController: exportController,
+                importController: importController,
                 showingNewNote: $showingNewNote
             )
             .navigationSplitViewColumnWidth(min: 340, ideal: 460, max: 680)
