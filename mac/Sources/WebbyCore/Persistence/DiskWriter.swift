@@ -256,6 +256,8 @@ public actor DiskWriter<Content: Codable & Sendable> {
             return SaveFailure.backupChanged
         case .backupNameUnavailable:
             return SaveFailure.backupNameUnavailable
+        case .staleGeneration(let expected, let committed):
+            return SaveFailure.staleGeneration(expected: expected, committed: committed)
         }
     }
 }

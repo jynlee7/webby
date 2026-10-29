@@ -55,6 +55,8 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
             userQueryRules: userQueryRules
         )
         self.init(model: model, actions: actions)
+        // An import owns the store; commit this window's editor draft before its barrier.
+        notes.commitLibraryDrafts = { [weak self] in self?.commitPendingEdits() }
     }
 
     @available(*, unavailable)

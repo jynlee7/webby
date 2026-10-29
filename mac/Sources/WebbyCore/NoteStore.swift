@@ -14,6 +14,10 @@ public final class NoteStore {
         case sourceChanged
         case backupChanged
         case backupNameUnavailable
+        /// A prepared import was built from a state that is no longer current.
+        case staleImportGeneration(expected: UInt64, found: UInt64)
+        /// The import plan no longer validates against the current notes.
+        case invalidImportPlan
 
         public var errorDescription: String? {
             switch self {
@@ -27,6 +31,10 @@ public final class NoteStore {
                 return "The migration backup is missing or changed. The original notes were not overwritten."
             case .backupNameUnavailable:
                 return "No unused name was available for the migration backup. The original notes were not overwritten."
+            case .staleImportGeneration:
+                return "The notes changed while the import was waiting, so the import was not applied. Try again."
+            case .invalidImportPlan:
+                return "The import no longer matches the current notes, so nothing was imported."
             }
         }
     }
@@ -66,7 +74,10 @@ public final class NoteStore {
     public var migrationBackupURL: URL? { gate.migrationBackupURL }
 
     /// Generation of the newest in-memory mutation; 0 means nothing changed since load.
-    public private(set) var mutationGeneration: UInt64 = 0
+    ///
+    /// It lives behind a lock so a prepared import can compare it from the save queue
+    /// without touching the (non-Sendable) store.
+    public var mutationGeneration: UInt64 { clock.current }
     /// Generation known to be on disk.
     public var committedGeneration: UInt64 { gate.generation }
     public var hasUnsavedChanges: Bool { mutationGeneration > gate.generation }
@@ -79,8 +90,21 @@ public final class NoteStore {
 
     private let gate: SaveGate<NotesDocument>
     private let writer: DiskWriter<NotesDocument>
+    private let clock = MutationClock()
+    private let backupNow: @Sendable () -> Date
+    private let backupSuffix: @Sendable (Int) -> String
 
-    public init(fileURL: URL = NoteStore.defaultFileURL, now: Date = Date()) {
+    public init(
+        fileURL: URL = NoteStore.defaultFileURL,
+        now: Date = Date(),
+        backupDate: @escaping @Sendable () -> Date = { Date() },
+        backupSuffix: @escaping @Sendable (Int) -> String = { _ in
+            String(UUID().uuidString.lowercased().prefix(8))
+        },
+        atomicWrite: @escaping @Sendable (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
+    ) {
         let file = VersionedJSONFile<NotesDocument>(
             fileURL: fileURL,
             defaultContent: NotesDocument(),
@@ -88,7 +112,8 @@ public final class NoteStore {
             decode: { try NotesDocument.decode($0, version: $1) },
             encode: { try NotesDocument.encode($0, version: $1) },
             backupBeforeUpgrade: true,
-            now: { now }
+            now: { now },
+            atomicWrite: atomicWrite
         )
         let gate = SaveGate(file: file, committedGeneration: 0)
         self.fileURL = fileURL
@@ -96,6 +121,8 @@ public final class NoteStore {
         self.workspaces = file.content.workspaces
         self.gate = gate
         self.writer = DiskWriter(gate: gate)
+        self.backupNow = backupDate
+        self.backupSuffix = backupSuffix
     }
 
     private var document: NotesDocument {
@@ -103,7 +130,7 @@ public final class NoteStore {
     }
 
     private func advanceGeneration() {
-        mutationGeneration &+= 1
+        clock.advance()
     }
 
 
@@ -307,6 +334,176 @@ public final class NoteStore {
         )
     }
 
+    /// Captures an immutable candidate and the generation it expects to replace.
+    ///
+    /// The plan is applied only to this snapshot; the store itself does not change
+    /// until `publishImport(_:)` accepts the acknowledged receipt. The returned value
+    /// carries no reference to the store, so it can cross actors.
+    public func prepareImport(_ plan: ImportPlan) -> ImportRequest {
+        let baseMutation = mutationGeneration
+        let expectedGeneration = gate.generation
+
+        var records = workspaces
+        for update in plan.workspaceUpdates {
+            if let index = records.firstIndex(where: { $0.id == update.id }) {
+                records[index] = update
+            } else {
+                records.append(update)
+            }
+        }
+        records.append(contentsOf: plan.workspacesToAdd)
+
+        var candidateNotes = notes
+        candidateNotes.append(contentsOf: plan.notesToAdd)
+        let isValid = (try? NotesDocument.validateWorkspaces(records)) != nil
+
+        let backup = PreImportBackup(
+            fileURL: fileURL,
+            now: backupNow,
+            suffix: backupSuffix,
+            clock: clock,
+            baseMutationGeneration: baseMutation
+        )
+
+        return ImportRequest(
+            document: NotesDocument(notes: candidateNotes, workspaces: records),
+            expectedGeneration: expectedGeneration,
+            candidateGeneration: max(baseMutation, expectedGeneration) &+ 1,
+            baseMutationGeneration: baseMutation,
+            gate: gate,
+            isValid: isValid,
+            prepare: { try backup.create() }
+        )
+    }
+
+    /// Applies an acknowledged import to memory. Only a receipt written by this store's
+    /// gate for the exact mutation state it was built from is accepted.
+    @discardableResult
+    public func publishImport(_ receipt: ImportReceipt) -> Bool {
+        guard mode == .writable,
+              receipt.baseMutationGeneration == mutationGeneration,
+              receipt.generation == gate.generation else { return false }
+        notes = receipt.document.notes
+        workspaces = receipt.document.workspaces
+        clock.set(receipt.generation)
+        return true
+    }
+
+    /// A prepared import: immutable candidate content plus everything needed to write
+    /// it through the gate. It never holds the store, so it is safe to send.
+    public struct ImportRequest: Sendable {
+        fileprivate let document: NotesDocument
+        fileprivate let expectedGeneration: UInt64
+        fileprivate let candidateGeneration: UInt64
+        fileprivate let baseMutationGeneration: UInt64
+        fileprivate let gate: SaveGate<NotesDocument>
+        fileprivate let isValid: Bool
+        fileprivate let prepare: @Sendable () throws -> URL?
+
+        /// The generation the candidate will have once written.
+        public var generation: UInt64 { candidateGeneration }
+        public var expectedCommittedGeneration: UInt64 { expectedGeneration }
+
+        /// Creates the pre-import backup and writes the candidate on the gate's serial
+        /// queue. Throws when the expected generation is stale, the backup fails, or the
+        /// write fails; only a returned receipt may be published.
+        public func commit() async throws -> ImportReceipt {
+            guard isValid else { throw NoteStore.StoreError.invalidImportPlan }
+            do {
+                let acknowledgement = try await gate.commitPrepared(
+                    SaveGate<NotesDocument>.Snapshot(
+                        generation: candidateGeneration,
+                        content: document
+                    ),
+                    expectedGeneration: expectedGeneration,
+                    prepare: prepare
+                )
+                guard acknowledgement.generation == candidateGeneration else {
+                    throw NoteStore.StoreError.staleImportGeneration(
+                        expected: candidateGeneration,
+                        found: acknowledgement.generation
+                    )
+                }
+                return ImportReceipt(
+                    generation: acknowledgement.generation,
+                    backupURL: acknowledgement.preImportBackupURL,
+                    document: document,
+                    baseMutationGeneration: baseMutationGeneration
+                )
+            } catch let error as SaveFailure {
+                switch error {
+                case .readOnly(let problem): throw NoteStore.StoreError.readOnly(problem)
+                case .sourceChanged: throw NoteStore.StoreError.sourceChanged
+                case .backupChanged: throw NoteStore.StoreError.backupChanged
+                case .backupNameUnavailable: throw NoteStore.StoreError.backupNameUnavailable
+                case .staleGeneration(let expected, let committed):
+                    throw NoteStore.StoreError.staleImportGeneration(expected: expected, found: committed)
+                }
+            }
+        }
+    }
+
+    /// An acknowledged write of one prepared import candidate.
+    public struct ImportReceipt: Sendable {
+        public let generation: UInt64
+        /// The pre-import backup, created before the candidate was written.
+        public let backupURL: URL?
+        fileprivate let document: NotesDocument
+        fileprivate let baseMutationGeneration: UInt64
+    }
+
+    /// Creates the pre-import backup from the current file and verifies it before the
+    /// candidate is allowed to replace it. Runs inside the save gate's queue.
+    private struct PreImportBackup: Sendable {
+        let fileURL: URL
+        let now: @Sendable () -> Date
+        let suffix: @Sendable (Int) -> String
+        let clock: MutationClock
+        let baseMutationGeneration: UInt64
+
+        func create() throws -> URL? {
+            // An edit that landed after the candidate was built must abort the write.
+            guard clock.current == baseMutationGeneration else {
+                throw NoteStore.StoreError.staleImportGeneration(
+                    expected: baseMutationGeneration,
+                    found: clock.current
+                )
+            }
+
+            let target = fileURL.resolvingSymlinksInPath()
+            let sourceData: Data
+            if FileManager.default.fileExists(atPath: target.path) {
+                sourceData = try Data(contentsOf: target)
+            } else {
+                // The first import still gets a restore point: the empty pre-import state.
+                sourceData = try NotesDocument.encode(NotesDocument(), version: 2)
+            }
+
+            let baseName = target.deletingPathExtension().lastPathComponent
+            let fileExtension = target.pathExtension.isEmpty ? "json" : target.pathExtension
+            let timestamp = BackupFileNaming.timestamp(from: now())
+            let directory = target.deletingLastPathComponent()
+            let suffix = self.suffix
+
+            let backup: URL
+            do {
+                backup = try BackupFileNaming.createExclusiveBackup(sourceData, in: directory) { attempt in
+                    "\(baseName).pre-import-\(timestamp)-\(suffix(attempt)).\(fileExtension)"
+                }
+            } catch BackupFileError.nameUnavailable {
+                throw NoteStore.StoreError.backupNameUnavailable
+            }
+
+            let attributes = try FileManager.default.attributesOfItem(atPath: backup.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+                  try Data(contentsOf: backup) == sourceData else {
+                throw NoteStore.StoreError.backupChanged
+            }
+            return backup
+        }
+    }
+
     /// The store's state at one generation, ready to be written.
     public struct SaveRequest: Sendable {
         fileprivate let snapshot: SaveGate<NotesDocument>.Snapshot
@@ -341,8 +538,35 @@ public final class NoteStore {
                 case .sourceChanged: throw StoreError.sourceChanged
                 case .backupChanged: throw StoreError.backupChanged
                 case .backupNameUnavailable: throw StoreError.backupNameUnavailable
+                case .staleGeneration(let expected, let committed):
+                    throw StoreError.staleImportGeneration(expected: expected, found: committed)
                 }
             }
         }
+    }
+}
+
+/// A lock-guarded mutation counter so a prepared import can read the store's newest
+/// in-memory generation from the save queue without touching the store itself.
+private final class MutationClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+
+    var current: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance() {
+        lock.lock()
+        value &+= 1
+        lock.unlock()
+    }
+
+    func set(_ newValue: UInt64) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
     }
 }
