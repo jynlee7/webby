@@ -1938,6 +1938,11 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Required checks:** import/dependency guards, focused `WebbySkinArchiveTests`, the full suite, `swift build`, app packaging, extension validation, ShellCheck and `git diff --check`. Repeat the archive target build and tests with `DEVELOPER_DIR=/Library/Developer/CommandLineTools` and a separate scratch path; macOS decoder and CLT results are required before the PR is ready.
 - **Explicit non-goals:** app integration, install/replacement policy, `SkinStore`, `SkinAssetCache`, selection, preview rendering, UTI/document registration, hot reload, playback, fonts, schema changes and resolver refactoring.
 
+**Plan-review clarifications (2026-10-29).**
+
+- The dependency unit explicitly changes `mac/Package.swift`, generated `mac/Package.resolved`, `scripts/check-imports.sh`, new `scripts/check-skin-dependency.sh`, and `.github/workflows/ci.yml`. Add allowlists for `WebbySkinArchive` and `WebbySkinArchiveTests`; run the dependency guard and a CLT-only archive build/focused test step in CI, not only as a maintainer-local check.
+- `SkinAssetChecker` remains per-asset: it returns decoded image metadata and sound metadata through the existing protocol. The already-merged `SkinValidator` owns the aggregate 24 MP calculation and its fatal `pixel-budget-exceeded` result. Per-file unsafe media invalidates its owning group; aggregate pixel overflow rejects the whole skin. No duplicate, order-dependent aggregate state is added to the checker.
+
 ### Step 9b: skins in the app (import, export, selection, hot reload)
 
 - **Size:** L.
