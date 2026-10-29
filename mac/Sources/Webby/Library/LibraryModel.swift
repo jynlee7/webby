@@ -125,6 +125,10 @@ final class LibraryModel {
 
     // MARK: Derived presentation values
 
+    /// Read-only browsing stays available; mutations and Trash actions do not.
+    var isWritable: Bool { controller.isWritable }
+    var readOnlyProblem: String? { controller.readOnlyProblem }
+
     var libraryResult: LibraryResult { result }
     var sidebarCounts: [LibrarySection: Int] { result.counts }
     var sectionCounts: [LibrarySection: Int] { result.counts }

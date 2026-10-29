@@ -11,15 +11,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let notes: NotesController
+    private let openLibrary: @MainActor () -> Void
     private let openSettings: @MainActor () -> Void
     private let showMoveToApplications: @MainActor () -> Void
 
     init(
         notes: NotesController,
+        openLibrary: @escaping @MainActor () -> Void,
         openSettings: @escaping @MainActor () -> Void,
         showMoveToApplications: @escaping @MainActor () -> Void
     ) {
         self.notes = notes
+        self.openLibrary = openLibrary
         self.openSettings = openSettings
         self.showMoveToApplications = showMoveToApplications
         super.init()
@@ -88,10 +91,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        // The Library arrives in Step 5b.
-        let library = NSMenuItem(title: "Library", action: nil, keyEquivalent: "")
-        library.isEnabled = false
-        menu.addItem(library)
+        menu.addItem(ActionMenuItem("Open Library", key: "l", run: openLibrary))
         menu.addItem(ActionMenuItem("Settings…", key: ",", run: openSettings))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit Webby", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
