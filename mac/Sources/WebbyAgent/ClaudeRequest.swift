@@ -27,13 +27,13 @@ public enum ClaudeJSON: Equatable, Sendable {
         switch self {
         case let .object(values):
             let body = values.keys.sorted().map { key in
-                encodeString(key) + ":" + values[key]!.encoded()
+                Self.encodeString(key) + ":" + values[key]!.encoded()
             }.joined(separator: ",")
             return "{" + body + "}"
         case let .array(values):
-            return "[" + values.map(\.encoded).joined(separator: ",") + "]"
+            return "[" + values.map { $0.encoded() }.joined(separator: ",") + "]"
         case let .string(value):
-            return encodeString(value)
+            return Self.encodeString(value)
         case let .int(value):
             return String(value)
         case let .double(value):
