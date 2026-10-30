@@ -303,7 +303,10 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
                 maxCharacters: maxReadCharacters,
                 alias: alias
             )
-            return AgentReadNoteResult(alias: alias, content: truncation.text)
+            return AgentReadNoteResult(
+                alias: alias,
+                content: truncation.text + (truncation.marker ?? "")
+            )
         }
         if retiredAliases.contains(alias) {
             return AgentReadNoteResult(alias: alias, failure: .retiredAlias)
