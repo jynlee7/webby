@@ -145,14 +145,10 @@ public struct ClaudeConversationRunner: Sendable {
             // A pause continues the same assistant turn, so its text accumulates.
             // Text from an intermediate tool round is not the answer.
             if completion.stopReason == .pauseTurn {
-                pausedText = [pausedText, completion.text]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
+                pausedText = Self.joinedTurnText(pausedText, completion.text)
                 answerText = pausedText
             } else if !pausedText.isEmpty {
-                answerText = [pausedText, completion.text]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: " ")
+                answerText = Self.joinedTurnText(pausedText, completion.text)
                 pausedText = ""
             } else {
                 answerText = completion.text
@@ -318,6 +314,15 @@ public struct ClaudeConversationRunner: Sendable {
             throw ClaudeConversationError.malformedToolInput(toolID: toolID)
         }
         return alias
+    }
+
+    private static func joinedTurnText(_ lhs: String, _ rhs: String) -> String {
+        guard !lhs.isEmpty else { return rhs }
+        guard !rhs.isEmpty else { return lhs }
+        if lhs.last?.isWhitespace == true || rhs.first?.isWhitespace == true {
+            return lhs + rhs
+        }
+        return lhs + " " + rhs
     }
 
     private static func adding(_ lhs: ClaudeUsage, _ rhs: ClaudeUsage) -> ClaudeUsage {
