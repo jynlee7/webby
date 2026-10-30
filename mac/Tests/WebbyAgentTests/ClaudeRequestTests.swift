@@ -234,3 +234,16 @@ private func jsonString(_ value: Any) throws -> String {
     #expect(prepared.headers.contains(.init(name: "x-api-key", value: "test-key")))
     #expect(prepared.body == request.body)
 }
+
+@Test func replayedToolInputKeepsNumericZeroAndOne() throws {
+    let text = "{\"a\":1,\"b\":0,\"c\":true,\"d\":false}"
+    let parsed = try ClaudeJSON.parse(text)
+
+    #expect(parsed == .object([
+        "a": .int(1),
+        "b": .int(0),
+        "c": .bool(true),
+        "d": .bool(false),
+    ]))
+    #expect(parsed.encoded() == text)
+}

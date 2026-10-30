@@ -62,8 +62,10 @@ public enum ClaudeJSON: Equatable, Sendable {
         if value is NSNull {
             return .null
         }
-        if let bool = value as? Bool {
-            return .bool(bool)
+        // `JSONSerialization` bridges numeric 0 and 1 to Bool, so only a real
+        // CFBoolean counts as a JSON boolean.
+        if let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() {
+            return .bool(number.boolValue)
         }
         if let string = value as? String {
             return .string(string)
