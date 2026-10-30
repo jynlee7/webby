@@ -80,3 +80,18 @@ import Testing
         try parser.feed(invalid)
     }
 }
+
+@Test func feedPreservesParsedEventsWhenALaterLineFails() throws {
+    var parser = SSEParser(maxLineBytes: 32, maxEventBytes: 1_024)
+    var events: [SSEEvent] = []
+    let first = Data("event: ping\ndata: {}\n\n".utf8)
+    let oversized = Data("data: " + String(repeating: "x", count: 64) + "\n\n")
+
+    do {
+        try parser.feed(first + oversized, into: &events)
+        Issue.record("expected the oversized line to fail")
+    } catch {
+        // The event parsed before the failure must survive.
+    }
+    #expect(events.map(\.name) == ["ping"])
+}

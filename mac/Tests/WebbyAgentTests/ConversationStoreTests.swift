@@ -356,3 +356,17 @@ private struct InjectedWriteFailure: Error {}
     }
     #expect(!FileManager.default.fileExists(atPath: store.fileURL(for: document.id).path))
 }
+
+@Test func redactionDoesNotExtendRetention() async throws {
+    let directory = temporaryDirectory()
+    let clock = RetentionClock(Date(timeIntervalSince1970: 1_700_000_000))
+    let store = ConversationStore(directory: directory, clock: { clock.now() })
+    let document = storedDocument()
+    let saved = try await store.save(document)
+
+    clock.set(Date(timeIntervalSince1970: 1_800_000_000))
+    _ = try await store.redactNote(agentUUID(1))
+
+    let loaded = try #require(await store.load(document.id))
+    #expect(loaded.updatedAt == saved.updatedAt)
+}

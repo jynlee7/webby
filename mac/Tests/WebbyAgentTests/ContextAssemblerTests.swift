@@ -318,3 +318,28 @@ import WebbyCore
     #expect(first.manifest == second.manifest)
     #expect(first.turnSnapshot == second.turnSnapshot)
 }
+
+
+@Test func readNoteContentIsBounded() {
+    let note = agentNote(id: 1, text: String(repeating: "a", count: 200))
+    let snapshot = AgentTurnSnapshot(
+        notesByAlias: [
+            "N1": AgentTurnSnapshot.AuthorizedNote(
+                note: note,
+                alias: "N1",
+                status: .included,
+                omittedCharacters: 0
+            ),
+        ],
+        orderedAliases: ["N1"],
+        retiredAliases: [],
+        authorizationFingerprint: "fp",
+        maxReadCharacters: 50
+    )
+    guard let content = snapshot.readNote(alias: "N1").content else {
+        Issue.record("expected bounded read content")
+        return
+    }
+    #expect(content.count <= 50)
+    #expect(content.contains("truncated"))
+}
