@@ -26,9 +26,10 @@ extension LibraryModel {
         notesController.splitWorkspace(key: key, from: id)
     }
 
-    /// An implicit workspace becomes a record when edited; keep it selected.
+    /// An implicit workspace becomes a record when edited; keep it selected. An unchanged
+    /// destination keeps its page selection.
     private func keepSelected(_ wasSelected: Bool, at destination: WorkspaceDestination?) {
-        guard wasSelected, let destination else { return }
+        guard wasSelected, let destination, destination != selectedWorkspace else { return }
         select(workspace: destination)
     }
 }

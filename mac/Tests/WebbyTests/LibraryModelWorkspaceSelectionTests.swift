@@ -54,6 +54,22 @@ private func makeSelectionModel(hosts: [String]) throws -> (LibraryModel, URL) {
         #expect(model.selectedWorkspaceGroup?.displayName == "Alpha")
     }
 
+    @Test func pinningASelectedRecordKeepsItsPageSelection() throws {
+        let (model, directory) = try makeSelectionModel(hosts: ["a.example"])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let implicit = try group(model, host: "a.example")
+        model.select(workspace: implicit.destination)
+        model.rename(implicit, to: "Alpha")
+        let record = try #require(model.selectedWorkspaceGroup)
+        let page = LibraryPageSelection.page(PageURL(host: "a.example", path: "/"))
+        model.selectedPage = page
+
+        model.setPinned(record, pinned: true)
+
+        #expect(model.selectedWorkspace == record.destination)
+        #expect(model.selectedPage == page)
+    }
+
     @Test func mergingTheSelectedSourceSelectsTheTarget() throws {
         let (model, directory) = try makeSelectionModel(hosts: ["a.example", "b.example"])
         defer { try? FileManager.default.removeItem(at: directory) }
