@@ -34,12 +34,19 @@ allowed_for() {
       # ImageIO and AVFAudio are decode-level checks in SkinAssetChecker (plan.md §5.4.6).
       printf '%s\n' "Foundation WebbyCore ZIPFoundation ImageIO AVFAudio"
       ;;
+    WebbyAgent)
+      # #24 keeps the agent tests-only and limited to Core (plan.md Step 12a).
+      printf '%s\n' "Foundation WebbyCore"
+      ;;
     WebbyCoreTests)
       # Darwin/Glibc are platform shims used behind #if canImport.
       printf '%s\n' "Testing Foundation CoreGraphics WebbyCore Darwin Glibc"
       ;;
     WebbySkinArchiveTests)
       printf '%s\n' "Testing Foundation CryptoKit WebbyCore WebbySkinArchive ZIPFoundation"
+      ;;
+    WebbyAgentTests)
+      printf '%s\n' "Testing Foundation WebbyAgent WebbyCore"
       ;;
     WebbyTests)
       # WebKit is allowed only for direct compiled-view configuration and security tests.

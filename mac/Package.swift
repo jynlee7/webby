@@ -14,6 +14,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "WebbyCore"),
+        .target(name: "WebbyAgent", dependencies: ["WebbyCore"]),
         .target(
             name: "WebbySkinArchive",
             dependencies: [
@@ -24,6 +25,7 @@ let package = Package(
         .executableTarget(name: "Webby", dependencies: ["WebbyCore"]),
         .executableTarget(name: "WebbyBridge", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyCoreTests", dependencies: ["WebbyCore"]),
+        .testTarget(name: "WebbyAgentTests", dependencies: ["WebbyAgent", "WebbyCore"]),
         .testTarget(name: "WebbySkinArchiveTests", dependencies: ["WebbyCore", "WebbySkinArchive"]),
         .testTarget(name: "WebbyTests", dependencies: ["Webby", "WebbyCore"]),
     ],
