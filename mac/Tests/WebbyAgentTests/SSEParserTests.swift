@@ -85,7 +85,7 @@ import Testing
     var parser = SSEParser(maxLineBytes: 32, maxEventBytes: 1_024)
     var events: [SSEEvent] = []
     let first = Data("event: ping\ndata: {}\n\n".utf8)
-    let oversized = Data("data: " + String(repeating: "x", count: 64) + "\n\n")
+    let oversized = Data(("data: " + String(repeating: "x", count: 64) + "\n\n").utf8)
 
     do {
         try parser.feed(first + oversized, into: &events)
