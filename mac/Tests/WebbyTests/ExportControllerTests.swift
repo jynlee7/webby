@@ -17,7 +17,9 @@ private func exportTestNote(
     text: String,
     anchor: Anchor? = nil,
     workspaceOverride: UUID? = nil,
-    ephemeral: Bool = false
+    ephemeral: Bool = false,
+    createdAt: Date = exportTestNow,
+    pinnedAt: Date? = nil
 ) -> Note {
     Note(
         id: id,
@@ -26,8 +28,9 @@ private func exportTestNote(
         text: text,
         frame: NoteFrame(),
         placement: .window,
-        createdAt: exportTestNow,
-        updatedAt: exportTestNow,
+        pinnedAt: pinnedAt,
+        createdAt: createdAt,
+        updatedAt: createdAt,
         ephemeral: ephemeral
     )
 }
@@ -167,6 +170,31 @@ private func decodedNoteIDs(_ data: Data) throws -> Set<UUID> {
         let html = String(decoding: workspaceHTML.data, as: UTF8.self)
         #expect(html.contains("Page Heading"))
         #expect(!html.contains("Inbox Heading"))
+    }
+
+    @Test func pinnedNotesAreOrderedByCreationInEverySelection() throws {
+        let older = exportTestNote(
+            text: "Older pinned first",
+            createdAt: exportTestNow.addingTimeInterval(-100),
+            pinnedAt: exportTestNow.addingTimeInterval(-50)
+        )
+        let newer = exportTestNote(
+            text: "Newer pinned later",
+            createdAt: exportTestNow.addingTimeInterval(-10),
+            pinnedAt: exportTestNow
+        )
+        let (model, directory) = try makeExportModel(notes: [newer, older])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let export = ExportController(model: model)
+
+        for selection in [LibraryExportSelection.all, .selected([older.id, newer.id]),
+                          .workspace(.inbox)] {
+            let data = try export.makeDocument(selection: selection, format: .markdown).data
+            let markdown = String(decoding: data, as: UTF8.self)
+            let first = try #require(markdown.range(of: "Older pinned first"))
+            let second = try #require(markdown.range(of: "Newer pinned later"))
+            #expect(first.lowerBound < second.lowerBound)
+        }
     }
 
     @Test func draftCommitRunsBeforeTheSnapshot() throws {

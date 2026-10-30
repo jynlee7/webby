@@ -385,64 +385,13 @@ final class ExportController {
         let section = CompiledSection(
             kind: .workspaceNotes,
             heading: title,
-            notes: compiledNotes(notes, queryRules: snapshot.queryRules)
+            notes: CompiledDocument.compiledNotes(notes, queryRules: snapshot.queryRules)
         )
         return CompiledDocument(
             scope: .workspace(.inbox),
             title: title,
             sections: [section]
         )
-    }
-
-    private func compiledNotes(_ notes: [Note], queryRules: [QueryRule]) -> [CompiledNote] {
-        NoteOrdering.sorted(notes, by: .pinnedThenCreatedAscending).map { note in
-            let (title, body) = Self.titleAndBody(note.text)
-            return CompiledNote(
-                id: note.id,
-                title: title,
-                body: body,
-                createdAt: note.createdAt,
-                isPinned: note.pinnedAt != nil,
-                isHidden: note.hidden,
-                isCollapsed: note.collapsed,
-                isExcludedFromAgent: note.excludedFromAgent,
-                tags: Tags.parse(note.text).map(\.name),
-                noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: note.id)),
-                pageLink: Self.pageLink(for: note, queryRules: queryRules)
-            )
-        }
-    }
-
-    private static func pageLink(for note: Note, queryRules: [QueryRule]) -> CompiledLink? {
-        guard case .web(let page, _)? = note.anchor,
-              let url = CanonicalExportURL.make(for: page, queryRules: queryRules)
-        else { return nil }
-        return CompiledLink(title: "Open page", url: url)
-    }
-
-    private static func titleAndBody(_ text: String) -> (title: String, body: String) {
-        let normalized = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
-
-        guard let titleIndex = lines.firstIndex(where: {
-            !$0.trimmingCharacters(in: .whitespaces).isEmpty
-        }) else {
-            return ("Untitled", "")
-        }
-
-        let title = lines[titleIndex].trimmingCharacters(in: .whitespaces)
-        var bodyLines = Array(lines[(titleIndex + 1)...])
-        while let first = bodyLines.first,
-              first.trimmingCharacters(in: .whitespaces).isEmpty {
-            bodyLines.removeFirst()
-        }
-        while let last = bodyLines.last,
-              last.trimmingCharacters(in: .whitespaces).isEmpty {
-            bodyLines.removeLast()
-        }
-        return (title, bodyLines.joined(separator: "\n"))
     }
 
     // MARK: - Filenames
