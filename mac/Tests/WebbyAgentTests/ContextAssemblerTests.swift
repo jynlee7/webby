@@ -125,8 +125,10 @@ import WebbyCore
 
     let aliases = aliasesByNoteID(turn)
     #expect(aliases[agentUUID(3)] == "N1")
-    #expect(aliases[agentUUID(1)] == "N2")
-    #expect(aliases[agentUUID(2)] == "N3")
+    // The app note does not match this context, so both it and the file note are
+    // remaining notes; T4 orders the newer file note first.
+    #expect(aliases[agentUUID(2)] == "N2")
+    #expect(aliases[agentUUID(1)] == "N3")
     #expect(aliases[agentUUID(4)] == "N4")
     #expect(turn.manifest.entries.first { $0.noteID == agentUUID(2) }?.page == "Local file")
 
