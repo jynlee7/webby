@@ -135,6 +135,7 @@ public struct ClaudeConversationRunner: Sendable {
         var request = turn.request
         var session = AgentReadSession(snapshot: turn.snapshot)
         var answerText = ""
+        var pausedText = ""
         var usage = ClaudeUsage.zero
         var readAliases: Set<String> = []
         var toolRounds = 0
@@ -144,9 +145,15 @@ public struct ClaudeConversationRunner: Sendable {
             // A pause continues the same assistant turn, so its text accumulates.
             // Text from an intermediate tool round is not the answer.
             if completion.stopReason == .pauseTurn {
-                answerText = [answerText, completion.text]
+                pausedText = [pausedText, completion.text]
                     .filter { !$0.isEmpty }
                     .joined(separator: " ")
+                answerText = pausedText
+            } else if !pausedText.isEmpty {
+                answerText = [pausedText, completion.text]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                pausedText = ""
             } else {
                 answerText = completion.text
             }
@@ -168,6 +175,7 @@ public struct ClaudeConversationRunner: Sendable {
             }
 
             if stopReason == .toolUse {
+                pausedText = ""
                 guard toolRounds < maxToolRounds else {
                     throw ClaudeConversationError.toolRoundLimitExceeded
                 }
