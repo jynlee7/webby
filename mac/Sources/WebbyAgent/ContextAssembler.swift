@@ -284,10 +284,12 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
     }
 
     public func readNote(alias: String, readsUsed: Int = 0) -> AgentReadNoteResult {
-        guard readsUsed < maxReads else {
-            return AgentReadNoteResult(alias: alias, failure: .readLimitReached)
-        }
+        // The alias must be known before the read counter is consulted, so an
+        // unknown alias is always reported as unknown rather than as a cap.
         if let note = notesByAlias[alias] {
+            guard readsUsed < maxReads else {
+                return AgentReadNoteResult(alias: alias, failure: .readLimitReached)
+            }
             return AgentReadNoteResult(alias: alias, content: note.note.text)
         }
         if retiredAliases.contains(alias) {

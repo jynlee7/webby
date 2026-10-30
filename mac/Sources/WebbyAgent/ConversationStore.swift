@@ -476,7 +476,8 @@ public actor ConversationStore {
         } catch {
             throw ConversationStoreError.writeFailed(error.localizedDescription)
         }
-        files[document.id] = file
+        // Drop the cache so the next load observes the file that was just written.
+        files[document.id] = nil
         return updated
     }
 
