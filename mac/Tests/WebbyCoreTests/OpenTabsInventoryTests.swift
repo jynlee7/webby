@@ -79,12 +79,11 @@ private let otBase: [BridgeEvent] = [
     #expect(reducer.inventory.windows[0].tabs.map(\.index) == [0, 1, 2, 3])
 }
 
-@Test func tabCreatedInUnknownWindowIsIgnored() {
+@Test func tabCreatedInUnknownWindowStaysHiddenUntilResolved() {
     var reducer = otReducer(otBase)
 
-    let changed = reducer.receive(otMessage(.tabCreated(BridgeCreatedTab(id: 5, windowId: 99, index: 0))))
+    reducer.receive(otMessage(.tabCreated(BridgeCreatedTab(id: 5, windowId: 99, index: 0))))
 
-    #expect(!changed)
     #expect(otTabIDs(reducer) == [[1, 2, 3], [4]])
 }
 
@@ -255,4 +254,40 @@ private let otBase: [BridgeEvent] = [
     closed.receive(otMessage(.tabClosed(tabId: 2, windowClosing: false)))
     let after = LibraryTabGroups.openTabs(notes: [page, bound, elsewhere], inventory: closed.inventory, rules: [])
     #expect(after.map(\.tab.tabID) == [3])
+}
+
+private func otCreated(_ id: Int, window: Int, index: Int) -> BridgeEvent {
+    otMessage(.tabCreated(BridgeCreatedTab(id: id, windowId: window, index: index, url: "https://example.com/\(id)")))
+}
+
+@Test func newWindowAppearsOnceActiveResolvesItAndKeepsItsTabs() {
+    var reducer = otReducer([otCreated(11, window: 5, index: 1), otCreated(10, window: 5, index: 0)])
+    #expect(reducer.inventory.windows.isEmpty)
+
+    reducer.receive(otMessage(.active(windowId: 5, incognito: false, tab: otTab(10, 0))))
+
+    #expect(otTabIDs(reducer) == [[10, 11]])
+    #expect(reducer.inventory.windows[0].incognito == false)
+}
+
+@Test func newIncognitoWindowTabsAreNeverListed() {
+    var reducer = otReducer([otCreated(10, window: 5, index: 0), otCreated(11, window: 5, index: 1)])
+    reducer.receive(otMessage(.active(windowId: 5, incognito: true, tab: otTab(10, 0))))
+    let note = tabFixtureNote(id: tabFixtureID("001"), anchor: tabFixtureWebAnchor("https://example.com/11"))
+
+    #expect(reducer.inventory.windows.first?.incognito == true)
+    #expect(LibraryTabGroups.openTabs(notes: [note], inventory: reducer.inventory, rules: []).isEmpty)
+}
+
+@Test func tabMovedIntoNewWindowKeepsTheTabAndSourceIncognito() {
+    var reducer = otReducer([
+        otMessage(.inventory(windows: [otWindow(1, incognito: true, tabs: [otTab(1, 0), otTab(2, 1)])])),
+        otMessage(.tabMoved(tabId: 2, windowId: 9, index: 0)),
+    ])
+
+    #expect(otTabIDs(reducer) == [[1], [2]])
+    #expect(reducer.inventory.windows.map(\.incognito) == [true, true])
+
+    reducer.receive(otCreated(3, window: 9, index: 1))
+    #expect(otTabIDs(reducer) == [[1], [2, 3]])
 }

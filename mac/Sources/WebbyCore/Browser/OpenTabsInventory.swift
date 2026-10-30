@@ -10,7 +10,8 @@ public struct OpenTabsInventory: Equatable, Sendable {
     private struct Window: Equatable, Sendable {
         var id: Int
         var focused: Bool
-        var incognito: Bool
+        /// `nil` while the window is known only from tab events; it is not listed until resolved.
+        var incognito: Bool?
         var tabs: [BridgeTab]
     }
 
@@ -43,7 +44,8 @@ public struct OpenTabsInventory: Equatable, Sendable {
         var windows: [LibraryInventoryWindow] = []
         for key in profiles.keys.sorted() {
             guard let profile = profiles[key] else { continue }
-            for (order, window) in profile.windows.enumerated() {
+            for (order, window) in profile.windows.filter({ $0.incognito != nil }).enumerated() {
+                guard let incognito = window.incognito else { continue }
                 windows.append(LibraryInventoryWindow(
                     browser: Self.bundleID,
                     profile: key,
@@ -52,7 +54,7 @@ public struct OpenTabsInventory: Equatable, Sendable {
                     windowID: window.id,
                     order: order,
                     focused: window.focused,
-                    incognito: window.incognito,
+                    incognito: incognito,
                     tabs: window.tabs.enumerated().map { index, tab in
                         LibraryInventoryTab(
                             tabID: tab.id,
@@ -119,8 +121,14 @@ public struct OpenTabsInventory: Equatable, Sendable {
                 Self.insert(activated, at: tab.index, in: &profile.windows[id])
             }
         case .tabCreated(let created):
-            // A tab of an unknown window waits for the inventory or `active` that names it.
-            guard let id = profile.windows.firstIndex(where: { $0.id == created.windowId }) else { break }
+            // A new window sends no inventory; `active` resolves its incognito state later.
+            let id: Int
+            if let known = profile.windows.firstIndex(where: { $0.id == created.windowId }) {
+                id = known
+            } else {
+                profile.windows.append(Window(id: created.windowId, focused: false, incognito: nil, tabs: []))
+                id = profile.windows.count - 1
+            }
             Self.remove(tabID: created.id, from: &profile)
             let tab = BridgeTab(
                 id: created.id,
@@ -141,8 +149,13 @@ public struct OpenTabsInventory: Equatable, Sendable {
         case .tabClosed(let tabID, _):
             Self.remove(tabID: tabID, from: &profile)
         case .tabMoved(let tabID, let windowID, let index):
-            guard let tab = profile.windows.lazy.flatMap(\.tabs).first(where: { $0.id == tabID }) else { break }
+            guard let source = profile.windows.first(where: { $0.tabs.contains { $0.id == tabID } }),
+                  let tab = source.tabs.first(where: { $0.id == tabID }) else { break }
             Self.remove(tabID: tabID, from: &profile)
+            if profile.windows.firstIndex(where: { $0.id == windowID }) == nil {
+                // Tabs cannot move between incognito and regular windows.
+                profile.windows.append(Window(id: windowID, focused: false, incognito: source.incognito, tabs: []))
+            }
             if let id = profile.windows.firstIndex(where: { $0.id == windowID }) {
                 Self.insert(tab, at: index, in: &profile.windows[id])
             }
