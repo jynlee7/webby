@@ -8,15 +8,19 @@ import Foundation
 public struct PreparedTurn: Sendable {
     public let request: ClaudeRequest
     public let snapshot: AgentTurnSnapshot
+    /// The manifest actually sent, when the turn came from the assembler.
+    public let manifest: ContextManifest?
     public let authorizationValidator: @Sendable (String) async -> Bool
 
     public init(
         request: ClaudeRequest,
         snapshot: AgentTurnSnapshot,
+        manifest: ContextManifest? = nil,
         authorizationValidator: @escaping @Sendable (String) async -> Bool = { _ in true }
     ) {
         self.request = request
         self.snapshot = snapshot
+        self.manifest = manifest
         self.authorizationValidator = authorizationValidator
     }
 
@@ -27,6 +31,7 @@ public struct PreparedTurn: Sendable {
         self.init(
             request: assembled.request,
             snapshot: assembled.turnSnapshot,
+            manifest: assembled.manifest,
             authorizationValidator: authorizationValidator
         )
     }
@@ -258,7 +263,7 @@ public struct ClaudeConversationRunner: Sendable {
         var sentAliases = Set(turn.snapshot.notesByAlias.compactMap { alias, note in
             note.status == .omitted ? nil : alias
         })
-        for line in turn.manifest.omittedLines {
+        for line in turn.manifest?.omittedLines ?? [] {
             if let alias = line.split(separator: " ").first.map(String.init),
                turn.snapshot.notesByAlias[alias] != nil {
                 sentAliases.insert(alias)
