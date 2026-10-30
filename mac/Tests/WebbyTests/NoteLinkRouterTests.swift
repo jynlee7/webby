@@ -89,4 +89,22 @@ import WebbyCore
         #expect(unroutable == [missing, queued])
         #expect(coldRouter.pendingNoteIDs.isEmpty)
     }
+
+    @Test func queuedUnroutableLinksReportOnceWhenFlushed() {
+        let router = NoteLinkRouter()
+        var routeAttempts = 0
+        var unroutable: [UUID] = []
+        router.onRoute = { _ in
+            routeAttempts += 1
+            return false
+        }
+        router.onUnroutable = { unroutable.append($0) }
+
+        let ids = (0..<3).map { _ in UUID() }
+        for id in ids { #expect(router.receive(NoteLink.url(for: id))) }
+        router.markReady()
+
+        #expect(routeAttempts == 3)
+        #expect(unroutable == [ids[0]])
+    }
 }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var libraryWindow: LibraryWindowController?
     private let linkRouter = NoteLinkRouter()
+    private var isShowingMissingNoteAlert = false
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
@@ -122,6 +123,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMissingNoteLinkAlert() {
+        // runModal spins a nested loop; links arriving meanwhile are absorbed.
+        guard !isShowingMissingNoteAlert else { return }
+        isShowingMissingNoteAlert = true
+        defer { isShowingMissingNoteAlert = false }
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Note Not Found"

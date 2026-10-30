@@ -11,7 +11,7 @@ final class NoteLinkRouter {
     static let maximumPendingLinks = 8
 
     /// Returns whether the Library accepted the note. A false result is reported to
-    /// `onUnroutable` but never creates, restores or mutates a note.
+    /// `onUnroutable` (once per flushed batch) but never creates, restores or mutates a note.
     var onRoute: (@MainActor (UUID) -> Bool)?
     var onUnroutable: (@MainActor (UUID) -> Void)?
 
@@ -44,8 +44,11 @@ final class NoteLinkRouter {
 
         let queued = pendingNoteIDs
         pendingNoteIDs.removeAll(keepingCapacity: true)
-        for id in queued {
-            route(id)
+        // One notification per flush: a burst of missing notes needs one alert.
+        var reported = false
+        for id in queued where !deliver(id) && !reported {
+            reported = true
+            onUnroutable?(id)
         }
     }
 
@@ -57,12 +60,12 @@ final class NoteLinkRouter {
     }
 
     private func route(_ id: UUID) {
-        guard let onRoute else {
-            onUnroutable?(id)
-            return
-        }
-        if !onRoute(id) {
+        if !deliver(id) {
             onUnroutable?(id)
         }
+    }
+
+    private func deliver(_ id: UUID) -> Bool {
+        onRoute?(id) ?? false
     }
 }

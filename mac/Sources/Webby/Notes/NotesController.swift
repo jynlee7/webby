@@ -61,7 +61,7 @@ final class NotesController {
     private(set) lazy var quit = makeQuitCoordinator()
     private var started = false
 
-    private var windows: [UUID: NoteWindowController] = [:]
+    private(set) var windows: [UUID: NoteWindowController] = [:]
     private var toasts: [UUID: UndoToast] = [:]
     private let banner = StatusBanner()
     private var onboardingShown = false
@@ -351,15 +351,26 @@ final class NotesController {
             )
         }
 
+        // The Library keeps its own editor draft; commit it before the freeze, since
+        // Library mutations are rejected once the import starts.
+        commitLibraryDrafts?()
+
         isImporting = true
         importState = .importing
-        defer { isImporting = false }
+        // Layout requests dropped while importing are replayed on every exit. The
+        // success path ends the import itself before refreshing.
+        defer {
+            if isImporting {
+                isImporting = false
+                layout()
+            }
+        }
 
         do {
-            // The Library keeps its own editor draft; commit it before the barrier just
-            // as the quit path does. Overlay drafts are committed in the same step.
-            commitLibraryDrafts?()
+            // Overlay drafts are committed in the same step as the quit path, then the
+            // editors are frozen: layout() cannot refresh them while importing.
             _ = commitDrafts(force: true)
+            for controller in windows.values { controller.model.isEditable = false }
 
             let barrier = store.saveRequest()
             _ = try await barrier.flush()
@@ -387,6 +398,7 @@ final class NotesController {
             quit.noteMutation(generation: store.mutationGeneration)
             _ = currentSaveRequest()
             autosave.schedule()
+            isImporting = false
             layout()
             notifyLibraryChange()
             onStatusChange?()

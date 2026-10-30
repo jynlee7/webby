@@ -350,4 +350,65 @@ private func makeController(_ store: NoteStore) -> NotesController {
         #expect(store.notes.contains(where: { $0.id == added.id }))
         #expect(store.note(id: existing.id)?.text == "existing")
     }
+
+    @Test func overlaysAreFrozenDuringAnImportAndTheLayoutReplaysAfterIt() async throws {
+        let directory = try makeTempDirectory()
+        defer { removeTempDirectory(directory) }
+        let url = directory.appendingPathComponent("notes.json")
+        let candidateStarted = AsyncSignal()
+        let releaseCandidate = BlockingGate()
+        let store = NoteStore(
+            fileURL: url,
+            backupDate: { importControllerDate },
+            backupSuffix: { _ in "freeze" },
+            atomicWrite: { data, destination in
+                let directory = destination.deletingLastPathComponent()
+                if fileNames(in: directory).contains(where: { $0.hasPrefix("notes.pre-import-") }) {
+                    candidateStarted.signal()
+                    releaseCandidate.wait()
+                }
+                try data.write(to: destination, options: .atomic)
+            }
+        )
+        let bundleID = "com.example.app"
+        var existing = makeNote(text: "existing")
+        existing.anchor = .app(bundleID: bundleID)
+        #expect(store.add(existing))
+        try store.save()
+
+        let permission = AccessibilityPermission()
+        let monitor = ContextMonitor(permission: permission)
+        monitor.app = ContextMonitor.FrontApp(bundleID: bundleID, pid: 1, name: "Example")
+        let controller = NotesController(
+            store: store,
+            monitor: monitor,
+            permission: permission,
+            themes: .fallback,
+            now: { importControllerDate }
+        )
+        controller.layout()
+        let overlay = controller.overlayController(for: existing)
+        #expect(overlay.model.isEditable)
+
+        var imported = makeNote(text: "imported")
+        imported.anchor = .app(bundleID: bundleID)
+        var importingAtRefresh: [Bool] = []
+        controller.onLibraryChange = { importingAtRefresh.append(controller.isImporting) }
+        controller.onStatusChange = { importingAtRefresh.append(controller.isImporting) }
+        let plan = ImportPlan(notesToAdd: [imported], workspacesToAdd: [], workspaceUpdates: [])
+        let task = Task { try await controller.importNotes(plan) }
+
+        await candidateStarted.wait()
+        #expect(controller.isImporting)
+        #expect(!overlay.model.isEditable)
+
+        releaseCandidate.signal()
+        _ = try await task.value
+
+        #expect(importingAtRefresh == [false, false])
+        #expect(overlay.model.isEditable)
+        #expect(controller.windows[imported.id] != nil)
+        #expect(controller.windows[existing.id] != nil)
+        controller.windows.values.forEach { $0.close() }
+    }
 }
