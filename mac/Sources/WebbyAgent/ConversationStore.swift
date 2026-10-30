@@ -254,6 +254,9 @@ public struct ConversationDocument: Codable, Equatable, Sendable {
     public var createdAt: String
     public var updatedAt: String
     public var turns: [ConversationTurn]
+    /// Notes explicitly redacted after a purge. Alias retirement alone is not a
+    /// deletion: aliases also retire when a note leaves scope or is excluded.
+    public var redactedNoteIDs: Set<UUID>?
 
     public init(
         id: UUID,
@@ -263,7 +266,8 @@ public struct ConversationDocument: Codable, Equatable, Sendable {
         aliases: AgentAliasLedger = AgentAliasLedger(),
         createdAt: String,
         updatedAt: String,
-        turns: [ConversationTurn] = []
+        turns: [ConversationTurn] = [],
+        redactedNoteIDs: Set<UUID>? = nil
     ) {
         self.id = id
         self.scope = scope
@@ -273,6 +277,7 @@ public struct ConversationDocument: Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.turns = turns
+        self.redactedNoteIDs = redactedNoteIDs
     }
 
     public init(
@@ -617,11 +622,16 @@ public actor ConversationStore {
             document.aliases.retire(noteID: noteID)
             changed = true
         }
+        var tombstones = document.redactedNoteIDs ?? []
+        if tombstones.insert(noteID).inserted {
+            document.redactedNoteIDs = tombstones
+            changed = true
+        }
         return changed
     }
 
     private static func redactedNoteIDs(in document: ConversationDocument) -> Set<UUID> {
-        var ids = Set(document.aliases.entries.filter(\.retired).map(\.noteID))
+        var ids = document.redactedNoteIDs ?? []
         for turn in document.turns {
             for entry in turn.manifest.entries where entry.page == "note deleted" {
                 ids.insert(entry.noteID)

@@ -386,3 +386,17 @@ private struct InjectedWriteFailure: Error {}
     #expect(after.turns[0].citations[0].status == .deleted)
     #expect(after.aliases.entries[0].retired)
 }
+
+@Test func aliasRetirementWithoutDeletionKeepsSavedDetails() async throws {
+    let directory = temporaryDirectory()
+    let store = ConversationStore(directory: directory)
+    var document = storedDocument()
+    // A note leaving scope or being excluded retires its alias but is not deleted.
+    document.aliases.retire(noteID: agentUUID(1))
+    _ = try await store.save(document)
+
+    let loaded = try #require(await store.load(document.id))
+    #expect(loaded.turns[0].manifest.entries[0].summary == "secret summary")
+    #expect(loaded.turns[0].citations[0].snippet == "secret snippet")
+    #expect(loaded.redactedNoteIDs?.isEmpty != false)
+}
