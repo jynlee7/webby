@@ -250,6 +250,48 @@ private final class RetentionClock: @unchecked Sendable {
     #expect(freshOptional != nil)
 }
 
+@Test func retentionExpiresCorruptConversationBackups() async throws {
+    let directory = temporaryDirectory()
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let store = ConversationStore(directory: directory, clock: { now })
+    let manager = FileManager.default
+
+    // Opening a garbled conversation makes `VersionedJSONFile` rename it aside.
+    func makeBackup(_ id: UUID) async throws -> URL {
+        try Data("not json".utf8).write(to: store.fileURL(for: id))
+        _ = await store.open(id)
+        let names = try manager.contentsOfDirectory(atPath: directory.path)
+        let name = try #require(names.first {
+            $0.hasPrefix(id.uuidString.lowercased() + ".corrupt-")
+        })
+        return directory.appendingPathComponent(name)
+    }
+    let stale = try await makeBackup(agentUUID(101))
+    let recent = try await makeBackup(agentUUID(102))
+    let unrelated = directory.appendingPathComponent("notes.corrupt-1.json")
+    try Data("keep".utf8).write(to: unrelated)
+
+    let day = 86_400.0
+    try manager.setAttributes(
+        [.modificationDate: now.addingTimeInterval(-31 * day)],
+        ofItemAtPath: stale.path
+    )
+    try manager.setAttributes(
+        [.modificationDate: now.addingTimeInterval(-29 * day)],
+        ofItemAtPath: recent.path
+    )
+    try manager.setAttributes(
+        [.modificationDate: now.addingTimeInterval(-60 * day)],
+        ofItemAtPath: unrelated.path
+    )
+
+    let removed = try await store.purgeExpired(retentionDays: 30)
+    #expect(removed.isEmpty)
+    #expect(!manager.fileExists(atPath: stale.path))
+    #expect(manager.fileExists(atPath: recent.path))
+    #expect(manager.fileExists(atPath: unrelated.path))
+}
+
 @Test func conversationRedactionRetiresAliasesAndKeepsAnswerText() async throws {
     let directory = temporaryDirectory()
     let store = ConversationStore(directory: directory)

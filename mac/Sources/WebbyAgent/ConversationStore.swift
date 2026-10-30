@@ -543,7 +543,29 @@ public actor ConversationStore {
             try delete(id)
             removed.append(id)
         }
+        purgeExpiredCorruptBackups(before: cutoff)
         return removed
+    }
+
+    /// Deletes `<uuid>.corrupt-*.json` backups that `VersionedJSONFile` leaves
+    /// behind, once their last modification is older than the retention window.
+    private func purgeExpiredCorruptBackups(before cutoff: Date) {
+        let manager = FileManager.default
+        let names = (try? manager.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasSuffix(".json") {
+            guard let dot = name.firstIndex(of: "."),
+                  UUID(uuidString: String(name[..<dot])) != nil,
+                  name[dot...].hasPrefix(".corrupt-")
+            else { continue }
+            let url = directory.appendingPathComponent(name, isDirectory: false)
+            guard !Self.isSymbolicLink(url),
+                  let attributes = try? manager.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let modified = attributes[.modificationDate] as? Date,
+                  modified < cutoff
+            else { continue }
+            try? manager.removeItem(at: url)
+        }
     }
 
     /// Replaces a purged note's manifest and citation snippets with "note deleted"
