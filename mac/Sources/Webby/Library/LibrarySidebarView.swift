@@ -6,6 +6,7 @@ private enum SidebarItem: Hashable {
     case workspace(WorkspaceDestination)
     case page(LibraryPageSelection)
     case tag(String)
+    case openTabs
 }
 
 extension LibraryWorkspaceGroup: Identifiable {
@@ -64,6 +65,14 @@ struct LibrarySidebarView: View {
                 sectionRow(.all, title: "All Notes", symbol: "square.grid.2x2")
                 if model.sidebarCounts[.closedTabs, default: 0] > 0 {
                     sectionRow(.closedTabs, title: "Closed Tabs", symbol: "xmark.rectangle")
+                }
+                if !model.openTabNotes.isEmpty || model.showsOpenTabs {
+                    row(
+                        item: .openTabs,
+                        title: "Open Tabs",
+                        symbol: "rectangle.on.rectangle",
+                        count: model.openTabNotes.count
+                    )
                 }
             }
 
@@ -178,12 +187,15 @@ struct LibrarySidebarView: View {
                     model.select(page: page)
                 case let .tag(key):
                     model.select(tagKey: key)
+                case .openTabs:
+                    model.selectOpenTabs()
                 }
             }
         )
     }
 
     private var currentSelection: SidebarItem? {
+        if model.showsOpenTabs { return .openTabs }
         switch model.selectedSection {
         case .workspaces:
             if let workspace = model.selectedWorkspace {

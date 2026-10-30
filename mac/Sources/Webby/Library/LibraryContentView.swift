@@ -156,7 +156,9 @@ struct LibraryContentView: View {
 
     private var noteTable: some View {
         Group {
-            if model.visibleNotes.isEmpty {
+            if model.showsOpenTabs, model.searchText.isEmpty {
+                LibraryOpenTabsView(groups: model.openTabGroups, selection: noteSelection)
+            } else if model.visibleNotes.isEmpty {
                 ContentUnavailableView {
                     Label(
                         model.searchText.isEmpty ? "No Notes Here" : "No Search Results",

@@ -13,6 +13,9 @@ final class ChromeBridge {
     private var server: BridgeServer?
     private var eventsTask: Task<Void, Never>?
 
+    /// Called on the main actor after each event is logged.
+    var onEvent: ((BridgeEvent) -> Void)?
+
     /// True when Webby runs from a translocated location and can't register the bridge.
     private(set) var needsMoveToApplications = false
 
@@ -62,6 +65,7 @@ final class ChromeBridge {
         eventsTask = Task { [weak self] in
             for await event in events {
                 self?.log(event)
+                self?.onEvent?(event)
             }
         }
     }

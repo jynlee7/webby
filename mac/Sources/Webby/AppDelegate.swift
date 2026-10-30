@@ -5,6 +5,7 @@ import WebbyCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chromeBridge = ChromeBridge()
+    private let openTabs = OpenTabsFeed()
     private var notes: NotesController!
     private var statusMenu: StatusMenu!
     private var hotkeys: Hotkeys!
@@ -57,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
+        chromeBridge.onEvent = { [weak self] event in self?.openTabs.receive(event) }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
             statusMenu.needsMoveToApplications = true
@@ -116,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if libraryWindow == nil {
             libraryWindow = LibraryWindowController(
                 notes: notes,
+                openTabs: openTabs,
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )

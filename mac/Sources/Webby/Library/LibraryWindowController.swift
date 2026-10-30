@@ -44,6 +44,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init(
         notes: NotesController,
+        openTabs: OpenTabsFeed? = nil,
         currentAppBundleID: @escaping @MainActor () -> String?,
         enabledQueryRules: [QueryRule] = QueryRules.builtIns
     ) {
@@ -65,7 +66,8 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
                     return FileManager.default.displayName(atPath: url.path)
                 }
             },
-            enabledQueryRules: enabledQueryRules
+            enabledQueryRules: enabledQueryRules,
+            openTabs: openTabs
         )
         self.init(model: model, actions: actions)
         // An import owns the store; commit this window's editor draft before its barrier.
