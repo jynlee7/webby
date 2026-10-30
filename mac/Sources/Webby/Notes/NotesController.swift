@@ -9,6 +9,21 @@ enum LibraryDestination: Equatable, Sendable {
     case record(UUID)
 }
 
+/// The result of an applied import, for a future import UI.
+struct ImportResult: Equatable, Sendable {
+    let summary: ImportPlan.Summary
+    let backupURL: URL?
+    let generation: UInt64
+}
+
+/// The visible state of the Library import transaction. No UI renders it yet.
+enum ImportState: Equatable, Sendable {
+    case idle
+    case importing
+    case succeeded(ImportResult)
+    case failed(String)
+}
+
 /// Owns the notes: the store, the overlays for the current app, autosave with retry,
 /// trash with Undo, and the quit flush.
 ///
@@ -21,6 +36,13 @@ final class NotesController {
     static let trashRetentionPeriod: TimeInterval = 30 * 24 * 60 * 60
 
     let store: NoteStore
+    /// The latest import state, for a future import UI. Nothing renders it yet.
+    private(set) var importState: ImportState = .idle
+    /// True while a serialized import transaction owns the store.
+    private(set) var isImporting = false
+    /// Set by the retained Library window so an import can commit its editor draft
+    /// before the barrier, exactly as quit does.
+    var commitLibraryDrafts: (@MainActor () -> Void)?
     /// Called when the save or read-only status changes.
     var onStatusChange: (@MainActor () -> Void)?
     /// Called after a note or workspace mutation, never for save-status changes alone.
@@ -39,7 +61,7 @@ final class NotesController {
     private(set) lazy var quit = makeQuitCoordinator()
     private var started = false
 
-    private var windows: [UUID: NoteWindowController] = [:]
+    private(set) var windows: [UUID: NoteWindowController] = [:]
     private var toasts: [UUID: UndoToast] = [:]
     private let banner = StatusBanner()
     private var onboardingShown = false
@@ -175,7 +197,7 @@ final class NotesController {
     }
 
     private func libraryNoteForMutation(id: UUID) -> Note? {
-        guard isWritable, let note = store.note(id: id), !note.ephemeral else { return nil }
+        guard !isImporting, isWritable, let note = store.note(id: id), !note.ephemeral else { return nil }
         return note
     }
 
@@ -255,7 +277,7 @@ final class NotesController {
     /// IDs that were restored or newly trashed after the confirmation are not included.
     @discardableResult
     func emptyTrash(ids: Set<UUID>) -> Int {
-        guard isWritable else { return 0 }
+        guard isWritable, !isImporting else { return 0 }
         let draftsChanged = commitDrafts()
         let removed = store.purgeTrash(ids: ids, includingEphemeral: false)
         finishLibraryMutation(changed: removed > 0, draftsChanged: draftsChanged, relayout: removed > 0)
@@ -265,7 +287,7 @@ final class NotesController {
     /// Creates an anchorless, tabless note for the Inbox or a workspace. This does not
     /// require a current app context, unlike `newNote()`.
     func createLibraryNote(destination: LibraryDestination) -> UUID? {
-        guard isWritable else { return nil }
+        guard isWritable, !isImporting else { return nil }
 
         var newWorkspace: WorkspaceRecord?
         var workspaceOverride: UUID?
@@ -304,9 +326,94 @@ final class NotesController {
         return note.id
     }
 
+    // MARK: Import
+
+    /// Applies a validated import as one serialized transaction.
+    ///
+    /// Competing Library and overlay mutations are rejected while it runs. Drafts are
+    /// committed first, the current state is flushed, and only then is a candidate built
+    /// from the freshly captured notes/workspaces and generation. The gate creates the
+    /// pre-import backup and writes the candidate on its serial queue; memory is
+    /// published only for the exact acknowledgement. A failure leaves memory and the
+    /// existing notes file untouched, and an edit that lands before the barrier stays in
+    /// the candidate rather than being dropped.
+    @discardableResult
+    func importNotes(_ plan: ImportPlan) async throws -> ImportPlan.Summary {
+        if case .readOnly(let problem) = store.mode {
+            let error = NoteStore.StoreError.readOnly(problem)
+            importState = .failed(error.localizedDescription)
+            throw error
+        }
+        guard !isImporting else {
+            throw NoteStore.StoreError.staleImportGeneration(
+                expected: store.committedGeneration,
+                found: store.mutationGeneration
+            )
+        }
+
+        // The Library keeps its own editor draft; commit it before the freeze, since
+        // Library mutations are rejected once the import starts.
+        commitLibraryDrafts?()
+
+        isImporting = true
+        importState = .importing
+        // Layout requests dropped while importing are replayed on every exit. The
+        // success path ends the import itself before refreshing.
+        defer {
+            if isImporting {
+                isImporting = false
+                layout()
+            }
+        }
+
+        do {
+            // Overlay drafts are committed in the same step as the quit path, then the
+            // editors are frozen: layout() cannot refresh them while importing.
+            _ = commitDrafts(force: true)
+            for controller in windows.values { controller.model.isEditable = false }
+
+            let barrier = store.saveRequest()
+            _ = try await barrier.flush()
+            saveSucceeded(barrier.generation)
+
+            // Capture after the barrier so the candidate includes everything durable.
+            let request = store.prepareImport(plan)
+            let receipt = try await request.commit()
+            guard receipt.generation == request.generation,
+                  receipt.generation == store.committedGeneration,
+                  store.publishImport(receipt) else {
+                throw NoteStore.StoreError.staleImportGeneration(
+                    expected: request.generation,
+                    found: store.committedGeneration
+                )
+            }
+
+            let result = ImportResult(
+                summary: plan.summary,
+                backupURL: receipt.backupURL,
+                generation: receipt.generation
+            )
+            // Refresh quit, status and latest-save bookkeeping for the new generation.
+            saveSucceeded(receipt.generation)
+            quit.noteMutation(generation: store.mutationGeneration)
+            _ = currentSaveRequest()
+            autosave.schedule()
+            isImporting = false
+            layout()
+            notifyLibraryChange()
+            onStatusChange?()
+            importState = .succeeded(result)
+            return plan.summary
+        } catch {
+            importState = .failed(error.localizedDescription)
+            throw error
+        }
+    }
+
     // MARK: Note actions
 
     func newNote() {
+        guard !isImporting else { return }
         guard isWritable else {
             NSSound.beep()
             if let problem = readOnlyProblem { showReadOnlyBanner(problem) }
@@ -342,6 +449,7 @@ final class NotesController {
 
     /// Shows a note from the menu bar: unhides and expands it, then focuses it.
     func show(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         var changed = store.updateLayout(id: id, change: .hidden(false))
         changed = store.updateLayout(id: id, change: .collapsed(false)) || changed
@@ -351,6 +459,7 @@ final class NotesController {
     }
 
     func showAllHidden() {
+        guard !isImporting else { return }
         var changed = false
         for note in currentContextNotes().hidden {
             changed = store.updateLayout(id: note.id, change: .hidden(false)) || changed
@@ -360,6 +469,7 @@ final class NotesController {
     }
 
     private func toggleCollapsed(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         guard let note = store.note(id: id),
               store.updateLayout(id: id, change: .collapsed(!note.collapsed)) else { return }
@@ -368,6 +478,7 @@ final class NotesController {
     }
 
     private func hideHere(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         guard store.updateLayout(id: id, change: .hidden(true)) else { return }
         didMutate()
@@ -375,6 +486,7 @@ final class NotesController {
     }
 
     private func trash(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         let frame = windows[id]?.panel.frame
         guard store.trash(id: id) else { return }
@@ -389,6 +501,7 @@ final class NotesController {
     }
 
     private func undoTrash(_ id: UUID) {
+        guard !isImporting else { return }
         toasts.removeValue(forKey: id)?.close()
         guard store.restore(id: id) else { return }
         didMutate()
@@ -406,6 +519,7 @@ final class NotesController {
     }
 
     private func userLaidOut(_ id: UUID) {
+        guard !isImporting else { return }
         guard let controller = windows[id], let note = store.note(id: id) else { return }
         let panel = Geometry.topLeftRect(fromAppKit: controller.panel.frame, primaryScreenHeight: Self.primaryScreenHeight)
         let frame = OverlayPlanner.storedFrame(forPanel: panel, note: note, window: monitor.windowFrame)
@@ -417,6 +531,9 @@ final class NotesController {
 
     /// Shows the current app's notes where the planner puts them and closes the rest.
     func layout() {
+        // Importing freezes the editor surfaces; closing or re-planning overlay
+        // windows here would discard drafts that cannot be committed yet.
+        guard !isImporting else { return }
         let window = monitor.windowFrame
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) })
         let plans = OverlayPlanner.plan(
@@ -440,7 +557,7 @@ final class NotesController {
             guard let note = store.note(id: plan.noteID) else { continue }
             let controller = overlayController(for: note)
             controller.model.collapsed = plan.collapsed
-            controller.model.isEditable = isWritable
+            controller.model.isEditable = isWritable && !isImporting
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
@@ -473,8 +590,11 @@ final class NotesController {
     // MARK: Saving
 
     /// Commits drafts that differ from the store. Returns true if any did.
+    /// Competing drafts stay in their editors while an import owns the store.
     @discardableResult
-    private func commitDrafts() -> Bool {
+    private func commitDrafts(force: Bool = false) -> Bool {
+        if isImporting, !force { return false }
+        guard force || !isImporting else { return false }
         var changed = false
         for (id, controller) in windows where store.note(id: id)?.text != controller.model.text {
             changed = store.updateContent(id: id, change: .text(controller.model.text)) || changed
@@ -501,6 +621,7 @@ final class NotesController {
 
     /// Commits drafts and writes the newest state in the background.
     private func saveNow() {
+        guard !isImporting else { return }
         commitDrafts()
         guard isWritable, store.hasUnsavedChanges else { return }
         let request = currentSaveRequest()

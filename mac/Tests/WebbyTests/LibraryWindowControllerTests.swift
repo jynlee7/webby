@@ -68,7 +68,10 @@ private final class WindowCurrentApp: LibraryCurrentAppProviding {
 }
 
 @MainActor
-private func makeWindowController(_ model: LibraryModel) -> LibraryWindowController {
+private func makeWindowController(
+    _ model: LibraryModel,
+    focusDetail: @escaping @MainActor (UUID) -> Void = { _ in }
+) -> LibraryWindowController {
     let actions = LibraryAnchorActions(
         appAvailability: WindowAvailability(),
         appActivation: WindowActivation(),
@@ -80,7 +83,8 @@ private func makeWindowController(_ model: LibraryModel) -> LibraryWindowControl
     return LibraryWindowController(
         model: model,
         actions: actions,
-        presentation: { _ in }
+        presentation: { _ in },
+        focusDetail: focusDetail
     )
 }
 
@@ -155,6 +159,65 @@ private func makeWindowController(_ model: LibraryModel) -> LibraryWindowControl
         #expect(window.model === firstModel)
         #expect(window.model.notes.map(\.id) == model.notes.map(\.id))
         #expect(window.model.notes.contains { $0.id == second.id })
+    }
+
+    @Test func showNoteCommitsThePendingDraftBeforeRouting() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let note = makeNote(text: "saved")
+        #expect(store.add(note))
+
+        let controller = makeController(store)
+        let model = LibraryModel(controller: controller, clock: { fixedNow })
+        let window = makeWindowController(model)
+
+        window.draft.load(note: note)
+        window.draft.text = "typed before the link"
+
+        #expect(window.showNote(note.id))
+        #expect(store.note(id: note.id)?.text == "typed before the link")
+        #expect(window.draft.isDirty == false)
+    }
+
+    @Test func showNoteReturnsToTheListAndRequestsDetailFocus() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let note = makeNote(text: "linked")
+        #expect(store.add(note))
+
+        let controller = makeController(store)
+        let model = LibraryModel(controller: controller, clock: { fixedNow })
+        var focused: [UUID] = []
+        let window = makeWindowController(model) { focused.append($0) }
+
+        model.contentMode = .compiled
+        #expect(window.showNote(note.id))
+
+        #expect(model.contentMode == .list)
+        #expect(model.selectedNoteID == note.id)
+        #expect(model.detailFocusRequest == note.id)
+        #expect(focused == [note.id])
+    }
+
+    @Test func showNoteDoesNotRequestFocusForMissingOrEphemeralNotes() throws {
+        let directory = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let ephemeral = makeNote(text: "ephemeral", ephemeral: true)
+        #expect(store.add(ephemeral))
+
+        let controller = makeController(store)
+        let model = LibraryModel(controller: controller, clock: { fixedNow })
+        var focused: [UUID] = []
+        let window = makeWindowController(model) { focused.append($0) }
+
+        #expect(window.showNote(UUID()) == false)
+        #expect(window.showNote(ephemeral.id) == false)
+        #expect(focused.isEmpty)
+        #expect(model.detailFocusRequest == nil)
+        #expect(model.selectedNoteID == nil)
     }
 }
 

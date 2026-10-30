@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WebbyCore
 
@@ -5,16 +6,52 @@ struct LibraryContentView: View {
     let model: LibraryModel
     let actions: LibraryAnchorActions
     let draft: LibraryTextDraft
+    let exportController: ExportController
+    let importController: ImportController
     @Binding var showingNewNote: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            searchHeader
-            Divider()
-            noteTable
+            if model.contentMode == .compiled {
+                LibraryCompiledPane(model: model, draft: draft)
+            } else {
+                searchHeader
+                Divider()
+                noteTable
+            }
+
+            if let status = model.portabilityStatus {
+                Divider()
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(status)
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                Picker("View", selection: contentModeBinding) {
+                    Text("List").tag(LibraryContentMode.list)
+                    Text("Compiled").tag(LibraryContentMode.compiled)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel("Library view")
+
+                LibraryExportMenu(model: model, exportController: exportController)
+
+                Button {
+                    Task { await importController.importJSON() }
+                } label: {
+                    Label("Import JSON", systemImage: "square.and.arrow.down")
+                }
+                .disabled(!model.isWritable)
+                .accessibilityHint("Imports a Webby JSON export without changing the selected file.")
+
                 Button {
                     draft.commit(to: model)
                     showingNewNote = true
@@ -177,17 +214,26 @@ struct LibraryContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var noteSelection: Binding<UUID?> {
+    private var contentModeBinding: Binding<LibraryContentMode> {
         Binding(
-            get: { model.selectedNoteID },
+            get: { model.contentMode },
+            set: { mode in
+                // Compiled output is a snapshot, so commit before switching to it.
+                if mode == .compiled {
+                    draft.commit(to: model)
+                }
+                model.contentMode = mode
+            }
+        )
+    }
+
+    private var noteSelection: Binding<Set<UUID>> {
+        Binding(
+            get: { model.selectedNoteIDs },
             set: { newValue in
                 // Commit the current draft before the detail pane changes note.
                 draft.commit(to: model)
-                if let newValue {
-                    _ = model.selectRow(newValue)
-                } else {
-                    model.selectedNoteID = nil
-                }
+                model.setSelection(newValue)
             }
         )
     }
@@ -230,5 +276,110 @@ struct LibraryContentView: View {
         if note.excludedFromAgent { parts.append("Kept away from AI") }
         if note.trashedAt != nil { parts.append("In Trash") }
         return parts.joined(separator: ", ")
+    }
+}
+
+
+private struct LibraryCompiledPane: View {
+    let model: LibraryModel
+    let draft: LibraryTextDraft
+
+    var body: some View {
+        Group {
+            if let document = model.compiledDocument(),
+               !document.sections.isEmpty {
+                CompiledView(
+                    html: HTMLRenderer.render(document),
+                    onOpenExternalURL: { url in
+                        NSWorkspace.shared.open(url)
+                    },
+                    onOpenNote: { id in
+                        draft.commit(to: model)
+                        _ = model.revealNote(id)
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    "Nothing to Compile",
+                    systemImage: "doc.richtext",
+                    description: Text("Choose Inbox, a workspace or a page to compile its notes.")
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct LibraryExportMenu: View {
+    let model: LibraryModel
+    let exportController: ExportController
+
+    var body: some View {
+        Menu {
+            if let selection = model.workspaceExportSelection {
+                Button("Workspace as Markdown...") {
+                    exportController.run(selection: selection, format: .markdown)
+                }
+                Button("Workspace as HTML...") {
+                    exportController.run(selection: selection, format: .html)
+                }
+                Button("Workspace as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
+                Button("Workspace as JSON...") {
+                    exportController.run(selection: selection, format: .json)
+                }
+                Button("Workspace as JSON with Canonical Source URLs...") {
+                    exportController.run(
+                        selection: selection,
+                        format: .json,
+                        includeCanonicalSourceURLs: true
+                    )
+                }
+            }
+
+            if let selection = model.pageExportSelection {
+                Divider()
+                Button("Page as Markdown...") {
+                    exportController.run(selection: selection, format: .markdown)
+                }
+                Button("Page as HTML...") {
+                    exportController.run(selection: selection, format: .html)
+                }
+                Button("Page as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
+                Button("Page as JSON...") {
+                    exportController.run(selection: selection, format: .json)
+                }
+            }
+
+            if let selection = model.selectedNotesExportSelection {
+                Divider()
+                Button("Selected Notes as Markdown...") {
+                    exportController.run(selection: selection, format: .markdown)
+                }
+                Button("Selected Notes as PDF...") {
+                    exportController.runPDF(selection: selection)
+                }
+                Button("Selected Notes as JSON...") {
+                    exportController.run(selection: selection, format: .json)
+                }
+            }
+
+            Divider()
+            Button("All Notes as Markdown...") {
+                exportController.run(selection: .all, format: .markdown)
+            }
+            Button("All Notes as PDF...") {
+                exportController.runPDF(selection: .all)
+            }
+            Button("All Notes as JSON...") {
+                exportController.run(selection: .all, format: .json)
+            }
+        } label: {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+        .accessibilityHint("Exports the current workspace, page, selected notes or all notes.")
     }
 }

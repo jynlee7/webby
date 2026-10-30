@@ -5,27 +5,40 @@ import WebbyCore
 /// The one Library window. The model, actions and draft are created once, so repeated
 /// presentations show the same store and selection instead of rebuilding state.
 ///
-/// Closing the window only orders it out. The app remains a menu-bar accessory, and
-/// this controller registers no URL scheme or external link handling.
+/// Closing the window only orders it out. The app remains a menu-bar accessory; the
+/// controller owns deep-link routing through `showNote`.
 @MainActor
 final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     typealias Presentation = @MainActor (LibraryWindowController) -> Void
+    typealias DetailFocus = @MainActor (UUID) -> Void
 
     let model: LibraryModel
     let draft = LibraryTextDraft()
+    private(set) lazy var exportController = ExportController(
+        model: model,
+        commitDrafts: { [weak self] in self?.commitPendingEdits() }
+    )
+    private(set) lazy var importController = ImportController(
+        model: model,
+        notes: model.notesController,
+        commitDrafts: { [weak self] in self?.commitPendingEdits() }
+    )
 
     private let actions: LibraryAnchorActions
     private let presentation: Presentation
+    private let focusDetail: DetailFocus
     private var hostingController: NSHostingController<LibraryView>?
 
     init(
         model: LibraryModel,
         actions: LibraryAnchorActions,
-        presentation: @escaping Presentation = { $0.showLibraryWindow() }
+        presentation: @escaping Presentation = { $0.showLibraryWindow() },
+        focusDetail: @escaping DetailFocus = { _ in }
     ) {
         self.model = model
         self.actions = actions
         self.presentation = presentation
+        self.focusDetail = focusDetail
         super.init(window: nil)
     }
 
@@ -55,6 +68,8 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
             userQueryRules: userQueryRules
         )
         self.init(model: model, actions: actions)
+        // An import owns the store; commit this window's editor draft before its barrier.
+        notes.commitLibraryDrafts = { [weak self] in self?.commitPendingEdits() }
     }
 
     @available(*, unavailable)
@@ -80,7 +95,14 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
 
     @discardableResult
     func showNote(_ id: UUID) -> Bool {
+        // Route against the committed text, not a draft that a later save would drop.
+        commitPendingEdits()
         guard model.revealNote(id) else { return false }
+
+        // A link always lands in List mode with its detail ready to read or edit.
+        model.contentMode = .list
+        model.requestDetailFocus(id)
+        focusDetail(id)
         present()
         return true
     }
@@ -101,7 +123,13 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
         guard window == nil else { return }
 
         let hosting = NSHostingController(
-            rootView: LibraryView(model: model, actions: actions, draft: draft)
+            rootView: LibraryView(
+                model: model,
+                actions: actions,
+                draft: draft,
+                exportController: exportController,
+                importController: importController
+            )
         )
         hosting.sizingOptions = []
 

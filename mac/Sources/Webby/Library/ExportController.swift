@@ -1,0 +1,476 @@
+import AppKit
+import Foundation
+import WebbyCore
+
+/// Runs the Export menu's save-panel flow and builds deterministic export data.
+///
+/// The controller commits the retained editor drafts before it takes its snapshot.
+/// It never writes through the panel directly; writes go to a temporary sibling and
+/// only replace the destination after the panel (or the injected confirmation) has
+/// accepted an overwrite.
+@MainActor
+final class ExportController {
+    enum Format: String, CaseIterable, Equatable, Sendable {
+        case markdown
+        case html
+        case json
+
+        var fileExtension: String {
+            switch self {
+            case .markdown: return "md"
+            case .html: return "html"
+            case .json: return "json"
+            }
+        }
+    }
+
+    enum ExportError: LocalizedError, Equatable {
+        case destinationExists(URL)
+
+        var errorDescription: String? {
+            switch self {
+            case .destinationExists(let url):
+                return "A file already exists at \(url.path)."
+            }
+        }
+    }
+
+    enum PDFExportError: LocalizedError, Equatable {
+        case rendererUnavailable
+        case invalidPDF
+
+        var errorDescription: String? {
+            switch self {
+            case .rendererUnavailable:
+                return "PDF export is not available in this build."
+            case .invalidPDF:
+                return "The PDF renderer did not produce a PDF file."
+            }
+        }
+    }
+
+    struct Document: Equatable {
+        let data: Data
+        let filename: String
+        let format: Format
+    }
+
+    struct PDFDocument: Equatable {
+        let html: String
+        let filename: String
+    }
+
+    typealias SnapshotProvider = @MainActor () -> LibraryModel.ExportSnapshot
+    typealias SavePanelProvider = @MainActor (String, Format) -> URL?
+    typealias PDFSavePanelProvider = @MainActor (String) -> URL?
+    typealias PDFRenderer = @MainActor (String, URL) async throws -> Void
+    typealias Writer = @MainActor (Data, URL, Bool) throws -> Void
+    typealias OverwriteConfirmation = @MainActor (URL) -> Bool
+
+    private let model: LibraryModel
+    private let commitDrafts: @MainActor () -> Void
+    private let snapshot: SnapshotProvider
+    private let savePanel: SavePanelProvider
+    private let pdfSavePanel: PDFSavePanelProvider
+    private let pdfRenderer: PDFRenderer?
+    private let writer: Writer
+    private let confirmOverwrite: OverwriteConfirmation
+
+    init(
+        model: LibraryModel,
+        commitDrafts: @escaping @MainActor () -> Void = {},
+        snapshot: SnapshotProvider? = nil,
+        savePanel: @escaping SavePanelProvider = ExportController.presentSavePanel,
+        pdfSavePanel: @escaping PDFSavePanelProvider = ExportController.presentPDFSavePanel,
+        pdfRenderer: PDFRenderer? = CompiledPDFRenderer.render,
+        writer: @escaping Writer = ExportController.writeAtomically,
+        confirmOverwrite: @escaping OverwriteConfirmation = { _ in true }
+    ) {
+        self.model = model
+        self.commitDrafts = commitDrafts
+        self.snapshot = snapshot ?? { model.exportSnapshot() }
+        self.savePanel = savePanel
+        self.pdfSavePanel = pdfSavePanel
+        self.pdfRenderer = pdfRenderer
+        self.writer = writer
+        self.confirmOverwrite = confirmOverwrite
+    }
+
+    /// Builds the file contents and deterministic name. Drafts are committed before
+    /// the snapshot so the export includes text that is still in the editor.
+    func makeDocument(
+        selection: LibraryExportSelection,
+        format: Format,
+        includeCanonicalSourceURLs: Bool = false
+    ) throws -> Document {
+        commitDrafts()
+        let snapshot = snapshot()
+
+        switch format {
+        case .json:
+            let jsonSelection: ExportJSONOptions.Selection
+            switch selection {
+            case .workspace(let destination):
+                jsonSelection = .workspace(destination)
+            case .all:
+                jsonSelection = .all
+            case .selected(let ids):
+                jsonSelection = .notes(ids)
+            case .page:
+                jsonSelection = .notes(Set(notes(for: selection, snapshot: snapshot).map(\.id)))
+            }
+
+            let data = try ExportJSON.encode(
+                notes: snapshot.notes,
+                workspaces: snapshot.workspaces,
+                options: ExportJSONOptions(
+                    includeCanonicalSourceURLs: includeCanonicalSourceURLs,
+                    selection: jsonSelection
+                ),
+                queryRules: snapshot.queryRules
+            )
+            return Document(
+                data: data,
+                filename: filename(for: selection, format: format, snapshot: snapshot),
+                format: format
+            )
+
+        case .markdown, .html:
+            let document = compiledDocument(for: selection, snapshot: snapshot)
+            let rendered: String
+            switch format {
+            case .markdown:
+                rendered = MarkdownRenderer.render(document)
+            case .html:
+                rendered = HTMLRenderer.render(document)
+            case .json:
+                preconditionFailure("Handled above")
+            }
+            return Document(
+                data: Data(rendered.utf8),
+                filename: filename(for: selection, format: format, snapshot: snapshot),
+                format: format
+            )
+        }
+    }
+
+    /// Shows the save panel and writes the document. Read-only stores are allowed;
+    /// export is a pure read of the Library snapshot.
+    @discardableResult
+    func export(
+        selection: LibraryExportSelection,
+        format: Format,
+        includeCanonicalSourceURLs: Bool = false
+    ) throws -> URL? {
+        model.importStatus = nil
+        let document = try makeDocument(
+            selection: selection,
+            format: format,
+            includeCanonicalSourceURLs: includeCanonicalSourceURLs
+        )
+        guard let url = savePanel(document.filename, format) else { return nil }
+
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        if exists && !confirmOverwrite(url) {
+            return nil
+        }
+
+        try writer(document.data, url, exists)
+        model.exportStatus = "Exported \(document.filename)"
+        return url
+    }
+
+    /// UI entry point that reports failures without throwing into SwiftUI.
+    func run(
+        selection: LibraryExportSelection,
+        format: Format,
+        includeCanonicalSourceURLs: Bool = false
+    ) {
+        do {
+            _ = try export(
+                selection: selection,
+                format: format,
+                includeCanonicalSourceURLs: includeCanonicalSourceURLs
+            )
+        } catch {
+            Self.present(error: error)
+        }
+    }
+
+    /// Builds the locked-down HTML and deterministic `.pdf` name. Drafts are
+    /// committed before the snapshot, like every other export.
+    func makePDFDocument(selection: LibraryExportSelection) throws -> PDFDocument {
+        commitDrafts()
+        let snapshot = snapshot()
+        let document = compiledDocument(for: selection, snapshot: snapshot)
+        return PDFDocument(
+            html: HTMLRenderer.render(document),
+            filename: "\(filenameBase(for: selection, snapshot: snapshot)).pdf"
+        )
+    }
+
+    /// Renders through the injected WebKit seam into a sibling temporary `.pdf`, then
+    /// writes that file through the existing atomic writer after the save panel.
+    @discardableResult
+    func exportPDF(selection: LibraryExportSelection) async throws -> URL? {
+        let document = try makePDFDocument(selection: selection)
+        guard let pdfRenderer else { throw PDFExportError.rendererUnavailable }
+        guard let url = pdfSavePanel(document.filename) else { return nil }
+
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        if exists && !confirmOverwrite(url) {
+            return nil
+        }
+
+        let directory = url.deletingLastPathComponent()
+        let temporary = directory.appendingPathComponent(
+            ".\(url.deletingPathExtension().lastPathComponent).\(UUID().uuidString).pdf"
+        )
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        try await pdfRenderer(document.html, temporary)
+        let data = try Data(contentsOf: temporary)
+        guard data.starts(with: Data("%PDF".utf8)) else {
+            throw PDFExportError.invalidPDF
+        }
+
+        try writer(data, url, exists)
+        model.exportStatus = "Exported \(document.filename)"
+        return url
+    }
+
+    /// Async UI entry point for the menu.
+    func runPDF(selection: LibraryExportSelection) {
+        Task { @MainActor in
+            do {
+                _ = try await exportPDF(selection: selection)
+            } catch {
+                Self.present(error: error)
+            }
+        }
+    }
+
+    static func presentSavePanel(filename: String, format: Format) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowsOtherFileTypes = false
+        panel.allowedFileTypes = [format.fileExtension]
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    static func presentPDFSavePanel(filename: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowsOtherFileTypes = false
+        panel.allowedFileTypes = ["pdf"]
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Writes a temporary sibling and moves it into place. When `allowOverwrite` is
+    /// false, an existing file is an error instead of a silent replacement.
+    static func writeAtomically(_ data: Data, to url: URL, allowOverwrite: Bool) throws {
+        let manager = FileManager.default
+        let exists = manager.fileExists(atPath: url.path)
+        if exists && !allowOverwrite {
+            throw ExportError.destinationExists(url)
+        }
+
+        let directory = url.deletingLastPathComponent()
+        let temporary = directory.appendingPathComponent(
+            ".\(url.lastPathComponent).\(UUID().uuidString).tmp"
+        )
+
+        do {
+            try data.write(to: temporary, options: .atomic)
+            if exists {
+                _ = try manager.replaceItemAt(url, withItemAt: temporary)
+            } else {
+                try manager.moveItem(at: temporary, to: url)
+            }
+        } catch {
+            try? manager.removeItem(at: temporary)
+            throw error
+        }
+    }
+
+    static func present(error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Export Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
+    // MARK: - Content
+
+    private func notes(
+        for selection: LibraryExportSelection,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> [Note] {
+        let durable = snapshot.notes.filter { !$0.ephemeral }
+
+        switch selection {
+        case .workspace(let destination):
+            return durable.filter {
+                LibraryEligibility.isOrdinary($0)
+                    && WorkspaceResolver.resolve($0, workspaces: snapshot.workspaces) == destination
+            }
+
+        case .page(let destination, let page):
+            let document = CompiledDocument.page(
+                page,
+                destination: destination,
+                notes: snapshot.notes,
+                workspaces: snapshot.workspaces,
+                queryRules: snapshot.queryRules
+            )
+            let ids = Set(document.sections.flatMap { $0.notes.map(\.id) })
+            return durable.filter { ids.contains($0.id) }
+
+        case .all:
+            return durable.filter(LibraryEligibility.isOrdinary)
+
+        case .selected(let ids):
+            return durable.filter { ids.contains($0.id) }
+        }
+    }
+
+    private func compiledDocument(
+        for selection: LibraryExportSelection,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> CompiledDocument {
+        switch selection {
+        case .workspace(let destination):
+            return CompiledDocument.workspace(
+                destination: destination,
+                notes: snapshot.notes,
+                workspaces: snapshot.workspaces,
+                queryRules: snapshot.queryRules
+            )
+
+        case .page(let destination, let page):
+            return CompiledDocument.page(
+                page,
+                destination: destination,
+                notes: snapshot.notes,
+                workspaces: snapshot.workspaces,
+                queryRules: snapshot.queryRules
+            )
+
+        case .all:
+            return selectedDocument(
+                title: "All Notes",
+                notes: notes(for: selection, snapshot: snapshot),
+                snapshot: snapshot
+            )
+
+        case .selected:
+            return selectedDocument(
+                title: "Selected Notes",
+                notes: notes(for: selection, snapshot: snapshot),
+                snapshot: snapshot
+            )
+        }
+    }
+
+    private func selectedDocument(
+        title: String,
+        notes: [Note],
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> CompiledDocument {
+        let section = CompiledSection(
+            kind: .workspaceNotes,
+            heading: title,
+            notes: CompiledDocument.compiledNotes(notes, queryRules: snapshot.queryRules)
+        )
+        return CompiledDocument(
+            scope: .workspace(.inbox),
+            title: title,
+            sections: [section]
+        )
+    }
+
+    // MARK: - Filenames
+
+    private func filename(
+        for selection: LibraryExportSelection,
+        format: Format,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> String {
+        "\(filenameBase(for: selection, snapshot: snapshot)).\(format.fileExtension)"
+    }
+
+    private func filenameBase(
+        for selection: LibraryExportSelection,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> String {
+        let base: String
+        switch selection {
+        case .workspace(let destination):
+            base = Self.slug(workspaceName(for: destination, snapshot: snapshot)) + "-workspace"
+        case .page(_, let page):
+            base = Self.slug(page.host + page.path) + "-page"
+        case .all:
+            base = "all-notes"
+        case .selected:
+            base = "selected-notes"
+        }
+        return "webby-\(base)"
+    }
+
+    private func workspaceName(
+        for destination: WorkspaceDestination,
+        snapshot: LibraryModel.ExportSnapshot
+    ) -> String {
+        switch destination {
+        case .inbox:
+            return "inbox"
+        case .implicit(let key):
+            return key.displayName
+        case .record(let id):
+            guard let record = snapshot.workspaces.first(where: { $0.id == id }) else {
+                return "workspace"
+            }
+            if let title = record.title?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+               !title.isEmpty {
+                return title
+            }
+            if let key = record.keys.map(\.displayName).min() {
+                return key
+            }
+            return "workspace"
+        }
+    }
+
+    private static func slug(_ text: String) -> String {
+        let folded = text.precomposedStringWithCanonicalMapping.lowercased()
+        var output = ""
+        var lastWasSeparator = true
+
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                output.unicodeScalars.append(scalar)
+                lastWasSeparator = false
+            } else if !lastWasSeparator {
+                output.append("-")
+                lastWasSeparator = true
+            }
+        }
+
+        while output.hasSuffix("-") {
+            output.removeLast()
+        }
+        if output.count > 60 {
+            output = String(output.prefix(60))
+            while output.hasSuffix("-") {
+                output.removeLast()
+            }
+        }
+        return output.isEmpty ? "notes" : output
+    }
+}

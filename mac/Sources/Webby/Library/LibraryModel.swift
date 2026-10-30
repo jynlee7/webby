@@ -2,6 +2,21 @@ import Foundation
 import Observation
 import WebbyCore
 
+/// How the Library content column presents notes.
+enum LibraryContentMode: String, CaseIterable, Equatable, Sendable {
+    case list
+    case compiled
+}
+
+/// A validated, immutable export scope. Page and workspace scopes never depend on
+/// the current search result; selected notes are the explicit exception.
+enum LibraryExportSelection: Equatable, Sendable {
+    case workspace(WorkspaceDestination)
+    case page(WorkspaceDestination, PageURL)
+    case all
+    case selected(Set<UUID>)
+}
+
 /// Which part of a workspace's page tree the note list shows.
 enum LibraryPageSelection: Hashable, Sendable {
     case all
@@ -58,6 +73,14 @@ final class LibraryModel {
     var selectedPage: LibraryPageSelection
     var selectedTagKey: String?
     var selectedNoteID: UUID?
+    /// The table's multi-selection. Repaired on every refresh so it never keeps a
+    /// trashed, purged, ephemeral or filtered-out note.
+    var selectedNoteIDs: Set<UUID> = []
+    /// Set when a deep link routes to a note, so the detail editor can take focus.
+    private(set) var detailFocusRequest: UUID?
+    var contentMode: LibraryContentMode = .list
+    var exportStatus: String?
+    var importStatus: String?
     private(set) var pendingEmptyTrash: EmptyTrashConfirmation?
 
     /// The number of full cache rebuilds since creation. Tests use this to prove a
@@ -146,7 +169,13 @@ final class LibraryModel {
 
     /// Read-only browsing stays available; mutations and Trash actions do not.
     var isWritable: Bool { controller.isWritable }
+    var isImporting: Bool { controller.isImporting }
     var readOnlyProblem: String? { controller.readOnlyProblem }
+
+    /// The footer shows whichever operation started or finished most recently.
+    var portabilityStatus: String? {
+        importStatus ?? exportStatus
+    }
 
     var libraryResult: LibraryResult { result }
     var sidebarCounts: [LibrarySection: Int] { result.counts }
@@ -171,6 +200,115 @@ final class LibraryModel {
     var selectedNote: Note? {
         guard let id = selectedNoteID else { return nil }
         return controller.libraryNotes.first { $0.id == id && !$0.ephemeral }
+    }
+
+    /// The detail pane focuses the existing single-note selection. Multi-selection
+    /// never replaces it unless the focused row disappears.
+    var focusedNoteID: UUID? { selectedNoteID }
+
+    /// Requests focus for the detail editor after a deep link selects its note.
+    func requestDetailFocus(_ id: UUID) {
+        detailFocusRequest = id
+    }
+
+    /// Consumes a matching focus request. The detail view calls this once it has
+    /// loaded the routed note.
+    func consumeDetailFocus(_ id: UUID) -> Bool {
+        guard detailFocusRequest == id else { return false }
+        detailFocusRequest = nil
+        return true
+    }
+
+    /// The store owner, exposed only so the app-level import controller can plan
+    /// against the same live snapshot the Library shows.
+    var notesController: NotesController { controller }
+
+    struct ExportSnapshot: Equatable, Sendable {
+        let notes: [Note]
+        let workspaces: [WorkspaceRecord]
+        let queryRules: [QueryRule]
+    }
+
+    /// A side-effect-free snapshot for export and import planning. Callers commit
+    /// editor drafts first.
+    func exportSnapshot() -> ExportSnapshot {
+        ExportSnapshot(
+            notes: controller.libraryNotes,
+            workspaces: controller.libraryWorkspaces,
+            queryRules: effectiveQueryRules
+        )
+    }
+
+    /// The explicit scope for a workspace export, when one is selected.
+    var workspaceExportSelection: LibraryExportSelection? {
+        if selectedSection == .inbox {
+            return .workspace(.inbox)
+        }
+        guard selectedSection == .workspaces, let selectedWorkspace else { return nil }
+        return .workspace(selectedWorkspace)
+    }
+
+    /// The explicit scope for a page export, only when the current sidebar row is a page.
+    var pageExportSelection: LibraryExportSelection? {
+        guard selectedSection == .workspaces,
+              let selectedWorkspace,
+              case .page(let page) = selectedPage
+        else { return nil }
+        return .page(selectedWorkspace, page)
+    }
+
+    /// Explicit row selection, intersected with what is currently visible.
+    var selectedNotesExportSelection: LibraryExportSelection? {
+        let ids = selectedNoteIDs.intersection(Set(visibleNotes.map(\.id)))
+        return ids.isEmpty ? nil : .selected(ids)
+    }
+
+    /// The most specific export scope: an explicit row selection first, then a page,
+    /// then a workspace, then all notes.
+    var exportSelection: LibraryExportSelection {
+        if let selection = selectedNotesExportSelection { return selection }
+        if let selection = pageExportSelection { return selection }
+        if let selection = workspaceExportSelection { return selection }
+        return .all
+    }
+
+    /// Builds the compiled view from the explicit sidebar scope. Search results are
+    /// deliberately ignored, so a query never changes what the compiled pane shows.
+    func compiledDocument() -> CompiledDocument? {
+        _ = result
+        let notes = controller.libraryNotes
+        let workspaces = controller.libraryWorkspaces
+        let rules = effectiveQueryRules
+
+        if selectedSection == .inbox {
+            return CompiledDocument.workspace(
+                destination: .inbox,
+                notes: notes,
+                workspaces: workspaces,
+                queryRules: rules
+            )
+        }
+
+        guard selectedSection == .workspaces, let destination = selectedWorkspace else {
+            return nil
+        }
+
+        if case .page(let page) = selectedPage {
+            return CompiledDocument.page(
+                page,
+                destination: destination,
+                notes: notes,
+                workspaces: workspaces,
+                queryRules: rules
+            )
+        }
+
+        return CompiledDocument.workspace(
+            destination: destination,
+            notes: notes,
+            workspaces: workspaces,
+            queryRules: rules
+        )
     }
 
     var pageTree: PageTree? {
@@ -474,20 +612,65 @@ final class LibraryModel {
         }
 
         selectedNoteID = id
+        selectedNoteIDs = [id]
         repairSelection()
         return selectedNoteID == id
     }
 
     /// Ordinary table row selection: changes only the detail selection, so the sidebar
-    /// context and the rest of the rows stay put.
+    /// context and the rest of the rows stay put. A plain row click collapses the
+    /// multi-selection to that note; command-click uses `toggleSelection`.
     @discardableResult
     func selectRow(_ id: UUID) -> Bool {
         guard let note = controller.libraryNotes.first(where: { $0.id == id }), !note.ephemeral else {
             return false
         }
         selectedNoteID = id
+        selectedNoteIDs = [id]
         repairSelection()
         return selectedNoteID == id
+    }
+
+    /// Replaces the table's multi-selection with visible, durable notes only. The
+    /// detail selection stays on the current row when it is still selected, else it
+    /// moves to the first selected ID.
+    func setSelection(_ ids: Set<UUID>) {
+        let visible = Set(visibleNotes.map(\.id))
+        selectedNoteIDs = ids.intersection(visible)
+        if let current = selectedNoteID, selectedNoteIDs.contains(current) {
+            // Keep the focused row.
+        } else {
+            selectedNoteID = selectedNoteIDs
+                .min { $0.uuidString.lowercased() < $1.uuidString.lowercased() }
+        }
+        repairSelection()
+    }
+
+    /// Toggles one visible row for a multi-selection. Returns whether it is selected.
+    @discardableResult
+    func toggleSelection(_ id: UUID) -> Bool {
+        let visible = Set(visibleNotes.map(\.id))
+        guard visible.contains(id),
+              controller.libraryNotes.contains(where: { $0.id == id && !$0.ephemeral })
+        else { return false }
+
+        if selectedNoteIDs.contains(id) {
+            selectedNoteIDs.remove(id)
+            if selectedNoteID == id {
+                selectedNoteID = selectedNoteIDs
+                    .min { $0.uuidString.lowercased() < $1.uuidString.lowercased() }
+            }
+        } else {
+            selectedNoteIDs.insert(id)
+            selectedNoteID = id
+        }
+        repairSelection()
+        return selectedNoteIDs.contains(id)
+    }
+
+    func clearSelection() {
+        selectedNoteID = nil
+        selectedNoteIDs.removeAll()
     }
 
     /// Explicit reveal: clears a stale query, then navigates. Missing and ephemeral IDs
@@ -536,9 +719,17 @@ final class LibraryModel {
             selectedPage = .all
         }
 
-        if let id = selectedNoteID,
-           !visibleNotes.contains(where: { $0.id == id }) {
+        let visibleIDs = Set(visibleNotes.map(\.id))
+        if let id = selectedNoteID, !visibleIDs.contains(id) {
             selectedNoteID = nil
+        }
+
+        // Multi-selection follows the same repair rule as the detail selection, and
+        // never keeps an ephemeral ID even when a caller supplied one directly.
+        let durableIDs = Set(controller.libraryNotes.filter { !$0.ephemeral }.map(\.id))
+        selectedNoteIDs = selectedNoteIDs.intersection(visibleIDs).intersection(durableIDs)
+        if let id = selectedNoteID {
+            selectedNoteIDs.insert(id)
         }
     }
 
@@ -590,9 +781,14 @@ final class LibraryModel {
 
     // MARK: Mutations
 
-    func updateText(id: UUID, text: String) {
+    /// Returns false when the change was rejected, such as during an import.
+    @discardableResult
+    func updateText(id: UUID, text: String) -> Bool {
+        guard !controller.isImporting, controller.isWritable else { return false }
+        let before = controller.libraryNotes.first { $0.id == id }?.text
         controller.updateLibraryText(id: id, text: text)
         refresh()
+        return controller.libraryNotes.first { $0.id == id }?.text != before
     }
 
     func attach(id: UUID, anchor: Anchor?, workspace: UUID?) {

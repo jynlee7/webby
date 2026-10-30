@@ -1,3 +1,4 @@
+import AppKit
 import Observation
 import SwiftUI
 import WebbyCore
@@ -33,8 +34,8 @@ final class LibraryTextDraft {
         guard isDirty else { return }
 
         let value = text
+        guard model.updateText(id: noteID, text: value) else { return }
         committedText = value
-        model.updateText(id: noteID, text: value)
     }
 
     func scheduleCommit(to model: LibraryModel) {
@@ -46,6 +47,27 @@ final class LibraryTextDraft {
             guard !Task.isCancelled, let self else { return }
             self.commit(to: model)
         }
+    }
+}
+
+/// Copy-link helper used by the detail header and by tests. Trashed notes can still
+/// copy their stable link because routing reveals them read-only in Trash. Ephemeral
+/// notes have no durable Library link and are never copied.
+enum LibraryNoteLink {
+    static func urlString(for note: Note) -> String {
+        NoteLink.url(for: note.id)
+    }
+
+    static func canCopy(_ note: Note) -> Bool {
+        !note.ephemeral
+    }
+
+    @discardableResult
+    @MainActor
+    static func copy(_ note: Note, to pasteboard: NSPasteboard = .general) -> Bool {
+        guard canCopy(note) else { return false }
+        pasteboard.clearContents()
+        return pasteboard.setString(urlString(for: note), forType: .string)
     }
 }
 
@@ -222,8 +244,13 @@ private struct NoteDetailContent: View {
     }
 
     private var isTrashed: Bool { note.trashedAt != nil }
-    private var canEdit: Bool { model.isWritable && !isTrashed }
+    private var canEdit: Bool { model.isWritable && !isTrashed && !model.isImporting }
     private var tags: [LibraryTag] { Tags.parse(note.text) }
+
+    private func focusIfRouted() {
+        guard model.consumeDetailFocus(note.id) else { return }
+        editorFocused = true
+    }
 
     var body: some View {
         ScrollView {
@@ -242,6 +269,10 @@ private struct NoteDetailContent: View {
                 draft.load(note: note)
             }
             loadAnchorFields()
+            focusIfRouted()
+        }
+        .onChange(of: model.detailFocusRequest) { _, _ in
+            focusIfRouted()
         }
         .onChange(of: note.anchor) { _, _ in
             // Attach or an external edit replaced the saved anchor; the editor must
@@ -276,6 +307,16 @@ private struct NoteDetailContent: View {
                 if isTrashed {
                     statusChip("In Trash", systemImage: "trash")
                 }
+
+                Button {
+                    LibraryNoteLink.copy(note)
+                } label: {
+                    Label(isTrashed ? "Copy Link (Trashed)" : "Copy Link", systemImage: "link")
+                }
+                .disabled(!LibraryNoteLink.canCopy(note))
+                .accessibilityHint(isTrashed
+                    ? "Copies a link that opens this note read-only in Trash."
+                    : "Copies a link that opens this note in the Library.")
             }
 
             if !tags.isEmpty {
