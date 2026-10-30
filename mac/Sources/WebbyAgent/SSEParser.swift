@@ -56,10 +56,17 @@ public struct SSEParser: Sendable {
     }
 
     public mutating func feed(_ data: Data) throws -> [SSEEvent] {
+        var events: [SSEEvent] = []
+        try feed(data, into: &events)
+        return events
+    }
+
+    /// Appends every event parsed before a failure, so callers can still surface
+    /// partial output from the same chunk.
+    public mutating func feed(_ data: Data, into events: inout [SSEEvent]) throws {
         guard !finished else { return [] }
         lineBuffer.append(data)
 
-        var events: [SSEEvent] = []
         var pending = lineBuffer
         lineBuffer.removeAll(keepingCapacity: true)
 
@@ -82,7 +89,6 @@ public struct SSEParser: Sendable {
             lineBuffer = Data(remainder)
         }
 
-        return events
     }
 
     /// Flushes a final complete-looking line and any pending event at EOF.

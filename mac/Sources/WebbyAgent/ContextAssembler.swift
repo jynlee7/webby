@@ -260,6 +260,8 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
     public let retiredAliases: Set<String>
     public let authorizationFingerprint: String
     public let maxReads: Int
+    /// Upper bound for one read_note result, so the tool cannot bypass the budget.
+    public let maxReadCharacters: Int
 
     public var authorizedNoteIDs: Set<UUID> {
         Set(notesByAlias.values.map(\.note.id))
@@ -270,13 +272,15 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
         orderedAliases: [String],
         retiredAliases: Set<String>,
         authorizationFingerprint: String,
-        maxReads: Int = AgentTurnSnapshot.defaultMaxReads
+        maxReads: Int = AgentTurnSnapshot.defaultMaxReads,
+        maxReadCharacters: Int = 80_000
     ) {
         self.notesByAlias = notesByAlias
         self.orderedAliases = orderedAliases
         self.retiredAliases = retiredAliases
         self.authorizationFingerprint = authorizationFingerprint
         self.maxReads = maxReads
+        self.maxReadCharacters = maxReadCharacters
     }
 
     public func authorizedNote(for alias: String) -> AuthorizedNote? {
@@ -290,7 +294,16 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
             guard readsUsed < maxReads else {
                 return AgentReadNoteResult(alias: alias, failure: .readLimitReached)
             }
-            return AgentReadNoteResult(alias: alias, content: note.note.text)
+            let content = note.note.text
+            guard content.count > maxReadCharacters else {
+                return AgentReadNoteResult(alias: alias, content: content)
+            }
+            let truncation = TokenEstimator.truncate(
+                content,
+                maxCharacters: maxReadCharacters,
+                alias: alias
+            )
+            return AgentReadNoteResult(alias: alias, content: truncation.text)
         }
         if retiredAliases.contains(alias) {
             return AgentReadNoteResult(alias: alias, failure: .retiredAlias)
@@ -410,6 +423,10 @@ public enum ContextAssembler {
             authorizationFingerprint: snapshot.authorizationFingerprint(
                 scope: conversation.scope,
                 context: startContext
+            ),
+            maxReadCharacters: Int(
+                Double(max(1, conversation.configuration.notesBudget))
+                    * TokenEstimator.charsPerToken
             )
         )
 
@@ -703,9 +720,9 @@ public enum ContextAssembler {
         let summary = note.summaryLine(limit: 40) ?? "(empty note)"
         let line = ContextManifest.line(
             alias: alias,
-            summary: summary.replacingOccurrences(of: "\n", with: " "),
-            page: page,
-            updated: updated
+            summary: escapeText(summary.replacingOccurrences(of: "\n", with: " ")),
+            page: escapeText(page),
+            updated: escapeText(updated)
         )
         return PackedNote(
             note: note,

@@ -50,6 +50,7 @@ public enum ClaudeConversationError: Error, Equatable, Sendable, CustomStringCon
     case unsupportedTool(name: String)
     case unknownStopReason(reason: String, partialAnswer: String)
     case missingStopReason(partialAnswer: String)
+    case missingToolBlocks(partialAnswer: String)
 
     public var description: String {
         switch self {
@@ -63,6 +64,8 @@ public enum ClaudeConversationError: Error, Equatable, Sendable, CustomStringCon
             return "The model called an unsupported tool: \(name)."
         case let .unknownStopReason(reason, _):
             return "Claude returned an unknown stop reason: \(reason)."
+        case .missingToolBlocks(_):
+            return "Claude stopped for a tool continuation without any content blocks."
         case .missingStopReason:
             return "Claude stopped without a stop reason."
         }
@@ -171,7 +174,6 @@ public struct ClaudeConversationRunner: Sendable {
             }
 
             if stopReason == .toolUse {
-                pausedText = ""
                 guard toolRounds < maxToolRounds else {
                     throw ClaudeConversationError.toolRoundLimitExceeded
                 }
@@ -183,6 +185,11 @@ public struct ClaudeConversationRunner: Sendable {
                     session: &session,
                     readAliases: &readAliases
                 )
+                guard !results.isEmpty else {
+                    throw ClaudeConversationError.missingToolBlocks(
+                        partialAnswer: answerText
+                    )
+                }
                 request = try request.appendingToolRound(
                     assistant: completion,
                     toolResults: results
@@ -192,6 +199,14 @@ public struct ClaudeConversationRunner: Sendable {
             }
 
             if stopReason == .pauseTurn {
+                guard completion.blocks.contains(where: { block in
+                    if case .unknown = block { return false }
+                    return true
+                }) else {
+                    throw ClaudeConversationError.missingToolBlocks(
+                        partialAnswer: answerText
+                    )
+                }
                 guard toolRounds < maxToolRounds else {
                     throw ClaudeConversationError.toolRoundLimitExceeded
                 }

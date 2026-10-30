@@ -52,7 +52,16 @@ public struct ClaudeClient: Sendable {
                 do {
                     streamLoop: for try await chunk in transportStream {
                         try Task.checkCancellation()
-                        for event in try parser.feed(chunk) {
+                        var chunkEvents: [SSEEvent] = []
+        do {
+            try parser.feed(chunk, into: &chunkEvents)
+        } catch {
+            for event in chunkEvents {
+                try Self.handle(event, state: &state, continuation: continuation)
+            }
+            throw error
+        }
+                    for event in chunkEvents {
                             try Self.handle(event, state: &state, continuation: continuation)
                             if state.finished {
                                 break streamLoop

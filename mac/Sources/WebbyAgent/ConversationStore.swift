@@ -448,7 +448,10 @@ public actor ConversationStore {
 
     /// Saves one document with a fresh clock timestamp and returns the stored value.
     @discardableResult
-    public func save(_ document: ConversationDocument) throws -> ConversationDocument {
+    public func save(
+        _ document: ConversationDocument,
+        preserveUpdatedAt: Bool = false
+    ) throws -> ConversationDocument {
         do {
             try Self.prepareDirectory(directory)
         } catch {
@@ -467,7 +470,9 @@ public actor ConversationStore {
         }
 
         var updated = document
-        updated.updatedAt = AgentTimestamp.rfc3339(clock())
+        if !preserveUpdatedAt {
+            updated.updatedAt = AgentTimestamp.rfc3339(clock())
+        }
         file.updateContent(updated)
         do {
             try file.save()
@@ -597,7 +602,8 @@ public actor ConversationStore {
                 changed = true
             }
             if changed {
-                _ = try save(document)
+                // A redaction must not extend the retention clock.
+                _ = try save(document, preserveUpdatedAt: true)
                 changedCount += 1
             }
         }

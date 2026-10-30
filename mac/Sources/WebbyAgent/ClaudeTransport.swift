@@ -40,6 +40,8 @@ public struct PreparedRequest: Equatable, Sendable {
 public enum ClaudeTransportError: Error, Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     case invalidResponse
     case httpStatus(Int)
+    /// Rate limiting or overload, with the server's Retry-After when present.
+    case rateLimited(status: Int, retryAfter: TimeInterval?)
     case network
     case cancelled
 
@@ -49,6 +51,11 @@ public enum ClaudeTransportError: Error, Equatable, Sendable, CustomStringConver
             return "Claude transport received an invalid response"
         case let .httpStatus(status):
             return "Claude transport received HTTP \(status)"
+        case let .rateLimited(status, retryAfter):
+            guard let retryAfter else {
+                return "Claude transport is rate limited (HTTP \(status))"
+            }
+            return "Claude transport is rate limited (HTTP \(status), retry after \(retryAfter)s)"
         case .network:
             return "Claude transport network failure"
         case .cancelled:
@@ -96,6 +103,14 @@ public struct URLSessionClaudeTransport: ClaudeTransport, @unchecked Sendable {
                         throw ClaudeTransportError.invalidResponse
                     }
                     guard (200..<300).contains(http.statusCode) else {
+                        let retryAfter = http.value(forHTTPHeaderField: "Retry-After")
+                            .flatMap(TimeInterval.init)
+                        if [429, 503, 529].contains(http.statusCode) {
+                            throw ClaudeTransportError.rateLimited(
+                                status: http.statusCode,
+                                retryAfter: retryAfter
+                            )
+                        }
                         throw ClaudeTransportError.httpStatus(http.statusCode)
                     }
 
