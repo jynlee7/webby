@@ -74,15 +74,20 @@ public struct URLSessionClaudeTransport: ClaudeTransport, @unchecked Sendable {
         self.session = session
     }
 
+    private static func makeURLRequest(_ request: PreparedRequest) -> URLRequest {
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = request.method
+        urlRequest.httpBody = request.body
+        for header in request.headers {
+            urlRequest.setValue(header.value, forHTTPHeaderField: header.name)
+        }
+        return urlRequest
+    }
+
     public func stream(_ request: PreparedRequest) -> AsyncThrowingStream<Data, Error> {
         let session = self.session
         return AsyncThrowingStream { continuation in
-            var urlRequest = URLRequest(url: request.url)
-            urlRequest.httpMethod = request.method
-            urlRequest.httpBody = request.body
-            for header in request.headers {
-                urlRequest.setValue(header.value, forHTTPHeaderField: header.name)
-            }
+            let urlRequest = Self.makeURLRequest(request)
 
             let task = Task { @Sendable in
                 do {
