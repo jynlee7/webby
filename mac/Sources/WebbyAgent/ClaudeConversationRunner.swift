@@ -149,6 +149,7 @@ public struct ClaudeConversationRunner: Sendable {
         var toolRounds = 0
 
         while true {
+            try Task.checkCancellation()
             let completion = try await consume(request, onEvent: onEvent)
             // A pause continues the same assistant turn, so its text accumulates.
             // Text from an intermediate tool round is not the answer.
@@ -296,6 +297,8 @@ public struct ClaudeConversationRunner: Sendable {
             }
             await onEvent(event)
         }
+        // Cancellation ends the stream quietly; report it as cancellation.
+        try Task.checkCancellation()
         guard let completion else {
             throw ClaudeClientError.unexpectedEndOfStream
         }

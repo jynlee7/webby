@@ -186,6 +186,25 @@ private func preparedTurn(
     #expect(transport.requests()[1].body == expected.body)
 }
 
+@Test func cancellingARunStopsBeforeTheNextRequest() async throws {
+    let first = response(
+        blocks: [toolBlock(index: 0, id: "toolu_1", alias: "N1")],
+        stop: "tool_use"
+    )
+    let second = response(blocks: [textBlock(index: 0, "Done.")], stop: "end_turn")
+    let transport = RecordingTransport([first, second])
+    let turn = preparedTurn(notes: [agentNote(id: 1, text: "one")])
+
+    await #expect(throws: CancellationError.self) {
+        _ = try await ClaudeConversationRunner(transport: transport).run(turn) { event in
+            if case .completed = event {
+                withUnsafeCurrentTask { $0?.cancel() }
+            }
+        }
+    }
+    #expect(transport.requests().count == 1)
+}
+
 @Test func parallelToolCallsAreAnsweredInOneUserMessage() async throws {
     let first = response(
         blocks: [
