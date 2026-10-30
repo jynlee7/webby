@@ -342,3 +342,65 @@ private func fixtureData(_ name: String) throws -> Data {
     #expect(rendered.contains("&#9;indented"))
     #expect(rendered.contains("\\-  spaced bullet"))
 }
+
+@Test func markdownCombiningMarksCannotHideSignificantCharacters() {
+    let id = goldenUUID("F4")
+    let note = CompiledNote(
+        id: id,
+        title: "Marks",
+        body: ">\u{301}x\n- \u{301}item\n*\u{301}a*\u{301}",
+        createdAt: goldenDate(0),
+        isPinned: false,
+        isHidden: false,
+        isCollapsed: false,
+        isExcludedFromAgent: false,
+        tags: [],
+        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: id)),
+        pageLink: nil
+    )
+    let document = CompiledDocument(
+        scope: .workspace(.inbox),
+        title: "Safety",
+        sections: [CompiledSection(kind: .workspaceNotes, heading: "Notes", notes: [note])]
+    )
+    let rendered = MarkdownRenderer.render(document)
+
+    #expect(rendered.contains("&gt;\u{301}x"))
+    #expect(!rendered.contains("\n>"))
+    #expect(rendered.contains("\\- \u{301}item"))
+    #expect(rendered.contains("\\*\u{301}a\\*\u{301}"))
+
+    let html = HTMLRenderer.render(CompiledDocument(
+        scope: .workspace(.inbox),
+        title: "<\u{301}b>",
+        sections: []
+    ))
+    #expect(html.contains("&lt;\u{301}b&gt;"))
+}
+
+@Test func markdownHeadingsStaySingleLine() {
+    let id = goldenUUID("F5")
+    let note = CompiledNote(
+        id: id,
+        title: "N\r\n    code\u{2028}- item",
+        body: "",
+        createdAt: goldenDate(0),
+        isPinned: false,
+        isHidden: false,
+        isCollapsed: false,
+        isExcludedFromAgent: false,
+        tags: [],
+        noteLink: CompiledLink(title: "Open note", url: NoteLink.url(for: id)),
+        pageLink: nil
+    )
+    let document = CompiledDocument(
+        scope: .workspace(.inbox),
+        title: "A\n    code\n- item",
+        sections: [CompiledSection(kind: .workspaceNotes, heading: "S\rT", notes: [note])]
+    )
+    let rendered = MarkdownRenderer.render(document)
+
+    #expect(rendered.contains("# A     code - item\n"))
+    #expect(rendered.contains("## S T\n"))
+    #expect(rendered.contains("### N     code - item\n"))
+}

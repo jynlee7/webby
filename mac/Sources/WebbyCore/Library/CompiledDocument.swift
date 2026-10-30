@@ -425,8 +425,8 @@ private extension CompiledDocument {
 
 // MARK: - Compiled note values
 
-private extension CompiledDocument {
-    static func compiledNotes(_ notes: [Note], queryRules: [QueryRule]) -> [CompiledNote] {
+extension CompiledDocument {
+    public static func compiledNotes(_ notes: [Note], queryRules: [QueryRule]) -> [CompiledNote] {
         CompiledNoteOrdering.sorted(notes).map { note in
             let (title, body) = CompiledFormatting.titleAndBody(from: note.text)
             return CompiledNote(
@@ -445,7 +445,7 @@ private extension CompiledDocument {
         }
     }
 
-    static func pageLink(for note: Note, queryRules: [QueryRule]) -> CompiledLink? {
+    private static func pageLink(for note: Note, queryRules: [QueryRule]) -> CompiledLink? {
         guard let anchor = note.anchor,
               case let .web(page, _) = anchor,
               let url = CanonicalExportURL.make(for: page, queryRules: queryRules)

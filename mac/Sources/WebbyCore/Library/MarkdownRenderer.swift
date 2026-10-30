@@ -7,15 +7,15 @@ import Foundation
 public enum MarkdownRenderer {
     public static func render(_ document: CompiledDocument) -> String {
         var lines: [String] = []
-        lines.append("# " + escape(document.title))
+        lines.append("# " + escape(singleLine(document.title)))
         lines.append("")
 
         for section in document.sections {
-            lines.append("## " + escape(section.heading))
+            lines.append("## " + escape(singleLine(section.heading)))
             lines.append("")
 
             for note in section.notes {
-                lines.append("### " + escape(note.title))
+                lines.append("### " + escape(singleLine(note.title)))
                 lines.append("")
 
                 if !note.body.isEmpty {
@@ -55,76 +55,92 @@ public enum MarkdownRenderer {
         return parts.joined(separator: " · ")
     }
 
-    private static func escape(_ text: String) -> String {
-        var escaped = ""
-        escaped.reserveCapacity(text.count)
+    /// Headings are one line; any line break would start new block structure.
+    private static func singleLine(_ text: String) -> String {
+        var result = String.UnicodeScalarView()
+        for scalar in text.replacingOccurrences(of: "\r\n", with: "\n").unicodeScalars {
+            if CharacterSet.newlines.contains(scalar) {
+                result.append(" ")
+            } else {
+                result.append(scalar)
+            }
+        }
+        return String(result)
+    }
 
-        for character in text {
-            switch character {
+    /// Works on scalars so a combining mark cannot merge with a significant
+    /// ASCII character into a grapheme that escapes nothing.
+    private static func escape(_ text: String) -> String {
+        var escaped = String.UnicodeScalarView()
+
+        for scalar in text.unicodeScalars {
+            switch scalar {
             case "&":
-                escaped += "&amp;"
+                escaped.append(contentsOf: "&amp;".unicodeScalars)
             case "<":
-                escaped += "&lt;"
+                escaped.append(contentsOf: "&lt;".unicodeScalars)
             case ">":
-                escaped += "&gt;"
+                escaped.append(contentsOf: "&gt;".unicodeScalars)
             case "\\", "`", "*", "_", "{", "}", "[", "]", "(", ")", "#", "!", "|", "~":
                 escaped.append("\\")
-                escaped.append(character)
+                escaped.append(scalar)
             default:
-                escaped.append(character)
+                escaped.append(scalar)
             }
         }
 
-        return escaped
+        return String(escaped)
     }
 
     /// Leading indentation creates code blocks even when punctuation is escaped.
     /// Renderer-owned numeric entities preserve the spaces as text instead.
     private static func escapeBodyLine(_ line: String) -> String {
         var entityPrefix = ""
-        var remainder = Substring(line)
+        var remainder = line.unicodeScalars[...]
         while let first = remainder.first, first == " " || first == "\t" {
             entityPrefix += first == " " ? "&#32;" : "&#9;"
             remainder = remainder.dropFirst()
         }
-        var escaped = escape(String(remainder))
+        let text = String(remainder)
+        var escaped = escape(text).unicodeScalars
 
         if isBulletStart(remainder) {
-            escaped = "\\" + escaped
-        } else if isOrderedListStart(String(remainder)), let punctuation = escaped.firstIndex(of: ".") {
+            escaped.insert("\\", at: escaped.startIndex)
+        } else if isOrderedListStart(remainder, punctuation: "."),
+                  let punctuation = escaped.firstIndex(of: ".") {
             escaped.insert("\\", at: punctuation)
-        } else if isOrderedListStart(String(remainder), punctuation: ")"),
+        } else if isOrderedListStart(remainder, punctuation: ")"),
                   let punctuation = escaped.firstIndex(of: ")") {
             escaped.insert("\\", at: punctuation)
-        } else if isSetextOrRule(String(remainder)), !escaped.isEmpty {
+        } else if isSetextOrRule(text), !escaped.isEmpty {
             escaped.insert("\\", at: escaped.startIndex)
         }
 
-        return entityPrefix + escaped
+        return entityPrefix + String(escaped)
     }
 
-    private static func isBulletStart(_ line: Substring) -> Bool {
+    private static func isBulletStart(_ line: Substring.UnicodeScalarView) -> Bool {
         guard let first = line.first, first == "-" || first == "+" else { return false }
         let after = line.index(after: line.startIndex)
         return after < line.endIndex && (line[after] == " " || line[after] == "\t")
     }
 
     private static func isOrderedListStart(
-        _ line: String,
-        punctuation: Character = "."
+        _ line: Substring.UnicodeScalarView,
+        punctuation: Unicode.Scalar
     ) -> Bool {
         guard let index = line.firstIndex(of: punctuation), index != line.startIndex else {
             return false
         }
         let digits = line[..<index]
         let after = line.index(after: index)
-        return digits.allSatisfy(\.isNumber)
+        return digits.allSatisfy { $0.properties.numericType != nil }
             && after < line.endIndex
-            && line[after].isWhitespace
+            && line[after].properties.isWhitespace
     }
 
     private static func isSetextOrRule(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let trimmed = line.trimmingCharacters(in: .whitespaces).unicodeScalars
         guard !trimmed.isEmpty, let first = trimmed.first,
               first == "-" || first == "="
         else { return false }

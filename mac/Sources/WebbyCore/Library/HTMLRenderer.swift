@@ -78,27 +78,26 @@ public enum HTMLRenderer {
     }
 
     private static func escape(_ text: String) -> String {
-        var escaped = ""
-        escaped.reserveCapacity(text.count)
+        var escaped = String.UnicodeScalarView()
 
-        for character in text {
-            switch character {
+        for scalar in text.unicodeScalars {
+            switch scalar {
             case "&":
-                escaped += "&amp;"
+                escaped.append(contentsOf: "&amp;".unicodeScalars)
             case "<":
-                escaped += "&lt;"
+                escaped.append(contentsOf: "&lt;".unicodeScalars)
             case ">":
-                escaped += "&gt;"
+                escaped.append(contentsOf: "&gt;".unicodeScalars)
             case "\"":
-                escaped += "&quot;"
+                escaped.append(contentsOf: "&quot;".unicodeScalars)
             case "'":
-                escaped += "&#39;"
+                escaped.append(contentsOf: "&#39;".unicodeScalars)
             default:
-                escaped.append(character)
+                escaped.append(scalar)
             }
         }
 
-        return escaped
+        return String(escaped)
     }
 
     private static let styleSheet = """
