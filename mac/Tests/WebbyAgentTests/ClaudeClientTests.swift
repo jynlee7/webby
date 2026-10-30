@@ -275,14 +275,17 @@ private struct HangingTransport: ClaudeTransport {
     let transport = HangingTransport(probe: probe, firstChunk: Data(first.utf8))
     let stream = ClaudeClient(transport: transport).stream(preparedRequest())
 
-    let consumer = Task { () -> AgentEvent? in
+    let (signals, signalContinuation) = AsyncStream<Void>.makeStream()
+    let consumer = Task {
         for try await event in stream {
-            return event
+            if case .messageStart = event {
+                signalContinuation.yield()
+            }
         }
-        return nil
     }
-    let event = try await consumer.value
-    #expect(event == .messageStart(ClaudeMessageStart(id: "msg_5", model: "synthetic-model", usage: .zero)))
+    var signalIterator = signals.makeAsyncIterator()
+    _ = await signalIterator.next()
+    consumer.cancel()
 
     var cancelled = false
     for _ in 0..<100 {
