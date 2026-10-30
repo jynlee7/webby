@@ -250,6 +250,34 @@ import WebbyCore
     #expect(!truncation.text.contains("\u{FFFD}"))
 }
 
+@Test func truncationBoundsAGraphemeClusterByUnicodeScalars() {
+    let text = "e" + String(repeating: "\u{301}", count: 100_000)
+    let truncation = TokenEstimator.truncate(text, maxCharacters: 100, alias: "N1")
+
+    #expect(truncation.isTruncated)
+    #expect(TokenEstimator.size(truncation.text + (truncation.marker ?? "")) <= 100)
+}
+
+@Test func oneHugeGraphemeClusterCannotExceedTheNotesBudgetOrReadBound() {
+    let cluster = "e" + String(repeating: "\u{301}", count: 100_000)
+    let context = agentContext()
+    let turn = ContextAssembler.assemble(
+        snapshot: AgentSnapshot(notes: [agentNote(id: 1, text: cluster)]),
+        context: context,
+        conversation: agentConversation(scope: .allNotes, context: context),
+        now: Date(timeIntervalSince1970: 1_800_000_000),
+        question: "question"
+    )
+    let budget = TokenEstimator.maxCharacters(
+        forTokens: agentConfiguration(context: context).notesBudget
+    )
+    #expect(TokenEstimator.size(turn.request.system[1].text) <= budget)
+
+    let read = turn.turnSnapshot.readNote(alias: "N1")
+    let content = read.content ?? ""
+    #expect(TokenEstimator.size(content) <= turn.turnSnapshot.maxReadCharacters)
+}
+
 @Test func packingStopsAtFirstNonfitAndCapsOmittedManifestAtFiftyLines() {
     let context = agentContext()
     let twoNotes = [

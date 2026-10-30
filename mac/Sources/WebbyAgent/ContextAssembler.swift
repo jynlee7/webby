@@ -295,7 +295,7 @@ public struct AgentTurnSnapshot: Equatable, Sendable {
                 return AgentReadNoteResult(alias: alias, failure: .readLimitReached)
             }
             let content = note.note.text
-            guard content.count > maxReadCharacters else {
+            guard TokenEstimator.size(content) > maxReadCharacters else {
                 return AgentReadNoteResult(alias: alias, content: content)
             }
             let truncation = TokenEstimator.truncate(
@@ -735,7 +735,7 @@ public enum ContextAssembler {
             + "revision=\"\(note.revision)\">"
             + escapeText(body)
             + "</note>\n"
-        let summary = note.summaryLine(limit: 40) ?? "(empty note)"
+        let summary = boundedSummary(note.summaryLine(limit: 40))
         let line = ContextManifest.line(
             alias: alias,
             summary: escapeText(summary.replacingOccurrences(of: "\n", with: " ")),
@@ -767,12 +767,12 @@ public enum ContextAssembler {
 
         if !packed.isEmpty {
             for index in packed.indices {
-                let nextIncluded = includedCharacters + packed[index].wrapper.count
+                let nextIncluded = includedCharacters + TokenEstimator.size(packed[index].wrapper)
                 let omitted = packed[(index + 1)...]
-                let total = open.count
+                let total = TokenEstimator.size(open)
                     + nextIncluded
-                    + omittedBlock(omitted).count
-                    + close.count
+                    + TokenEstimator.size(omittedBlock(omitted))
+                    + TokenEstimator.size(close)
                 if total <= budgetCharacters {
                     includedCount = index + 1
                     includedCharacters = nextIncluded
@@ -791,7 +791,7 @@ public enum ContextAssembler {
                 open: open,
                 close: close
             )
-            if block.count <= budgetCharacters { break }
+            if TokenEstimator.size(block) <= budgetCharacters { break }
             if includedCount > 0 {
                 includedCount -= 1
             } else {
@@ -809,7 +809,7 @@ public enum ContextAssembler {
                 close: close,
                 omittedLines: omittedLines
             )
-            if block.count <= budgetCharacters || omittedLines.isEmpty { break }
+            if TokenEstimator.size(block) <= budgetCharacters || omittedLines.isEmpty { break }
             omittedLines.removeLast()
             omitted = Array(packed[includedCount...])
         }
@@ -838,7 +838,7 @@ public enum ContextAssembler {
                 revision: item.revision,
                 page: item.page,
                 updated: item.updated,
-                summary: item.note.summaryLine(limit: 40) ?? "(empty note)",
+                summary: boundedSummary(item.note.summaryLine(limit: 40)),
                 omittedCharacters: status == .truncated ? item.truncation.omittedCharacters : 0
             )
         }
@@ -887,6 +887,23 @@ public enum ContextAssembler {
         }
         result += close
         return result
+    }
+
+    /// `summaryLine` limits Characters, so clamp one oversized grapheme cluster
+    /// to the same 40-scalar limit before it reaches a manifest line.
+    private static func boundedSummary(_ summary: String?) -> String {
+        guard let summary else { return "(empty note)" }
+        let limit = 40
+        guard TokenEstimator.size(summary) > limit else { return summary }
+        var kept = ""
+        var used = 0
+        for character in summary {
+            let width = character.unicodeScalars.count
+            guard used + width <= limit - 1 else { break }
+            kept.append(character)
+            used += width
+        }
+        return kept + "…"
     }
 
     private static func omittedBlock(_ notes: ArraySlice<PackedNote>) -> String {
