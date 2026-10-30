@@ -119,7 +119,7 @@ public struct URLSessionClaudeTransport: ClaudeTransport, @unchecked Sendable {
                     for try await byte in bytes {
                         try Task.checkCancellation()
                         buffer.append(byte)
-                        if buffer.count >= 4_096 {
+                        if byte == 0x0A || buffer.count >= 4_096 {
                             continuation.yield(buffer)
                             buffer.removeAll(keepingCapacity: true)
                         }

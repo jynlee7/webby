@@ -427,9 +427,12 @@ public enum ContextAssembler {
                 scope: conversation.scope,
                 context: startContext
             ),
-            maxReadCharacters: Int(
-                Double(max(1, conversation.configuration.notesBudget))
-                    * TokenEstimator.charsPerToken
+            maxReadCharacters: max(
+                1_024,
+                Int(
+                    Double(max(1, conversation.configuration.notesBudget))
+                        * TokenEstimator.charsPerToken
+                )
             )
         )
 
@@ -600,8 +603,15 @@ public enum ContextAssembler {
             if lhs.tier == 2, lhs.prefixDepth != rhs.prefixDepth {
                 return lhs.prefixDepth > rhs.prefixDepth
             }
-            if lhs.tier == 4, lhs.sharedSegments != rhs.sharedSegments {
-                return lhs.sharedSegments > rhs.sharedSegments
+            if lhs.tier == 4 {
+                if lhs.sharedSegments != rhs.sharedSegments {
+                    return lhs.sharedSegments > rhs.sharedSegments
+                }
+                if lhs.note.updatedAt != rhs.note.updatedAt {
+                    return lhs.note.updatedAt > rhs.note.updatedAt
+                }
+                return lhs.note.id.uuidString.lowercased()
+                    < rhs.note.id.uuidString.lowercased()
             }
             return tieLess(lhs.note, rhs.note)
         }
@@ -612,8 +622,13 @@ public enum ContextAssembler {
         _ note: Note,
         context: Context
     ) -> (tier: Int, prefixDepth: Int) {
-        if let binding = note.tab, let tab = context.tab, tab.matches(binding) {
-            return (1, 0)
+        if let binding = note.tab {
+            // A note bound to another tab (or a closed tab) stays unmatched; its
+            // page anchor must not promote it into the live tier.
+            if binding.closedAt == nil, let tab = context.tab, tab.matches(binding) {
+                return (1, 0)
+            }
+            return (4, 0)
         }
 
         guard let anchor = note.anchor else { return (4, 0) }

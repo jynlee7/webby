@@ -470,6 +470,11 @@ public actor ConversationStore {
         }
 
         var updated = document
+        // A caller may hold a document loaded before a redaction. Re-apply every
+        // note already redacted on disk so a stale save cannot restore it.
+        for noteID in Self.redactedNoteIDs(in: file.content) {
+            Self.applyRedaction(noteID: noteID, to: &updated)
+        }
         if !preserveUpdatedAt {
             updated.updatedAt = AgentTimestamp.rfc3339(clock())
         }
@@ -544,63 +549,7 @@ public actor ConversationStore {
         for id in try conversationIDs() {
             let open = open(id)
             guard var document = open.document, !open.isReadOnly else { continue }
-            var changed = false
-
-            let aliasSet = Set(document.aliases.entries
-                .filter { $0.noteID == noteID }
-                .map(\.alias))
-
-            for index in document.turns.indices {
-                var turn = document.turns[index]
-                var aliases = aliasSet
-                for entry in turn.manifest.entries where entry.noteID == noteID {
-                    aliases.insert(entry.alias)
-                }
-
-                let entries = turn.manifest.entries.map { entry -> ContextManifest.Entry in
-                    guard entry.noteID == noteID else { return entry }
-                    changed = true
-                    return ContextManifest.Entry(
-                        alias: entry.alias,
-                        noteID: entry.noteID,
-                        status: entry.status,
-                        revision: entry.revision,
-                        page: "note deleted",
-                        updated: entry.updated,
-                        summary: "note deleted",
-                        omittedCharacters: 0
-                    )
-                }
-                let omitted = turn.manifest.omittedLines.map { line -> String in
-                    guard aliases.contains(where: { line.hasPrefix($0 + " ") }) else { return line }
-                    changed = true
-                    return "note deleted"
-                }
-                let citations = turn.citations.map { citation -> CitationValidator.Citation in
-                    guard citation.noteID == noteID else { return citation }
-                    changed = true
-                    return CitationValidator.Citation(
-                        alias: citation.alias,
-                        noteID: citation.noteID,
-                        revision: citation.revision,
-                        status: .deleted,
-                        snippet: "note deleted"
-                    )
-                }
-
-                turn.manifest = ContextManifest(
-                    entries: entries,
-                    omittedLines: omitted,
-                    screen: turn.manifest.screen
-                )
-                turn.citations = citations
-                document.turns[index] = turn
-            }
-
-            if !aliasSet.isEmpty {
-                document.aliases.retire(noteID: noteID)
-                changed = true
-            }
+            let changed = Self.applyRedaction(noteID: noteID, to: &document)
             if changed {
                 // A redaction must not extend the retention clock.
                 _ = try save(document, preserveUpdatedAt: true)
@@ -608,6 +557,80 @@ public actor ConversationStore {
             }
         }
         return changedCount
+    }
+
+    /// Applies one note's redaction to a document and reports whether anything changed.
+    @discardableResult
+    private static func applyRedaction(
+        noteID: UUID,
+        to document: inout ConversationDocument
+    ) -> Bool {
+        var changed = false
+        let aliasSet = Set(document.aliases.entries
+            .filter { $0.noteID == noteID }
+            .map(\.alias))
+        for index in document.turns.indices {
+            var turn = document.turns[index]
+            var aliases = aliasSet
+            for entry in turn.manifest.entries where entry.noteID == noteID {
+                aliases.insert(entry.alias)
+            }
+            let entries = turn.manifest.entries.map { entry -> ContextManifest.Entry in
+                guard entry.noteID == noteID else { return entry }
+                changed = true
+                return ContextManifest.Entry(
+                    alias: entry.alias,
+                    noteID: entry.noteID,
+                    status: entry.status,
+                    revision: entry.revision,
+                    page: "note deleted",
+                    updated: entry.updated,
+                    summary: "note deleted",
+                    omittedCharacters: 0
+                )
+            }
+            let omitted = turn.manifest.omittedLines.map { line -> String in
+                guard aliases.contains(where: { line.hasPrefix($0 + " ") }) else { return line }
+                changed = true
+                return "note deleted"
+            }
+            let citations = turn.citations.map { citation -> CitationValidator.Citation in
+                guard citation.noteID == noteID else { return citation }
+                changed = true
+                return CitationValidator.Citation(
+                    alias: citation.alias,
+                    noteID: citation.noteID,
+                    revision: citation.revision,
+                    status: .deleted,
+                    snippet: "note deleted"
+                )
+            }
+            turn.manifest = ContextManifest(
+                entries: entries,
+                omittedLines: omitted,
+                screen: turn.manifest.screen
+            )
+            turn.citations = citations
+            document.turns[index] = turn
+        }
+        if !aliasSet.isEmpty {
+            document.aliases.retire(noteID: noteID)
+            changed = true
+        }
+        return changed
+    }
+
+    private static func redactedNoteIDs(in document: ConversationDocument) -> Set<UUID> {
+        var ids = Set(document.aliases.entries.filter(\.retired).map(\.noteID))
+        for turn in document.turns {
+            for entry in turn.manifest.entries where entry.page == "note deleted" {
+                ids.insert(entry.noteID)
+            }
+            for citation in turn.citations where citation.status == .deleted {
+                ids.insert(citation.noteID)
+            }
+        }
+        return ids
     }
 
     public func mode(for id: UUID) -> FileLoadMode {

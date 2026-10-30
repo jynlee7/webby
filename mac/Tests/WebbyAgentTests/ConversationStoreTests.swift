@@ -370,3 +370,19 @@ private struct InjectedWriteFailure: Error {}
     let loaded = try #require(await store.load(document.id))
     #expect(loaded.updatedAt == saved.updatedAt)
 }
+
+@Test func staleSaveCannotUndoRedaction() async throws {
+    let directory = temporaryDirectory()
+    let store = ConversationStore(directory: directory)
+    let document = storedDocument()
+    _ = try await store.save(document)
+    let loaded = try #require(await store.load(document.id))
+
+    _ = try await store.redactNote(agentUUID(1))
+    _ = try await store.save(loaded)
+
+    let after = try #require(await store.load(document.id))
+    #expect(after.turns[0].manifest.entries[0].summary == "note deleted")
+    #expect(after.turns[0].citations[0].status == .deleted)
+    #expect(after.aliases.entries[0].retired)
+}

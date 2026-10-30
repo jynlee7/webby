@@ -255,9 +255,15 @@ public struct ClaudeConversationRunner: Sendable {
         termination: ClaudeTurnTermination,
         toolRounds: Int
     ) -> ClaudeTurnResult {
-        let sentAliases = Set(turn.snapshot.notesByAlias.compactMap { alias, note in
+        var sentAliases = Set(turn.snapshot.notesByAlias.compactMap { alias, note in
             note.status == .omitted ? nil : alias
         })
+        for line in turn.manifest.omittedLines {
+            if let alias = line.split(separator: " ").first.map(String.init),
+               turn.snapshot.notesByAlias[alias] != nil {
+                sentAliases.insert(alias)
+            }
+        }
         let validation = CitationValidator.validate(
             answerText: answerText,
             snapshot: turn.snapshot,

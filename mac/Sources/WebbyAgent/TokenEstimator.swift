@@ -58,7 +58,15 @@ public enum TokenEstimator {
     ) -> Truncation {
         let characters = Array(text)
         let total = characters.count
-        guard maxCharacters > 0, total > maxCharacters else {
+        guard maxCharacters > 0 else {
+            return Truncation(
+                text: "",
+                omittedCharacters: total,
+                isTruncated: total > 0,
+                marker: nil
+            )
+        }
+        guard total > maxCharacters else {
             return Truncation(
                 text: text,
                 omittedCharacters: 0,
@@ -89,6 +97,16 @@ public enum TokenEstimator {
 
         var body = String(characters[0..<keep])
         var markerText = marker(omittedCharacters: total - keep, alias: alias)
+        if markerText.count > maxCharacters {
+            // A tiny cap cannot fit the explanatory marker; return a hard prefix
+            // that still respects the caller's bound.
+            return Truncation(
+                text: String(characters.prefix(maxCharacters)),
+                omittedCharacters: total - maxCharacters,
+                isTruncated: true,
+                marker: nil
+            )
+        }
         // The sentence cut can occasionally add enough marker digits to exceed
         // the cap. Reduce by whole Characters, never through a grapheme.
         while keep > 0, body.count + markerText.count > maxCharacters {
