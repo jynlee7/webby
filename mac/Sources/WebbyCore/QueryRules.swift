@@ -74,6 +74,18 @@ public enum QueryRules {
         }.joined(separator: "&")
     }
 
+    /// The percent-decoded keys of `query`, for reading which keys an anchor uses.
+    static func keys(in query: String) -> [String] {
+        parseQuery(query).compactMap(\.decodedKey)
+    }
+
+    /// `query` without any parameter named `key`, or nil when nothing remains.
+    static func removingKey(_ key: String, from query: String) -> String? {
+        let kept = parseQuery(query).filter { $0.decodedKey != key }
+        guard !kept.isEmpty else { return nil }
+        return kept.map { $0.encodedKey + ($0.encodedValue.map { "=" + $0 } ?? "") }.joined(separator: "&")
+    }
+
     static func normalizedHost(_ host: String) -> String {
         host.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()

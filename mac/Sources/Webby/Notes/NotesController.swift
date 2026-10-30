@@ -236,6 +236,23 @@ final class NotesController {
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
     }
 
+    /// Replaces page anchors in one mutation and one queued save, for converting notes
+    /// off a query key. Returns the number of notes changed; nothing changes while the
+    /// store is read-only or an import owns it.
+    @discardableResult
+    func applyAnchorRewrites(_ rewrites: [QueryRulesPane.AnchorRewrite]) -> Int {
+        guard isWritable, !isImporting else { return 0 }
+        let draftsChanged = commitDrafts()
+        var changedCount = 0
+        for rewrite in rewrites where libraryNoteForMutation(id: rewrite.noteID) != nil {
+            if store.updateContent(id: rewrite.noteID, change: .anchor(rewrite.anchor), now: now()) {
+                changedCount += 1
+            }
+        }
+        finishLibraryMutation(changed: changedCount > 0, draftsChanged: draftsChanged, relayout: true)
+        return changedCount
+    }
+
     func setPinned(id: UUID, pinned: Bool) {
         guard libraryNoteForMutation(id: id) != nil else { return }
         let draftsChanged = commitDrafts()

@@ -53,7 +53,6 @@ final class LibraryModel {
     @ObservationIgnored private let controller: NotesController
     @ObservationIgnored private let clock: @MainActor () -> Date
     @ObservationIgnored private let workspaceDisplayName: (WorkspaceKey) -> String
-    @ObservationIgnored private let userQueryRules: [QueryRule]
     @ObservationIgnored private var observerToken: UUID?
     @ObservationIgnored private var searchCache: LibrarySearchCache
     @ObservationIgnored private var cacheBuilt: Bool
@@ -79,6 +78,8 @@ final class LibraryModel {
     /// Set when a deep link routes to a note, so the detail editor can take focus.
     private(set) var detailFocusRequest: UUID?
     var contentMode: LibraryContentMode = .list
+    /// The rules in force before anchors are considered, from `Settings.enabledQueryRules`.
+    var enabledQueryRules: [QueryRule]
     var exportStatus: String?
     var importStatus: String?
     private(set) var pendingEmptyTrash: EmptyTrashConfirmation?
@@ -91,7 +92,7 @@ final class LibraryModel {
         controller: NotesController,
         clock: @escaping @MainActor () -> Date = { Date() },
         workspaceDisplayName: @escaping (WorkspaceKey) -> String = { $0.displayName },
-        userQueryRules: [QueryRule] = []
+        enabledQueryRules: [QueryRule] = QueryRules.builtIns
     ) {
         let notes = controller.libraryNotes
         assert(notes.allSatisfy { !$0.ephemeral }, "Library snapshots must not contain ephemeral notes")
@@ -99,7 +100,7 @@ final class LibraryModel {
         self.controller = controller
         self.clock = clock
         self.workspaceDisplayName = workspaceDisplayName
-        self.userQueryRules = userQueryRules
+        self.enabledQueryRules = enabledQueryRules
         self.result = LibraryQuery.evaluate(
             notes: notes,
             workspaces: controller.libraryWorkspaces,
@@ -355,10 +356,10 @@ final class LibraryModel {
         )
     }
 
-    /// Built-ins, the user's rules, and every key still used by a page anchor.
+    /// The enabled rules and every key still used by a page anchor.
     var effectiveQueryRules: [QueryRule] {
         QueryRules.effective(
-            rules: QueryRules.builtIns + userQueryRules,
+            rules: enabledQueryRules,
             anchors: controller.libraryNotes.compactMap(\.anchor)
         )
     }

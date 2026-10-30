@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             libraryWindow = LibraryWindowController(
                 notes: notes,
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
-                userQueryRules: settingsStore.settings.queryRules
+                enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
         }
     }
@@ -139,11 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let window = SettingsWindowController(
                 settings: settingsStore,
+                notes: notes,
                 hotkeys: hotkeys,
                 permission: permission,
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }
+            window.onQueryRulesChange = { [weak self] rules in self?.libraryWindow?.model.enabledQueryRules = rules }
             settingsWindow = window
         }
         settingsWindow?.present()

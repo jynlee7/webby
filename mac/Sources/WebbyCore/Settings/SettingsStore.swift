@@ -15,7 +15,7 @@ public enum SettingsError: Error, LocalizedError, Equatable {
     }
 }
 
-/// In-memory settings persisted to `settings.json` v1. Use from one actor; saves
+/// In-memory settings persisted to `settings.json` v2 (v1 files load with no removed built-in rules). Use from one actor; saves
 /// are explicit.
 ///
 /// The file follows the same load outcomes as notes: a missing file is writable
@@ -23,7 +23,7 @@ public enum SettingsError: Error, LocalizedError, Equatable {
 /// memory and the file left untouched, and a corrupt file is moved aside before
 /// defaults become writable.
 public final class SettingsStore {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public let fileURL: URL
     public private(set) var settings: Settings
@@ -45,7 +45,9 @@ public final class SettingsStore {
         let file = VersionedJSONFile<Settings>(
             fileURL: fileURL,
             defaultContent: Settings.default,
-            contentKey: "settings",
+            supportedVersion: Self.currentVersion,
+            decode: { try SettingsDocument.decode($0, version: $1) },
+            encode: { try SettingsDocument.encode($0, version: $1) },
             now: { now }
         )
         self.fileURL = fileURL

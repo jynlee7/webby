@@ -45,7 +45,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     convenience init(
         notes: NotesController,
         currentAppBundleID: @escaping @MainActor () -> String?,
-        userQueryRules: [QueryRule] = []
+        enabledQueryRules: [QueryRule] = QueryRules.builtIns
     ) {
         let currentApp = LiveLibraryCurrentAppProvider(currentBundleID: currentAppBundleID)
         let actions = LibraryAnchorActions(
@@ -65,7 +65,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
                     return FileManager.default.displayName(atPath: url.path)
                 }
             },
-            userQueryRules: userQueryRules
+            enabledQueryRules: enabledQueryRules
         )
         self.init(model: model, actions: actions)
         // An import owns the store; commit this window's editor draft before its barrier.
