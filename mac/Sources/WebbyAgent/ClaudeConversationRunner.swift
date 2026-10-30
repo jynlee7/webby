@@ -141,9 +141,15 @@ public struct ClaudeConversationRunner: Sendable {
 
         while true {
             let completion = try await consume(request, onEvent: onEvent)
-            // Text from an intermediate tool round is not the answer; only the
-            // final assistant response contributes to answerText.
-            answerText = completion.text
+            // A pause continues the same assistant turn, so its text accumulates.
+            // Text from an intermediate tool round is not the answer.
+            if completion.stopReason == .pauseTurn {
+                answerText = [answerText, completion.text]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            } else {
+                answerText = completion.text
+            }
             usage = Self.adding(usage, completion.usage)
 
             guard let stopReason = completion.stopReason else {
