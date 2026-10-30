@@ -18,6 +18,8 @@ public final class NoteStore {
         case staleImportGeneration(expected: UInt64, found: UInt64)
         /// The import plan no longer validates against the current notes.
         case invalidImportPlan
+        /// A workspace edit does not validate or names a missing note.
+        case invalidWorkspaceEdit
 
         public var errorDescription: String? {
             switch self {
@@ -35,6 +37,8 @@ public final class NoteStore {
                 return "The notes changed while the import was waiting, so the import was not applied. Try again."
             case .invalidImportPlan:
                 return "The import no longer matches the current notes, so nothing was imported."
+            case .invalidWorkspaceEdit:
+                return "The workspace change no longer matches the current notes, so nothing was changed."
             }
         }
     }
@@ -297,6 +301,43 @@ public final class NoteStore {
         try NotesDocument.validateWorkspaces(records)
         guard records != workspaces else { return }
         workspaces = records
+        advanceGeneration()
+    }
+
+    /// Applies a workspace edit as one generation: the new records, the edit's
+    /// override changes, and a cleared override on every note that points at a record
+    /// the edit removes. Overrides change with the same revision and `updatedAt`
+    /// semantics as `ContentChange.workspaceOverride`. Memory is untouched on failure.
+    public func apply(_ edit: WorkspaceEdit, now: Date = Date()) throws {
+        if case .readOnly(let reason) = mode { throw StoreError.readOnly(reason) }
+        try NotesDocument.validateWorkspaces(edit.records)
+
+        let survivingIDs = Set(edit.records.map(\.id))
+        var requested: [UUID: UUID?] = [:]
+        for change in edit.overrideChanges {
+            guard notes.contains(where: { $0.id == change.noteID }) else {
+                throw StoreError.invalidWorkspaceEdit
+            }
+            requested[change.noteID] = change.workspace
+        }
+
+        var candidate = notes
+        for index in candidate.indices {
+            var note = candidate[index]
+            var override = note.workspaceOverride
+            if let change = requested[note.id] { override = change }
+            if let id = override, !survivingIDs.contains(id) { override = nil }
+            guard override != note.workspaceOverride else { continue }
+            guard note.revision < Int.max else { throw StoreError.invalidWorkspaceEdit }
+            note.workspaceOverride = override
+            note.revision += 1
+            note.updatedAt = now
+            candidate[index] = note
+        }
+
+        guard edit.records != workspaces || candidate != notes else { return }
+        workspaces = edit.records
+        notes = candidate
         advanceGeneration()
     }
 

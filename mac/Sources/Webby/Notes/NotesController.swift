@@ -326,6 +326,29 @@ final class NotesController {
         return note.id
     }
 
+    /// Builds and applies one workspace edit, saving once. Returns where a selection
+    /// on the edited workspace should go, or nil if nothing was applied.
+    func applyWorkspaceEdit(
+        _ make: ([WorkspaceRecord], [Note], Date) throws -> WorkspaceEdit
+    ) -> WorkspaceDestination? {
+        guard isWritable, !isImporting else { return nil }
+        let draftsChanged = commitDrafts()
+        do {
+            let date = now()
+            let edit = try make(store.workspaces, store.notes, date)
+            let before = store.mutationGeneration
+            try store.apply(edit, now: date)
+            finishLibraryMutation(
+                changed: store.mutationGeneration != before,
+                draftsChanged: draftsChanged
+            )
+            return edit.destination
+        } catch {
+            finishLibraryMutation(changed: false, draftsChanged: draftsChanged)
+            return nil
+        }
+    }
+
     // MARK: Import
 
     /// Applies a validated import as one serialized transaction.

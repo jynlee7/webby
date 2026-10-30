@@ -8,6 +8,39 @@ private enum SidebarItem: Hashable {
     case tag(String)
 }
 
+extension LibraryWorkspaceGroup: Identifiable {
+    public var id: WorkspaceDestination { destination }
+}
+
+private struct WorkspaceRenameSheet: View {
+    @Binding var text: String
+    let onCommit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename Workspace")
+                .font(.headline)
+            TextField("Name", text: $text, prompt: Text("Leave empty for the default name"))
+                .onSubmit(commit)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Rename", action: commit)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+    }
+
+    private func commit() {
+        onCommit()
+        dismiss()
+    }
+}
+
 private struct PageRow: Identifiable {
     let selection: LibraryPageSelection
     let title: String
@@ -19,6 +52,8 @@ private struct PageRow: Identifiable {
 struct LibrarySidebarView: View {
     let model: LibraryModel
     let draft: LibraryTextDraft
+    @State private var renaming: LibraryWorkspaceGroup?
+    @State private var renameText = ""
 
     var body: some View {
         List(selection: sidebarSelection) {
@@ -47,6 +82,7 @@ struct LibrarySidebarView: View {
                         symbol: group.pinned ? "pin" : "folder",
                         count: group.count
                     )
+                    .contextMenu { workspaceMenu(for: group) }
                 }
             }
 
@@ -92,6 +128,37 @@ struct LibrarySidebarView: View {
         }
         .listStyle(.sidebar)
         .accessibilityLabel("Library sections")
+        .sheet(item: $renaming) { group in
+            WorkspaceRenameSheet(text: $renameText) {
+                model.rename(group, to: renameText)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func workspaceMenu(for group: LibraryWorkspaceGroup) -> some View {
+        Button("Rename…") {
+            renameText = group.record?.title ?? ""
+            renaming = group
+        }
+        Button(group.pinned ? "Unpin" : "Pin") {
+            model.setPinned(group, pinned: !group.pinned)
+        }
+        let others = model.libraryResult.workspaces.filter { $0.destination != group.destination }
+        if !others.isEmpty {
+            Menu("Merge Into") {
+                ForEach(others, id: \.destination) { other in
+                    Button(model.displayName(for: other)) { model.merge(group, into: other) }
+                }
+            }
+        }
+        if let record = group.record, record.keys.count > 1 {
+            Menu("Split Out") {
+                ForEach(record.keys, id: \.self) { key in
+                    Button(model.displayName(for: key)) { model.split(key, from: group) }
+                }
+            }
+        }
     }
 
     private var sidebarSelection: Binding<SidebarItem?> {
