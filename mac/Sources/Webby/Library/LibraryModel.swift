@@ -53,12 +53,17 @@ final class LibraryModel {
     @ObservationIgnored private let controller: NotesController
     @ObservationIgnored private let clock: @MainActor () -> Date
     @ObservationIgnored private let workspaceDisplayName: (WorkspaceKey) -> String
-    @ObservationIgnored private let userQueryRules: [QueryRule]
     @ObservationIgnored private var observerToken: UUID?
     @ObservationIgnored private var searchCache: LibrarySearchCache
     @ObservationIgnored private var cacheBuilt: Bool
+    @ObservationIgnored private let openTabs: OpenTabsFeed?
 
     private(set) var result: LibraryResult
+    /// Open Chrome tabs that have notes, recomputed when the notes or the tabs change.
+    private(set) var openTabGroups: [LibraryOpenTabGroup] = []
+    /// True while the Open Tabs row is selected. It is not a `LibrarySection`: it
+    /// depends on live browser state, which the pure Library query does not see.
+    private(set) var showsOpenTabs = false
     private(set) var searchQuery: SearchQuery
     var searchText: String {
         didSet {
@@ -79,6 +84,10 @@ final class LibraryModel {
     /// Set when a deep link routes to a note, so the detail editor can take focus.
     private(set) var detailFocusRequest: UUID?
     var contentMode: LibraryContentMode = .list
+    /// The rules in force before anchors are considered, from `Settings.enabledQueryRules`.
+    var enabledQueryRules: [QueryRule] {
+        didSet { refreshOpenTabs() }
+    }
     var exportStatus: String?
     var importStatus: String?
     private(set) var pendingEmptyTrash: EmptyTrashConfirmation?
@@ -91,7 +100,8 @@ final class LibraryModel {
         controller: NotesController,
         clock: @escaping @MainActor () -> Date = { Date() },
         workspaceDisplayName: @escaping (WorkspaceKey) -> String = { $0.displayName },
-        userQueryRules: [QueryRule] = []
+        enabledQueryRules: [QueryRule] = QueryRules.builtIns,
+        openTabs: OpenTabsFeed? = nil
     ) {
         let notes = controller.libraryNotes
         assert(notes.allSatisfy { !$0.ephemeral }, "Library snapshots must not contain ephemeral notes")
@@ -99,7 +109,8 @@ final class LibraryModel {
         self.controller = controller
         self.clock = clock
         self.workspaceDisplayName = workspaceDisplayName
-        self.userQueryRules = userQueryRules
+        self.enabledQueryRules = enabledQueryRules
+        self.openTabs = openTabs
         self.result = LibraryQuery.evaluate(
             notes: notes,
             workspaces: controller.libraryWorkspaces,
@@ -121,6 +132,8 @@ final class LibraryModel {
         self.observerToken = controller.addLibraryObserver { [weak self] in
             self?.refresh()
         }
+        openTabs?.onChange = { [weak self] in self?.refreshOpenTabs() }
+        refreshOpenTabs()
     }
 
     deinit {
@@ -143,7 +156,25 @@ final class LibraryModel {
 
         updateSearchCache(with: notes)
         result = LibraryQuery.evaluate(notes: notes, workspaces: workspaces, now: clock())
+        refreshOpenTabs()
+    }
+
+    private func refreshOpenTabs() {
+        if let openTabs {
+            let groups = LibraryTabGroups.openTabs(
+                notes: controller.libraryNotes,
+                inventory: openTabs.inventory,
+                rules: effectiveQueryRules
+            )
+            if groups != openTabGroups { openTabGroups = groups }
+        }
         repairSelection()
+    }
+
+    /// The notes of all open tabs, each once, in tab order.
+    var openTabNotes: [LibraryNote] {
+        var seen: Set<UUID> = []
+        return openTabGroups.flatMap(\.notes).filter { seen.insert($0.id).inserted }
     }
 
     private func updateSearchCache(with notes: [Note]) {
@@ -355,10 +386,10 @@ final class LibraryModel {
         )
     }
 
-    /// Built-ins, the user's rules, and every key still used by a page anchor.
+    /// The enabled rules and every key still used by a page anchor.
     var effectiveQueryRules: [QueryRule] {
         QueryRules.effective(
-            rules: QueryRules.builtIns + userQueryRules,
+            rules: enabledQueryRules,
             anchors: controller.libraryNotes.compactMap(\.anchor)
         )
     }
@@ -390,6 +421,7 @@ final class LibraryModel {
     }
 
     private var baseNotesForSelection: [LibraryNote] {
+        if showsOpenTabs { return openTabNotes }
         switch selectedSection {
         case .inbox:
             return result.inbox
@@ -540,7 +572,17 @@ final class LibraryModel {
 
     // MARK: Selection
 
+    func selectOpenTabs() {
+        showsOpenTabs = true
+        selectedSection = .all
+        selectedWorkspace = nil
+        selectedPage = .all
+        selectedTagKey = nil
+        repairSelection()
+    }
+
     func select(section: LibrarySection) {
+        showsOpenTabs = false
         selectedSection = section
         if section != .workspaces {
             selectedWorkspace = nil
@@ -553,6 +595,7 @@ final class LibraryModel {
     }
 
     func select(workspace destination: WorkspaceDestination?) {
+        showsOpenTabs = false
         selectedSection = .workspaces
         selectedWorkspace = destination
         selectedPage = .all
@@ -561,6 +604,7 @@ final class LibraryModel {
     }
 
     func select(page: LibraryPageSelection) {
+        showsOpenTabs = false
         selectedSection = .workspaces
         selectedPage = page
         selectedTagKey = nil
@@ -572,6 +616,7 @@ final class LibraryModel {
     }
 
     func select(tagKey: String) {
+        showsOpenTabs = false
         selectedSection = .tags
         selectedTagKey = tagKey
         selectedWorkspace = nil
@@ -591,6 +636,7 @@ final class LibraryModel {
         guard let note = controller.libraryNotes.first(where: { $0.id == id }), !note.ephemeral else {
             return false
         }
+        showsOpenTabs = false
         if note.trashedAt != nil {
             selectedSection = .trash
             selectedWorkspace = nil
