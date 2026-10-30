@@ -10,9 +10,9 @@ public enum CredentialKind: String, CaseIterable, Hashable, Sendable {
 /// A secret and its optional expiry.
 ///
 /// Deliberately not `Codable`: credentials are never written to disk as part of a
-/// settings or conversation document. The descriptions redact the secret so it is
-/// not exposed through logging or diagnostics.
-public struct CredentialValue: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+/// settings or conversation document. The descriptions and reflection hide the secret so
+/// it is not exposed through logging or diagnostics.
+public struct CredentialValue: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public let secret: String
     public let expiresAt: Date?
 
@@ -28,6 +28,11 @@ public struct CredentialValue: Equatable, Sendable, CustomStringConvertible, Cus
 
     public var debugDescription: String {
         description
+    }
+
+    /// `dump` and `Mirror` would otherwise print every stored property.
+    public var customMirror: Mirror {
+        Mirror(self, children: [:])
     }
 }
 

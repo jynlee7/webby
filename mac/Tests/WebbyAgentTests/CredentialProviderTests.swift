@@ -57,3 +57,13 @@ private struct StubCredentialProvider: CredentialProvider {
     #expect(!failure.debugDescription.contains("secret"))
     #expect(failure.description.contains(CredentialKind.cartesiaAccessToken.rawValue))
 }
+
+@Test func credentialValueHidesItsSecretFromReflection() {
+    let value = CredentialValue(secret: "sk-reflect-secret")
+    var out = ""
+    dump(value, to: &out)
+
+    #expect(!out.contains("sk-reflect-secret"))
+    #expect(Mirror(reflecting: value).children.isEmpty)
+    #expect(value.secret == "sk-reflect-secret")
+}
