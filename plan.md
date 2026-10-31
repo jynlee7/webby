@@ -2107,7 +2107,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 
 | Input | Recommended value | Consequence / evidence | Status |
 |---|---|---|---|
-| Bundle ID | `io.github.jynlee7.webby` | Matches `io.github.jynlee7.webby.skin` already declared by PR #58 and the skin/site author IDs. Retaining `com.webby.app` requires #19 to rename its UTI before merge. | Awaiting approval |
+| Bundle ID | `io.github.jynlee7.webby` | Matches `io.github.jynlee7.webby.skin` already declared by PR #58 and the skin/site author IDs. Retaining `com.webby.app` requires #19 to rename its UTI before merge. | Approved 2026-10-31 |
 | Marketing version and first build | `0.1.0`, build `1` | `release/history.json` starts empty and dev `0.0.1` builds are not accepted releases, so build `1` is the first legal value. | Recommended |
 | Architectures | Universal `arm64` + `x86_64`, checked with `lipo -info` on both binaries | If the CLT lane cannot build universal, publish two clearly labelled artifacts instead. | Recommended |
 | Distribution artifact | ZIP | Already chosen; DMG stays out of v0.1.0. | Decided |
@@ -2140,6 +2140,30 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Boundaries.** Do not change extension permissions, `key`, host name or protocol version; do not move note, settings or skin storage; do not touch Library navigation, browser reducers, skin payload behavior or `plan.md` from the issue branch. The `webby://` scheme and #19's document declarations must survive the identity change.
 - **Slice acceptance.** The checker passes on the renamed identity and fails on each seeded mismatch; `InfoPlistTests` proves Swift/plist/extension agreement; the packaged app reports the approved bundle ID, `0.1.0` and the staged build number; CI stays green without secrets.
 - **Landing order.** Slice 1 lands on the #20 branch after #19 is on `main`, because the UTI-agreement check has nothing to compare before #19's `UTExportedTypeDeclarations` exist. Do not add the CI step to `main` ahead of that merge.
+
+**Decision recorded 2026-10-31: bundle ID `io.github.jynlee7.webby` is approved.**
+
+- `Webby.bundleID` and `CFBundleIdentifier` become `io.github.jynlee7.webby`. The skin UTI stays `io.github.jynlee7.webby.skin`, so #19 must not rename it and no exception path is needed.
+- The extension ID `ccehhpjcbcabmlalclppmdomonfdcbcl` and host name `com.webby.bridge` are unaffected because they are derived from the manifest `key` and `BridgeConstants`, not the bundle ID.
+- Notes, settings, skins and the bridge socket stay at their literal `~/Library/Application Support/Webby` paths, so no user data moves.
+- Accessibility must be re-approved after the rename. Release notes and `build-app.sh` output name both the old and new identifiers for `tccutil reset Accessibility`.
+- The identity checker's UTI rule is therefore `bundleID + ".skin"` with no exception branch.
+
+**Issue #20 slice 2: extension packaging (implementation detail, 2026-10-31).**
+
+- **Script API.** New `scripts/package-extension.sh --output-dir DIR [--zip PATH]`. It writes `DIR/Extension/` containing exactly the three payload files and, by default, `DIR/Webby-Extension-<manifest version>.zip` with the files at the archive root. `--zip` overrides the archive path for tests and release tooling.
+- **Allowlist.** Copy only `manifest.json`, `background.js` and `protocol.js`. `package.json`, `native-host.template.json`, `tests/` and `tests/fixtures/` stay in the repository and are never staged. The allowlist is exact in both directions: after copying, `DIR/Extension/` must contain exactly those three names, so a stray source file cannot slip in.
+- **Pre-copy validation, no rewriting.** Parse the manifest with `jq` (MV3, module service worker, non-empty `key`, permissions exactly `nativeMessaging`, `storage`, `tabs`, no `host_permissions`/`optional_permissions`), run `node --check` on both JS files, and compare the manifest `version` with `Webby.version` parsed from `WebbyCore/Webby.swift`. The packager refuses a mismatch; it never edits the tracked manifest. Parse with `sed`/`jq` rather than `plutil` so the script also runs off macOS, and leave the plist checks to slice 1's checker.
+- **Payload safety.** Reject any source entry that is a symlink or not a regular file, reject an unwritable or symlinked output directory, and refuse to write into the repository's tracked `extension/` directory. Fail with a one-line message and a non-zero exit; leave no partial archive.
+- **Determinism.** Copy with `cp` (never `cp -R`), `chmod 0644`, and `touch -t 198001010000`. Build the archive with `COPYFILE_DISABLE=1 TZ=UTC zip -X -D` over an explicit sorted file list so no resource forks, extra fields or directory entries are stored and local time cannot leak in. Write to a temporary name and rename into place atomically. Two runs from the same source must produce the same archive SHA-256 regardless of `umask`, working directory or checkout mtime.
+- **Canonical payload hash.** Print `extensionPayload=<sha256>` computed from `shasum -a 256` over the three files in sorted name order, hashing that output. This is the value slice 6 records in `release/history.json`, and it stays stable even if zip metadata changes. `dist/` remains gitignored; no artifact is committed.
+- **Build wiring.** `build-app.sh` runs the packager into `dist/package` and copies `dist/package/Extension` to `Webby.app/Contents/Resources/Extension` before signing. The bundled folder is flat, with no wrapper directory, because Settings → Chrome points Load unpacked at it. Nothing may modify the app bundle after signing.
+- **`check-extension.sh` extensions.** Keep the existing ID, host and protocol agreements against the source, then add an optional `--app PATH` mode that also checks: the bundled folder and the standalone archive each contain exactly the three files with byte-identical hashes to the stage, the archive has no directory entries, and the archived manifest version equals `Webby.version`. Fail if the archive or bundle is missing when `--app` is passed.
+- **Tests.** New `scripts/test-extension-packaging.sh`, using `mktemp -d` fixtures: two-run determinism under different `umask` values and working directories; exact allowlist with no `package.json`, template or tests; byte-identical stage versus source; rejection of a stray staged file, a symlink, a deleted expected file, a version mismatch and an unwritable output directory; and no archive left behind after a failure.
+- **CI wiring.** Add a `Test extension packaging` step after `Check extension` in `.github/workflows/ci.yml`, and pass `--app dist/Webby.app` to `check-extension.sh`. Keep job `ci`, add no secrets, and keep the existing Node protocol tests and permission assertions.
+- **Commands.** `scripts/package-extension.sh --output-dir dist/package`, `scripts/test-extension-packaging.sh`, `scripts/check-extension.sh --app dist/Webby.app`, `scripts/build-app.sh`, `shasum -a 256 dist/package/*.zip`, `shellcheck scripts/*.sh`, `node --test extension/tests/*.test.js`.
+- **Boundaries.** Do not change extension behavior, permissions, `key`, host name, protocol version, tests or fixtures; do not add signing, notarization, secrets or Web Store upload; do not touch Library, browser or skin code; keep `plan.md` unchanged on the issue branch.
+- **Slice acceptance.** The stage and archive contain exactly the three allowlisted files; two runs are hash-identical; each seeded failure exits non-zero with no artifact; `check-extension.sh --app` proves stage, archive and bundle agree; ShellCheck is clean; the existing 18 Node extension tests still pass.
 
 ### Step 7b (stretch, after Milestone A): snapshots, incognito ephemeral notes, Copy tab notes
 
