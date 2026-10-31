@@ -2139,6 +2139,7 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Verification commands.** `bash scripts/check-version-identifiers.sh`, `bash scripts/test-version-identifiers.sh`, `(cd mac && swift build)`, `scripts/test.sh --parallel`, `scripts/build-app.sh`, `scripts/check-extension.sh`, `shellcheck scripts/*.sh`.
 - **Boundaries.** Do not change extension permissions, `key`, host name or protocol version; do not move note, settings or skin storage; do not touch Library navigation, browser reducers, skin payload behavior or `plan.md` from the issue branch. The `webby://` scheme and #19's document declarations must survive the identity change.
 - **Slice acceptance.** The checker passes on the renamed identity and fails on each seeded mismatch; `InfoPlistTests` proves Swift/plist/extension agreement; the packaged app reports the approved bundle ID, `0.1.0` and the staged build number; CI stays green without secrets.
+- **Landing order.** Slice 1 lands on the #20 branch after #19 is on `main`, because the UTI-agreement check has nothing to compare before #19's `UTExportedTypeDeclarations` exist. Do not add the CI step to `main` ahead of that merge.
 
 ### Step 7b (stretch, after Milestone A): snapshots, incognito ephemeral notes, Copy tab notes
 
