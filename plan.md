@@ -2103,6 +2103,43 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
 - **Maintainer inputs before branch creation:** bundle ID; Developer Program membership, Team ID and available Developer ID Application identity; certificate import and notary authentication method (secret names only, never values); universal or architecture-labelled artifacts and test hardware; confirm `0.1.0` and initial build number; protected environment name, reviewers, allowed refs, artifact retention and sanitized-log policy.
 - **Evidence limits:** ordinary macOS CI can verify builds, fixtures, archive contents and ad-hoc runtime signatures, but not Developer ID, notarization or Gatekeeper acceptance. The protected run and clean-machine matrix must record commit, artifact checksums, OS/architecture, commands/results and sanitized logs or screenshots.
 
+**Issue #20 remaining inputs, recorded 2026-10-31.** None can be settled from the repository alone. Slice 1 may be written against a recommended value only after the bundle-ID row is approved; no release claim is valid until every row is settled.
+
+| Input | Recommended value | Consequence / evidence | Status |
+|---|---|---|---|
+| Bundle ID | `io.github.jynlee7.webby` | Matches `io.github.jynlee7.webby.skin` already declared by PR #58 and the skin/site author IDs. Retaining `com.webby.app` requires #19 to rename its UTI before merge. | Awaiting approval |
+| Marketing version and first build | `0.1.0`, build `1` | `release/history.json` starts empty and dev `0.0.1` builds are not accepted releases, so build `1` is the first legal value. | Recommended |
+| Architectures | Universal `arm64` + `x86_64`, checked with `lipo -info` on both binaries | If the CLT lane cannot build universal, publish two clearly labelled artifacts instead. | Recommended |
+| Distribution artifact | ZIP | Already chosen; DMG stays out of v0.1.0. | Decided |
+| Apple membership | Active Developer Program membership and Team ID | Needed for a Developer ID Application identity; a free account cannot notarize. Credentials never enter the repo. | Unverified |
+| Signing identity | `Developer ID Application: <Team Name> (<TEAMID>)` | Certificate plus private key imported as `.p12` into an ephemeral keychain. | Unverified |
+| Notary authentication | App Store Connect API key (`--key`, `--key-id`, `--issuer`) | Preferred over an Apple ID app password because it is scoped and revocable. | Unverified |
+| Secret and input names | `WEBBY_TEAM_ID`, `WEBBY_SIGNING_P12_BASE64`, `WEBBY_SIGNING_P12_PASSWORD`, `WEBBY_NOTARY_KEY_P8_BASE64`, `WEBBY_NOTARY_KEY_ID`, `WEBBY_NOTARY_ISSUER_ID` | Names only. Values live in the protected environment; nothing is printed or committed. | Proposed |
+| Release environment | Environment `release`, required reviewer `jynlee7`, deployment branch `main`, 90-day artifact retention, sanitized logs | Protects credentials and prevents unreviewed publication. | Proposed |
+| Development selector | Staged `WebbyDevelopmentBuild=true`, written only by non-release `build-app.sh` | Release mode and artifact checks reject the key. | Decided in plan |
+| Supported systems | macOS 14.0 or later | Matches `LSMinimumSystemVersion`; the manual matrix also covers the current shipping macOS. | Decided |
+| Release-history authority | New `release/history.json`, seeded by PR with the first accepted release | The workflow reads it and never writes repository state. | Decided in plan |
+
+**Issue #20 slice 1: identity and version (implementation detail, 2026-10-31).**
+
+- **Canonical values and locations.** `Webby.bundleID` and `Webby.version` in `mac/Sources/WebbyCore/Webby.swift` stay the single Swift source. `mac/Resources/Info.plist` and `extension/manifest.json` mirror them. The skin UTI is declared once in `Info.plist` by #19; do not add a second constant if #19 already exposes one, and never let `WebbySkinArchive` own identity strings.
+- **Computed values, never literals.** Derive the printed `tccutil reset Accessibility …` identifier in `scripts/build-app.sh` from the staged plist instead of the current literal at `scripts/build-app.sh:35`. Replace the hard-coded `com.webby.app` in `mac/Sources/WebbyAgent/ClaudeConfiguration.swift:48` with `Webby.bundleID`, and refresh the stale identifier mentions in `AccessibilityPermission.swift` and the `ChromeBridge` log-predicate comment.
+- **New checker `scripts/check-version-identifiers.sh`.** macOS-only, `plutil`-based, with `--plist`, `--extension-manifest`, `--history` and `--release` arguments. It fails closed, one line per mismatch, and never prints secrets. Comparisons:
+  - `Webby.bundleID` equals `CFBundleIdentifier`;
+  - `Webby.version` equals `CFBundleShortVersionString` and the extension manifest `version`;
+  - both versions match `^[0-9]+\.[0-9]+\.[0-9]+$`, and `CFBundleVersion` is a positive integer;
+  - `UTExportedTypeDeclarations[0].UTTypeIdentifier` equals the bundle ID plus `.skin`, matches `CFBundleDocumentTypes[0].LSItemContentTypes[0]`, and keeps the `webbyskin` extension and `application/x-webbyskin` MIME type;
+  - release mode requires `WEBBY_BUILD_NUMBER`, requires the staged plist to match it, and rejects `WebbyDevelopmentBuild`.
+- **Version format.** Accept only `MAJOR.MINOR.PATCH` with numeric components, compared component-wise, never as strings. A malformed or missing value is a failure, not a fallback.
+- **Staged plist substitution.** `build-app.sh` copies the source plist, then applies `WEBBY_BUILD_NUMBER` with `plutil -replace` when set and validates it before signing. Tracked source is never rewritten by packaging. The source plist keeps a literal build number for local development only.
+- **Release history `release/history.json`.** Committed as `{"schemaVersion": 1, "releases": []}`. Each accepted entry records `version`, `build`, `commit`, `acceptedAt` (date only) and artifact SHA-256 values (`appZip`, `extensionZip`, `extensionPayload`). Slice 1 validates schema, ordering and monotonic builds; slice 2 adds the rule that a changed `extensionPayload` hash requires a higher marketing version. Only a reviewed PR appends entries.
+- **Migration effects (recorded, not all code).** Notes, settings, skins and the bridge socket live under the literal `~/Library/Application Support/Webby` paths (`NoteStore.swift:90-92`, `SettingsStore.swift:37-39`, `BridgeConstants.swift:30`), so a bundle-ID change does not move user data. The Chrome host name `com.webby.bridge` and pinned extension ID stay unchanged. The Accessibility grant is expected to be lost on a bundle-ID change because TCC keys grants by code identity and bundle ID (inferred, verified on the clean-machine matrix), so the release notes and `build-app.sh` output must say to reset and re-approve both the old and new identifiers. Nothing in `mac/Sources` uses `UserDefaults` or Keychain, so no preference or credential migration is needed.
+- **Tests.** Extend `mac/Tests/WebbyTests/InfoPlistTests.swift` with bundle-ID, marketing-version format, build-number and UTI-domain agreement cases; update the deliberate literal tripwire at `mac/Tests/WebbyCoreTests/SmokeTests.swift:5`. Add `scripts/test-version-identifiers.sh`, which copies fixtures to a temporary directory and asserts one failure per mismatch: bundle ID, marketing version, extension version, malformed version, non-positive build, UTI domain, missing release build number and leaked `WebbyDevelopmentBuild`.
+- **CI wiring.** Add a step before `Build` in `.github/workflows/ci.yml` that runs `plutil -lint mac/Resources/Info.plist`, `scripts/check-version-identifiers.sh` and `scripts/test-version-identifiers.sh`. Keep the job id and name `ci`, keep `contents: read`, and add no secrets.
+- **Verification commands.** `bash scripts/check-version-identifiers.sh`, `bash scripts/test-version-identifiers.sh`, `(cd mac && swift build)`, `scripts/test.sh --parallel`, `scripts/build-app.sh`, `scripts/check-extension.sh`, `shellcheck scripts/*.sh`.
+- **Boundaries.** Do not change extension permissions, `key`, host name or protocol version; do not move note, settings or skin storage; do not touch Library navigation, browser reducers, skin payload behavior or `plan.md` from the issue branch. The `webby://` scheme and #19's document declarations must survive the identity change.
+- **Slice acceptance.** The checker passes on the renamed identity and fails on each seeded mismatch; `InfoPlistTests` proves Swift/plist/extension agreement; the packaged app reports the approved bundle ID, `0.1.0` and the staged build number; CI stays green without secrets.
+
 ### Step 7b (stretch, after Milestone A): snapshots, incognito ephemeral notes, Copy tab notes
 
 - **Size:** M. Each of the three parts can be its own PR.
