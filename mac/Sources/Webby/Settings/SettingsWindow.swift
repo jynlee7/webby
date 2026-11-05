@@ -297,11 +297,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             setRecordingMessage("Include ⌃, ⌥ or ⌘ so the shortcut doesn't get in the way of typing.")
             return true
         }
-        let other = recordingAgent ? general.shortcut : agent.shortcut
-        guard combo != other else {
-            setRecordingMessage(recordingAgent ? "That shortcut already creates a note." : "That shortcut already opens the agent panel.")
-            return true
-        }
         if recordingAgent { saveAgent(combo) } else { save(combo) }
         return true
     }
@@ -310,7 +305,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if recordingAgent { agent.recordingMessage = message } else { general.recordingMessage = message }
     }
 
+    /// Why `combo` can't be used for one action, given the other action's shortcut.
+    /// Recording and Reset both go through this, so the two never collide.
+    static func shortcutConflict(_ combo: KeyCombo, forAgent: Bool, other: KeyCombo) -> String? {
+        guard combo == other else { return nil }
+        return forAgent
+            ? "\(combo.displayString) already creates a note. Change the New Note shortcut first."
+            : "\(combo.displayString) already opens the agent panel. Change the agent shortcut first."
+    }
+
     private func saveAgent(_ combo: KeyCombo) {
+        if let conflict = Self.shortcutConflict(combo, forAgent: true, other: general.shortcut) {
+            agent.recordingMessage = conflict
+            return
+        }
         var updated = settings.settings
         updated.agentHotkey = combo.storageString
         do {
@@ -349,6 +357,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func save(_ combo: KeyCombo) {
+        if let conflict = Self.shortcutConflict(combo, forAgent: false, other: agent.shortcut) {
+            general.recordingMessage = conflict
+            return
+        }
         var updated = settings.settings
         updated.newNoteHotkey = combo.storageString
         do {
