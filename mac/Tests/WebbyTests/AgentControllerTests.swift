@@ -661,3 +661,67 @@ private func temporaryConversations(clock: TestClock = TestClock(fixedNow)) thro
         #expect(reported.count == 1)
     }
 }
+
+@MainActor
+@Suite struct EmptyTrashConversationTests {
+    private func makeModel() throws -> (LibraryModel, NoteStore, Note, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WebbyEmptyTrash-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let trashed = Note(text: "used by the agent", frame: NoteFrame(), placement: .screen, trashedAt: fixedNow, createdAt: fixedNow)
+        _ = store.add(trashed)
+        let permission = AccessibilityPermission()
+        let controller = NotesController(
+            store: store, monitor: ContextMonitor(permission: permission),
+            permission: permission, themes: .fallback, now: { fixedNow }
+        )
+        return (LibraryModel(controller: controller, clock: { fixedNow }), store, trashed, directory)
+    }
+
+    @Test func theDialogListsAffectedConversationsAndKeepsThemByDefault() async throws {
+        let (model, store, trashed, directory) = try makeModel()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let summary = AgentConversationSummary(id: uuid(42), title: "What did I decide?", updatedAt: "2027-01-15T08:00:00Z")
+        var asked: [Set<UUID>] = []
+        var deleted: [[UUID]] = []
+        model.conversationImpact = { ids in
+            asked.append(ids)
+            return [summary]
+        }
+        model.deleteConversations = { deleted.append($0) }
+
+        model.requestEmptyTrash()
+        await model.waitForConversationImpact()
+        #expect(asked == [[trashed.id]])
+        #expect(model.emptyTrashConversations == [summary])
+        #expect(model.alsoDeleteConversations == false)
+
+        model.confirmEmptyTrash()
+        #expect(store.note(id: trashed.id) == nil)
+        #expect(deleted.isEmpty)
+        #expect(model.emptyTrashConversations.isEmpty)
+    }
+
+    @Test func turningOnAlsoDeleteRemovesThoseConversations() async throws {
+        let (model, _, _, directory) = try makeModel()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let summary = AgentConversationSummary(id: uuid(7), title: "Q", updatedAt: "2027-01-15T08:00:00Z")
+        var deleted: [[UUID]] = []
+        model.conversationImpact = { _ in [summary] }
+        model.deleteConversations = { deleted.append($0) }
+
+        model.requestEmptyTrash()
+        await model.waitForConversationImpact()
+        model.alsoDeleteConversations = true
+        model.cancelEmptyTrash()
+        #expect(model.alsoDeleteConversations == false)
+
+        model.requestEmptyTrash()
+        await model.waitForConversationImpact()
+        #expect(model.alsoDeleteConversations == false)
+        model.alsoDeleteConversations = true
+        model.confirmEmptyTrash()
+        #expect(deleted == [[summary.id]])
+    }
+}

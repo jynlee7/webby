@@ -91,6 +91,15 @@ final class LibraryModel {
     var exportStatus: String?
     var importStatus: String?
     private(set) var pendingEmptyTrash: EmptyTrashConfirmation?
+    /// Agent conversations that used the notes Empty Trash would delete (decision 7).
+    private(set) var emptyTrashConversations: [AgentConversationSummary] = []
+    /// "Also delete those conversations". Off each time the dialog opens.
+    var alsoDeleteConversations = false
+    /// Finds stored conversations that used any of the given notes.
+    @ObservationIgnored var conversationImpact: (@MainActor (Set<UUID>) async -> [AgentConversationSummary])?
+    /// Deletes stored conversations by ID.
+    @ObservationIgnored var deleteConversations: (@MainActor ([UUID]) -> Void)?
+    @ObservationIgnored private var impactTask: Task<Void, Never>?
 
     /// The number of full cache rebuilds since creation. Tests use this to prove a
     /// refresh after an edit updates entries without rebuilding from scratch.
@@ -812,17 +821,40 @@ final class LibraryModel {
     func requestEmptyTrash() {
         let ids = Set(result.trash.map(\.id))
         pendingEmptyTrash = EmptyTrashConfirmation(count: ids.count, ids: ids)
+        resetConversationImpact()
+        guard let conversationImpact else { return }
+        impactTask = Task { [weak self] in
+            let affected = await conversationImpact(ids)
+            guard let self, self.pendingEmptyTrash?.ids == ids else { return }
+            self.emptyTrashConversations = affected
+        }
+    }
+
+    /// Lets the dialog's list finish loading. Tests use it.
+    func waitForConversationImpact() async {
+        await impactTask?.value
     }
 
     func confirmEmptyTrash() {
         guard let pending = pendingEmptyTrash else { return }
+        let affected = alsoDeleteConversations ? emptyTrashConversations.map(\.id) : []
         pendingEmptyTrash = nil
+        resetConversationImpact()
         controller.emptyTrash(ids: pending.ids)
+        if !affected.isEmpty { deleteConversations?(affected) }
         refresh()
     }
 
     func cancelEmptyTrash() {
         pendingEmptyTrash = nil
+        resetConversationImpact()
+    }
+
+    private func resetConversationImpact() {
+        impactTask?.cancel()
+        impactTask = nil
+        emptyTrashConversations = []
+        alsoDeleteConversations = false
     }
 
     // MARK: Mutations

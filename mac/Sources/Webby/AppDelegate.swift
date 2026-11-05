@@ -131,6 +131,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
+            libraryWindow?.model.conversationImpact = { [weak self] ids in
+                await self?.agent?.conversations(referencing: ids) ?? []
+            }
+            libraryWindow?.model.deleteConversations = { [weak self] ids in
+                self?.agent?.deleteConversations(ids)
+            }
         }
     }
 
