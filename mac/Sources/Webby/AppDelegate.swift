@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsStore: SettingsStore!
     private var settingsWindow: SettingsWindowController?
     private var libraryWindow: LibraryWindowController?
+    private var agentPanel: AgentPanelController?
     private let linkRouter = NoteLinkRouter()
     private var isShowingMissingNoteAlert = false
     private var permission: AccessibilityPermission!
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notes.updateThemes(self.resolveThemes())
+                self.agentPanel?.updateThemes(self.resolveThemes())
             }
         }
 
@@ -52,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notes: notes,
             openLibrary: { [weak self] in self?.showLibrary() },
             openSettings: { [weak self] in self?.showSettings() },
+            openAgent: { [weak self] in self?.showAgent() },
             showMoveToApplications: { [weak self] in self?.showMoveToApplications() }
         )
         hotkeys.onStatusChange = { [weak self] in self?.hotkeyStatusChanged() }
@@ -123,6 +126,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
         }
+    }
+
+    /// The agent panel. Until #25's Keychain slice lands there is no stored key, so
+    /// the panel explains how to add one and never reaches the network.
+    private func showAgent() {
+        if agentPanel == nil {
+            let controller = AgentController(
+                notes: notes,
+                dependencies: AgentController.Dependencies(
+                    credentials: NoStoredCredentials(),
+                    currentContext: { [weak self] in self?.monitor.context },
+                    model: { [weak self] in AgentModelSetting.resolve(self?.settingsStore.settings.agentModel ?? "") },
+                    queryRules: { [weak self] in self?.settingsStore.settings.enabledQueryRules ?? QueryRules.builtIns }
+                )
+            )
+            controller.openNote = { [weak self] id in
+                guard let self else { return }
+                self.ensureLibraryWindow()
+                self.libraryWindow?.showNote(id)
+            }
+            controller.openSettings = { [weak self] in self?.showSettings() }
+            agentPanel = AgentPanelController(controller: controller, themes: resolveThemes())
+        }
+        agentPanel?.show()
     }
 
     private func showMissingNoteLinkAlert() {
