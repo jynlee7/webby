@@ -29,7 +29,7 @@ jobs:
 
       - name: Check identifiers and versions
         run: |
-          plutil -lint mac/Resources/Info.plist
+          plutil -lint mac/Resources/Info.plist mac/Resources/Webby.entitlements
           scripts/check-version-identifiers.sh
           scripts/test-version-identifiers.sh
 
@@ -65,6 +65,12 @@ jobs:
 
       - name: Build Webby.app
         run: scripts/build-app.sh
+
+      - name: Verify Webby.app
+        run: scripts/verify-artifact.sh dist/Webby.app
+
+      - name: Release mode fails closed without signing inputs
+        run: scripts/test-build-app-release.sh
 
       - name: Check extension
         run: scripts/check-extension.sh --app dist/Webby.app
