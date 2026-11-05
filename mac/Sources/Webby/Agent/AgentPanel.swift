@@ -135,8 +135,12 @@ struct AgentPanelView: View {
             .accessibilityLabel("Scope: \(model.scope == .allNotes ? "All notes" : model.scopeTitle)")
             .accessibilityHint("Choosing another scope starts a new conversation.")
 
-            ZStack { WindowDragArea().accessibilityHidden(true) }
-                .frame(maxWidth: .infinity, minHeight: 28)
+            // The drag area's NSView is flexible in both directions; pin its height so
+            // the header stays one row and the transcript gets the space.
+            WindowDragArea()
+                .accessibilityHidden(true)
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
 
             iconButton("square.and.pencil", label: "New conversation") { model.newConversation() }
                 .disabled(model.isRunning || !model.hasConversation)
@@ -144,6 +148,7 @@ struct AgentPanelView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// A compact legend of agent states: a spinner while working, an amber mark when
@@ -250,7 +255,7 @@ struct AgentPanelView: View {
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(chipFill))
 
-            Text("↩ ask · ⌘↩ ask · esc close")
+            Text("↩ ask · esc close")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(meta)
                 .accessibilityHidden(true)
