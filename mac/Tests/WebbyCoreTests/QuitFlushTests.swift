@@ -509,3 +509,29 @@ private final class QuitState: @unchecked Sendable {
     #expect(mayTerminate)
     #expect(clock.elapsed <= .seconds(3))
 }
+
+/// The app awaits termination from its main actor, so the coordinator must cross actors.
+@MainActor @Test func mainActorOwnerCanAwaitTermination() async {
+    let recorder = Recorder()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            return 1
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    let mayTerminate = await Task { @MainActor in await coordinator.handleTermination() }.value
+
+    #expect(mayTerminate)
+    #expect(recorder.flushCalls == 1)
+    #expect(recorder.fallbackCalls == 0)
+}

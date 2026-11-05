@@ -7,8 +7,10 @@ import WebbyCore
 final class ChromeBridge {
     private let logger = Logger(subsystem: Webby.bundleID, category: "bridge")
     private var server: BridgeServer?
-    var onEvent: ((BridgeEvent) -> Void)?
     private var eventsTask: Task<Void, Never>?
+
+    /// Called on the main actor after each event is logged.
+    var onEvent: ((BridgeEvent) -> Void)?
 
     /// True when Webby runs from a translocated location and can't register the bridge.
     private(set) var needsMoveToApplications = false

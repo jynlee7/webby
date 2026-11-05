@@ -5,6 +5,9 @@ public enum SaveFailure: Error, LocalizedError, Equatable {
     case sourceChanged
     case backupChanged
     case backupNameUnavailable
+    /// The prepared commit expected a different committed generation, or the
+    /// generation was already used. Never treated as a successful write.
+    case staleGeneration(expected: UInt64, committed: UInt64)
 
     public var errorDescription: String? {
         switch self {
@@ -18,6 +21,8 @@ public enum SaveFailure: Error, LocalizedError, Equatable {
             return "The migration backup is missing or changed, so the original file was not overwritten."
         case .backupNameUnavailable:
             return "No unused name was available for the migration backup."
+        case .staleGeneration:
+            return "The notes changed while the import was waiting, so the import was not applied."
         }
     }
 }
@@ -43,10 +48,13 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
     public struct Acknowledgement: Sendable, Equatable {
         public let generation: UInt64
         public let migrationBackupURL: URL?
+        /// Set by `commitPrepared` when a prepare step created a pre-import backup.
+        public let preImportBackupURL: URL?
 
-        public init(generation: UInt64, migrationBackupURL: URL?) {
+        public init(generation: UInt64, migrationBackupURL: URL?, preImportBackupURL: URL? = nil) {
             self.generation = generation
             self.migrationBackupURL = migrationBackupURL
+            self.preImportBackupURL = preImportBackupURL
         }
     }
 
@@ -100,6 +108,68 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         }
     }
 
+    /// A backup-first commit for a transaction that must not apply to a changed file.
+    ///
+    /// Everything runs on the same serial queue as every other write: the expected
+    /// generation is checked first, `prepare` creates and verifies the backup, and only
+    /// then is the candidate written. A stale expected generation, or one that has
+    /// already been committed, throws instead of reporting success, so a caller can
+    /// never mistake a superseded plan for an applied import.
+    public func commitPrepared(
+        _ snapshot: Snapshot,
+        expectedGeneration: UInt64,
+        prepare: @escaping @Sendable () throws -> URL?
+    ) async throws -> Acknowledgement {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                continuation.resume(with: Result {
+                    try self.performPreparedCommit(
+                        snapshot,
+                        expectedGeneration: expectedGeneration,
+                        prepare: prepare
+                    )
+                })
+            }
+        }
+    }
+
+    private func performPreparedCommit(
+        _ snapshot: Snapshot,
+        expectedGeneration: UInt64,
+        prepare: @Sendable () throws -> URL?
+    ) throws -> Acknowledgement {
+        lock.lock()
+        let mode = file.mode
+        let currentGeneration = committedGeneration
+        lock.unlock()
+
+        if case .readOnly(let problem) = mode {
+            throw SaveFailure.readOnly(problem)
+        }
+        // A stale plan, or one whose generation already reached the disk, is an
+        // error: the caller must rebuild it from the current state.
+        guard expectedGeneration == currentGeneration, snapshot.generation > currentGeneration else {
+            throw SaveFailure.staleGeneration(expected: expectedGeneration, committed: currentGeneration)
+        }
+
+        // The backup belongs inside the queue: no write can slip between verifying
+        // the pre-import state and replacing the file.
+        let backupURL = try prepare()
+        if let backupURL {
+            let attributes = try FileManager.default.attributesOfItem(atPath: backupURL.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                throw SaveFailure.backupChanged
+            }
+        }
+
+        let candidate = try writeCandidate(snapshot)
+        return Acknowledgement(
+            generation: snapshot.generation,
+            migrationBackupURL: candidate.migrationBackupURL,
+            preImportBackupURL: backupURL
+        )
+    }
+
     private func locked<T>(_ body: (VersionedJSONFile<Content>) -> T) -> T {
         lock.lock()
         defer { lock.unlock() }
@@ -124,6 +194,17 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
 
         // The first write must happen even at generation 0, so a loaded older format
         // is actually upgraded and backed up rather than left untouched on disk.
+        let candidate = try writeCandidate(snapshot)
+        return Acknowledgement(generation: snapshot.generation, migrationBackupURL: candidate.migrationBackupURL)
+    }
+
+    /// Encodes and writes `snapshot`, then records the file bookkeeping. Shared by the
+    /// normal and backup-first commit paths so both write exactly the same way.
+    private func writeCandidate(_ snapshot: Snapshot) throws -> VersionedJSONFile<Content> {
+        lock.lock()
+        let currentFile = file
+        lock.unlock()
+
         var candidate = currentFile
         candidate.updateContent(snapshot.content)
         do {
@@ -153,6 +234,6 @@ public final class SaveGate<Content: Codable & Sendable>: @unchecked Sendable {
         hasCommitted = true
         lock.unlock()
 
-        return Acknowledgement(generation: snapshot.generation, migrationBackupURL: candidate.migrationBackupURL)
+        return candidate
     }
 }

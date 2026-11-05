@@ -248,43 +248,17 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     private func createMigrationBackup(sourceVersion: Int, sourceData: Data) throws -> URL {
         let baseName = resolvedFileURL.deletingPathExtension().lastPathComponent
         let fileExtension = resolvedFileURL.pathExtension.isEmpty ? "json" : resolvedFileURL.pathExtension
-        let timestamp = Self.timestamp(from: now())
+        let timestamp = BackupFileNaming.timestamp(from: now())
         let directory = resolvedFileURL.deletingLastPathComponent()
+        let randomSuffix = self.randomSuffix
 
-        // The backup holds note contents, so it is created owner-only rather than
-        // inheriting a possibly permissive umask. Staging then moving keeps the
-        // name exclusive without ever widening the file's mode.
-        for attempt in 0..<1_024 {
-            let suffix = randomSuffix(attempt)
-            let destination = directory.appendingPathComponent(
-                "\(baseName).v\(sourceVersion)-\(timestamp)-\(suffix).\(fileExtension)"
-            )
-            let staging = directory.appendingPathComponent(".\(baseName).backup-\(suffix).tmp")
-
-            guard FileManager.default.createFile(
-                atPath: staging.path,
-                contents: sourceData,
-                attributes: [.posixPermissions: 0o600]
-            ) else {
-                try? FileManager.default.removeItem(at: staging)
-                try sourceData.write(to: staging, options: [.withoutOverwriting])
-                try? FileManager.default.removeItem(at: staging)
-                throw SaveError.backupNameUnavailable
+        do {
+            return try BackupFileNaming.createExclusiveBackup(sourceData, in: directory) { attempt in
+                "\(baseName).v\(sourceVersion)-\(timestamp)-\(randomSuffix(attempt)).\(fileExtension)"
             }
-
-            do {
-                try FileManager.default.moveItem(at: staging, to: destination)
-                return destination
-            } catch {
-                try? FileManager.default.removeItem(at: staging)
-                if Self.isFileExistsError(error) {
-                    continue
-                }
-                throw error
-            }
+        } catch BackupFileError.nameUnavailable {
+            throw SaveError.backupNameUnavailable
         }
-
-        throw SaveError.backupNameUnavailable
     }
 
     /// Writes `version` beside the content at `contentKey`, so existing shapes like `{"version": 1, "notes": []}` are preserved.
@@ -387,6 +361,73 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
     }
 
     private static func isFileExistsError(_ error: Error) -> Bool {
+        BackupFileNaming.isFileExistsError(error)
+    }
+
+    private static func timestamp(from date: Date) -> String {
+        BackupFileNaming.timestamp(from: date)
+    }
+}
+
+/// A failure that turned out to be a name collision rather than an I/O problem.
+enum BackupFileError: Error, Equatable {
+    case nameUnavailable
+}
+
+/// Shared backup-file naming and exclusive creation for the migration backup and the
+/// pre-import backup. Both write note contents, so the bytes are staged owner-only and
+/// moved into place, without ever overwriting an existing file.
+enum BackupFileNaming {
+    static func timestamp(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return formatter.string(from: date)
+    }
+
+    /// Writes `sourceData` to the first unused `name(attempt)` in `directory`.
+    ///
+    /// The staging file is created with 0600 and then moved, so the destination is
+    /// never briefly wider than owner-only and an existing name is never replaced.
+    static func createExclusiveBackup(
+        _ sourceData: Data,
+        in directory: URL,
+        name: (Int) -> String
+    ) throws -> URL {
+        for attempt in 0..<1_024 {
+            let fileName = name(attempt)
+            let destination = directory.appendingPathComponent(fileName)
+            let staging = directory.appendingPathComponent(".\(fileName).tmp")
+
+            guard FileManager.default.createFile(
+                atPath: staging.path,
+                contents: sourceData,
+                attributes: [.posixPermissions: 0o600]
+            ) else {
+                try? FileManager.default.removeItem(at: staging)
+                try sourceData.write(to: staging, options: [.withoutOverwriting])
+                try? FileManager.default.removeItem(at: staging)
+                throw BackupFileError.nameUnavailable
+            }
+
+            do {
+                try FileManager.default.moveItem(at: staging, to: destination)
+                return destination
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                if isFileExistsError(error) {
+                    continue
+                }
+                throw error
+            }
+        }
+
+        throw BackupFileError.nameUnavailable
+    }
+
+    static func isFileExistsError(_ error: Error) -> Bool {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteFileExistsError {
             return true
@@ -397,14 +438,5 @@ public struct VersionedJSONFile<Content: Codable & Sendable>: Sendable {
             return true
         }
         return nsError.domain == NSPOSIXErrorDomain && nsError.code == EEXIST
-    }
-
-    private static func timestamp(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        return formatter.string(from: date)
     }
 }

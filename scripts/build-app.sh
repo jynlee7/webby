@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build Webby.app (release) into dist/ and ad-hoc sign it.
+# Build Webby.app (release) into dist/ and sign it: with $WEBBY_SIGN_IDENTITY when set,
+# ad hoc otherwise (as in CI).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root/mac"
@@ -23,8 +24,15 @@ for skin in webby.clear webby.mono; do
 done
 cp -R Resources/Skins "$app/Contents/Resources/Skins"
 
-# Ad-hoc signature: enough to run locally; not notarized.
-codesign --force --sign - "$app/Contents/MacOS/webby-bridge"
-codesign --force --sign - "$app"
+# An ad-hoc signature changes with every build, so macOS drops privacy grants such as
+# Accessibility after each rebuild. A stable identity (an Apple Development or
+# self-signed code-signing certificate) keeps them (plan.md §6.6). Not notarized.
+identity="${WEBBY_SIGN_IDENTITY:--}"
+codesign --force --sign "$identity" "$app/Contents/MacOS/webby-bridge"
+codesign --force --sign "$identity" "$app"
 codesign --verify --strict "$app"
-echo "Built $app"
+if [[ "$identity" == "-" ]]; then
+  echo "Built $app (ad hoc; run 'tccutil reset Accessibility com.webby.app' after rebuilding)"
+else
+  echo "Built $app (signed with $identity)"
+fi

@@ -15,11 +15,12 @@ private func makeTemporaryDirectory() throws -> URL {
     return url
 }
 
-private let v1FieldNames: Set<String> = [
+private let currentFieldNames: Set<String> = [
     "globalSkinID",
     "skinSoundsEnabled",
     "voiceEarconsEnabled",
     "queryRules",
+    "removedBuiltInQueryRules",
     "newNoteHotkey",
     "agentHotkey",
     "agentModel",
@@ -79,9 +80,9 @@ struct SettingsStoreTests {
         let data = try Data(contentsOf: fileURL)
         let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         #expect(Set(root.keys) == ["version", "settings"])
-        #expect(root["version"] as? Int == 1)
+        #expect(root["version"] as? Int == 2)
         let settingsObject = try #require(root["settings"] as? [String: Any])
-        #expect(Set(settingsObject.keys) == v1FieldNames)
+        #expect(Set(settingsObject.keys) == currentFieldNames)
         #expect(settingsObject["globalSkinID"] as? String == "皮肤-さくら")
         #expect((settingsObject["queryRules"] as? [[String: Any]])?.count == 2)
     }
@@ -93,7 +94,7 @@ struct SettingsStoreTests {
 
         let original = Data("""
         {
-          "version" : 2,
+          "version" : 3,
           "settings" : {
             "globalSkinID" : "future"
           }
@@ -103,21 +104,21 @@ struct SettingsStoreTests {
 
         let store = SettingsStore(fileURL: fileURL)
         #expect(store.settings == Settings.default)
-        #expect(store.mode == .readOnly(.newerVersion(found: 2, supported: 1)))
-        #expect(store.outcome == .newer(version: 2))
+        #expect(store.mode == .readOnly(.newerVersion(found: 3, supported: 2)))
+        #expect(store.outcome == .newer(version: 3))
 
         do {
             try store.save()
             Issue.record("save should throw on a newer version")
         } catch let error as SettingsError {
-            #expect(error == .readOnly(.newerVersion(found: 2, supported: 1)))
+            #expect(error == .readOnly(.newerVersion(found: 3, supported: 2)))
         }
 
         do {
             try store.replace(Settings(globalSkinID: "replacement"))
             Issue.record("replace should throw on a newer version")
         } catch let error as SettingsError {
-            #expect(error == .readOnly(.newerVersion(found: 2, supported: 1)))
+            #expect(error == .readOnly(.newerVersion(found: 3, supported: 2)))
         }
         #expect(store.settings == Settings.default)
 
@@ -213,6 +214,66 @@ struct SettingsStoreTests {
         let reloaded = SettingsStore(fileURL: fileURL)
         #expect(reloaded.settings == value)
         #expect(reloaded.settings.notesBudgetTokens == 50)
+    }
+
+    @Test func version1FileLoadsWithNoRemovedBuiltInsAndUpgradesOnSave() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("settings.json")
+        try Data("""
+        {
+          "version" : 1,
+          "settings" : {
+            "globalSkinID" : "kept",
+            "skinSoundsEnabled" : true,
+            "voiceEarconsEnabled" : false,
+            "queryRules" : [ { "host" : "example.com", "key" : "q" } ],
+            "newNoteHotkey" : "cmd+shift+n",
+            "agentHotkey" : "cmd+shift+a",
+            "agentModel" : "m",
+            "notesBudgetTokens" : 9,
+            "conversationRetentionDays" : 3,
+            "screenCaptureDefault" : true,
+            "dismissedCorruptFiles" : [ "x.json" ]
+          }
+        }
+        """.utf8).write(to: fileURL)
+
+        let store = SettingsStore(fileURL: fileURL)
+        #expect(store.outcome == .loaded)
+        #expect(store.mode == .writable)
+        #expect(store.settings.removedBuiltInQueryRules.isEmpty)
+        #expect(store.settings.queryRules == [QueryRule(host: "example.com", key: "q")])
+        #expect(store.settings.globalSkinID == "kept")
+        #expect(store.settings.notesBudgetTokens == 9)
+
+        var updated = store.settings
+        updated.removedBuiltInQueryRules = [QueryRule(host: "youtube.com", key: "v")]
+        try store.replace(updated)
+        let reloaded = SettingsStore(fileURL: fileURL)
+        #expect(reloaded.settings == updated)
+        let root = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any])
+        #expect(root["version"] as? Int == 2)
+    }
+
+    @Test func enabledQueryRulesAreBuiltInsNotRemovedPlusUserRulesWithoutDuplicates() {
+        #expect(Settings.default.enabledQueryRules == QueryRules.builtIns)
+
+        let settings = Settings(
+            queryRules: [
+                QueryRule(host: "Example.com", key: "q"),
+                QueryRule(host: "example.com", key: "q"),
+                QueryRule(host: "YouTube.com", key: "v"),
+            ],
+            removedBuiltInQueryRules: [QueryRule(host: "news.ycombinator.com", key: "id")]
+        )
+        #expect(settings.enabledQueryRules == [
+            QueryRule(host: "youtube.com", key: "v"),
+            QueryRule(host: "example.com", key: "q"),
+        ])
+
+        let removedBoth = Settings(removedBuiltInQueryRules: QueryRules.builtIns)
+        #expect(removedBoth.enabledQueryRules.isEmpty)
     }
 
     @Test func settingsHasNoDateFields() {
