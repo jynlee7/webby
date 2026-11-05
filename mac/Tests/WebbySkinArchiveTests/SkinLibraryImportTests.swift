@@ -150,3 +150,23 @@ private func listing(_ directory: URL) -> [String] {
     let catalog = SkinCatalogLoader.load(builtInDirectory: nil, library: library)
     #expect(catalog.entries.allSatisfy { $0.skin.id != "webby.sneaky" || !$0.skin.isAccepted })
 }
+
+@Test func catalogReportsAFolderMissingItsManifestAsAFailedLoad() throws {
+    let temp = try tempDirectory()
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let library = SkinLibraryFolder(root: temp.appendingPathComponent("Skins"))
+    let editing = try library.duplicate(folder: repoSkin("webby.mono"))
+    let removed = try library.duplicate(folder: repoSkin("webby.mono"), avoiding: [editing.id])
+
+    // Mid-edit: skin.json is renamed away. The other skin's folder is deleted.
+    let manifest = library.folder(for: editing.id).appendingPathComponent("skin.json")
+    try FileManager.default.moveItem(at: manifest, to: manifest.appendingPathExtension("bak"))
+    try library.remove(id: removed.id)
+
+    let catalog = SkinCatalogLoader.load(builtInDirectory: nil, library: library)
+
+    #expect(catalog.entries.isEmpty)
+    #expect(catalog.skipped.map(\.folder) == [library.folder(for: editing.id)])
+    #expect(catalog.skipped.first?.origin == .installed)
+    #expect(catalog.skipped.first?.diagnostics.map(\.code) == ["manifest-missing"])
+}
