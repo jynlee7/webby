@@ -1,0 +1,196 @@
+[
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 1383269236,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 1383269237,
+            "index": 0,
+            "active": true,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235448776.165
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "active",
+    "windowId": 1383269236,
+    "incognito": false,
+    "tab": {
+      "id": 1383269238,
+      "index": 1,
+      "active": true,
+      "url": "",
+      "title": "",
+      "lastAccessed": 1793235449530.219
+    }
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269238,
+    "url": "https://xn--bcher-kva.invalid/example"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269238,
+    "title": "bücher.invalid"
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 1383269236,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 1383269237,
+            "index": 0,
+            "active": false,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235448776.165
+          },
+          {
+            "id": 1383269238,
+            "index": 1,
+            "active": true,
+            "url": "https://xn--bcher-kva.invalid/example",
+            "title": "bücher.invalid",
+            "lastAccessed": 1793235449530.219
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269238,
+    "url": "https://example.invalid/second"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269238,
+    "title": "example.invalid"
+  },
+  {
+    "type": "active",
+    "windowId": 1383269239,
+    "incognito": true,
+    "tab": {
+      "id": 1383269240,
+      "index": 0,
+      "active": true,
+      "url": "",
+      "title": "",
+      "lastAccessed": 1793235452686.819
+    }
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269240,
+    "url": "https://private.invalid/example"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 1383269240,
+    "title": "private.invalid"
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 1383269236,
+        "focused": false,
+        "incognito": false,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 1383269237,
+            "index": 0,
+            "active": false,
+            "url": "about:blank",
+            "title": "about:blank",
+            "lastAccessed": 1793235448776.165
+          },
+          {
+            "id": 1383269238,
+            "index": 1,
+            "active": true,
+            "url": "https://example.invalid/second",
+            "title": "example.invalid",
+            "lastAccessed": 1793235449530.219
+          }
+        ]
+      },
+      {
+        "id": 1383269239,
+        "focused": true,
+        "incognito": true,
+        "bounds": {
+          "left": 120,
+          "top": 140,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 1383269240,
+            "index": 0,
+            "active": true,
+            "url": "https://private.invalid/example",
+            "title": "private.invalid",
+            "lastAccessed": 1793235452686.819
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "tabClosed",
+    "tabId": 1383269240,
+    "windowClosing": true
+  },
+  {
+    "type": "tabClosed",
+    "tabId": 1383269238,
+    "windowClosing": false
+  },
+  {
+    "type": "active",
+    "windowId": 1383269236,
+    "incognito": false,
+    "tab": {
+      "id": 1383269237,
+      "index": 0,
+      "active": true,
+      "url": "about:blank",
+      "title": "about:blank",
+      "lastAccessed": 1793235453810.532
+    }
+  }
+]

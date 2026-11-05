@@ -555,17 +555,28 @@ private struct NoteDetailContent: View {
                 .accessibilityHint("Moves this note to Trash. You can restore it later.")
             }
 
-            Button("Attach to Current App") {
-                let applied = actions.attachCurrentAppAnchor { anchor in
-                    draft.commit(to: model)
-                    model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+            Menu("Attach to Current") {
+                let scopes = actions.currentScopes()
+                if scopes.isEmpty {
+                    Button("Switch to an App First") {
+                        validationMessage = "Switch to the app you want first. Webby can't attach a note to itself."
+                    }
                 }
-                if !applied {
-                    validationMessage = "Switch to the app you want first. Webby can't attach a note to itself."
+                ForEach(scopes, id: \.title) { scope in
+                    Button(scope.title) {
+                        let applied = actions.attachCurrentScope(titled: scope.title) { anchor in
+                            draft.commit(to: model)
+                            model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+                        }
+                        if !applied {
+                            validationMessage = "The page in front changed. Open the menu again to attach to it."
+                        }
+                    }
                 }
             }
+            .fixedSize()
             .disabled(!canEdit)
-            .accessibilityHint("Attaches this note to the other app that is currently in front.")
+            .accessibilityHint("Attaches this note to the page or app that was last in front.")
 
             Button("Show at Anchor") {
                 if let anchor = note.anchor, case let .app(bundleID) = anchor {

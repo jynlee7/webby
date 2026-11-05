@@ -2,7 +2,8 @@ import AppKit
 import WebbyCore
 
 /// Follows the frontmost app, and its focused window's frame when Accessibility is
-/// allowed.
+/// allowed. In Chrome, the page comes from the bridge (`BrowserMonitor`) and is used
+/// only while its window bounds match this frame.
 ///
 /// Webby's own activations (Settings, alerts) are ignored, so the notes of the app the
 /// user was in stay up. Frames use top-left coordinates, as the Accessibility API and
@@ -16,15 +17,21 @@ final class ContextMonitor {
     }
 
     var app: FrontApp?
-    private(set) var windowFrame: CGRect?
-    /// Called after `app` or `windowFrame` changes.
+    /// Read through Accessibility; tests set it directly, as they set `app`.
+    var windowFrame: CGRect?
+    /// Called after `app`, `windowFrame` or, while Chrome is frontmost, its page changes.
     var onChange: (() -> Void)?
 
     var context: Context? {
-        app.map { Context(appBundleID: $0.bundleID) }
+        guard let app else { return nil }
+        if app.bundleID == BrowserSession.bundleID, let browser {
+            return browser.context(focusedFrame: windowFrame)
+        }
+        return Context(appBundleID: app.bundleID)
     }
 
     private let permission: AccessibilityPermission
+    private let browser: BrowserMonitor?
     private var activationObserver: NSObjectProtocol?
     private var axObserver: AXObserver?
     private var axApp: AXUIElement?
@@ -45,8 +52,13 @@ final class ContextMonitor {
         kAXUIElementDestroyedNotification,
     ]
 
-    init(permission: AccessibilityPermission) {
+    init(permission: AccessibilityPermission, browser: BrowserMonitor? = nil) {
         self.permission = permission
+        self.browser = browser
+        browser?.onChange = { [weak self] in
+            guard let self, self.app?.bundleID == BrowserSession.bundleID else { return }
+            self.onChange?()
+        }
     }
 
     func start() {
