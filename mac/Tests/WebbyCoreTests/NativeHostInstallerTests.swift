@@ -275,3 +275,19 @@ func approvedLaunchBacksUpAndRewritesABrokenManifest(_ state: String) throws {
     try foreign.write(to: installer.manifestURL)
     #expect(installer.inspect() == .malformed)
 }
+
+@Test func unreadableManifestIsNeverReplacedWithoutABackup() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let chrome = try makeChromeFolder(in: root)
+    let installer = NativeHostInstaller(bridgeExecutableURL: try makeBridge(in: root), chromeSupportDirectory: chrome, policy: releasePolicy(root))
+    try FileManager.default.createDirectory(at: installer.manifestURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("old".utf8).write(to: installer.manifestURL)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: installer.manifestURL.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: installer.manifestURL.path) }
+
+    #expect(throws: (any Error).self) { try installer.install() }
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: installer.manifestURL.path)
+    #expect(try Data(contentsOf: installer.manifestURL) == Data("old".utf8))
+    #expect(!FileManager.default.fileExists(atPath: installer.backupURL.path))
+}

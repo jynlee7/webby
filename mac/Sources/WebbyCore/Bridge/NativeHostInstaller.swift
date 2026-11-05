@@ -123,8 +123,9 @@ public struct NativeHostInstaller: Sendable {
         if !FileManager.default.fileExists(atPath: hostsDirectory.path) {
             try FileManager.default.createDirectory(at: hostsDirectory, withIntermediateDirectories: false)
         }
-        // Keep the manifest being replaced; if that fails, change nothing.
-        if let existing = try? Data(contentsOf: manifestURL) {
+        // Keep the manifest being replaced; if it can't be read or copied, change nothing.
+        if FileManager.default.fileExists(atPath: manifestURL.path) {
+            let existing = try Data(contentsOf: manifestURL)
             try existing.write(to: backupURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
         }

@@ -184,7 +184,7 @@ import Testing
         try writePayload(at: installed, version: "0.1.0")
         var operations = BundledExtensionInstaller.Operations.fileManager
         operations.moveItem = { from, to in
-            if from.lastPathComponent == ".Extension-staging" { throw CocoaError(.fileWriteUnknown) }
+            if from.lastPathComponent.hasPrefix(".Extension-staging") { throw CocoaError(.fileWriteUnknown) }
             try FileManager.default.moveItem(at: from, to: to)
         }
 

@@ -104,6 +104,8 @@ jobs:
           echo "::add-mask::$keychain_password"
           printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
           security create-keychain -p "$keychain_password" "$keychain"
+          # Export now so the always() cleanup deletes it even if a later step fails.
+          echo "WEBBY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           security set-keychain-settings -lut 3600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
           security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign > /dev/null
@@ -114,7 +116,6 @@ jobs:
             | sed -nE "s/.*\"(Developer ID Application: .+ \\($WEBBY_TEAM_ID\\))\"/\\1/p" | head -n 1)"
           [[ -n "$identity" ]] || { echo "::error::No Developer ID Application identity for the configured team"; exit 1; }
           echo "WEBBY_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-          echo "WEBBY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
 
       - name: Build and sign
         env:

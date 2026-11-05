@@ -81,7 +81,8 @@ public struct BundledExtensionInstaller: Sendable {
         self.operations = operations
     }
 
-    var stagingDirectory: URL { supportDirectory.appendingPathComponent(".Extension-staging", isDirectory: true) }
+    /// The fixed staging name used by earlier launches; removed when found.
+    var legacyStagingDirectory: URL { supportDirectory.appendingPathComponent(".Extension-staging", isDirectory: true) }
     var previousDirectory: URL { supportDirectory.appendingPathComponent(".Extension-previous", isDirectory: true) }
     /// Where `repairInvalidInstallation()` keeps the folder it replaced (one copy, owner-only).
     public var invalidDirectory: URL { supportDirectory.appendingPathComponent("Extension-invalid", isDirectory: true) }
@@ -163,9 +164,13 @@ public struct BundledExtensionInstaller: Sendable {
     }
 
     private func replace(with bundle: Payload, expecting installed: Installed) throws -> Outcome {
-        if exists(stagingDirectory) {
-            try operations.removeItem(stagingDirectory)
+        if exists(legacyStagingDirectory) {
+            try operations.removeItem(legacyStagingDirectory)
         }
+        // Each launch stages under its own name, so an overlapping launch can never delete or
+        // refill the folder this one validated before it is moved into place.
+        let stagingDirectory = supportDirectory
+            .appendingPathComponent(".Extension-staging-\(UUID().uuidString)", isDirectory: true)
         do {
             try operations.createDirectory(stagingDirectory)
             try setPermissions(0o755, stagingDirectory)

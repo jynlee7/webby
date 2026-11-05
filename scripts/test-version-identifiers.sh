@@ -17,7 +17,8 @@ reset_fixtures() {
   mkdir -p "$work/case"
   cp "$root/mac/Resources/Info.plist" "$work/case/Info.plist"
   cp "$root/extension/manifest.json" "$work/case/manifest.json"
-  cp "$root/release/history.json" "$work/case/history.json"
+  # An empty history, so the cases stay valid after real releases are recorded.
+  printf '{"schemaVersion": 1, "releases": []}\n' > "$work/case/history.json"
   cp "$root/mac/Sources/WebbyCore/Webby.swift" "$work/case/Webby.swift"
 }
 
