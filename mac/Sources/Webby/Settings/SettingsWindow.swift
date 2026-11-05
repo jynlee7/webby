@@ -16,12 +16,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let permission: AccessibilityPermission
     private let general: GeneralSettingsModel
     private let notes: NotesController
+    private let skins: SkinStore
     private let queryRules = QueryRulesSettingsModel()
     private var keyMonitor: Any?
 
-    init(settings: SettingsStore, notes: NotesController, hotkeys: Hotkeys, permission: AccessibilityPermission, storedShortcutProblem: String?) {
+    init(
+        settings: SettingsStore,
+        notes: NotesController,
+        skins: SkinStore,
+        importSkin: @escaping @MainActor () -> Void,
+        hotkeys: Hotkeys,
+        permission: AccessibilityPermission,
+        storedShortcutProblem: String?
+    ) {
         self.settings = settings
         self.notes = notes
+        self.skins = skins
         self.hotkeys = hotkeys
         self.permission = permission
         general = GeneralSettingsModel(
@@ -37,6 +47,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         item.label = "General"
         item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
         tabs.addTabViewItem(item)
+
+        let appearance = NSHostingController(rootView: AppearanceSettingsView(store: skins, importSkin: importSkin))
+        appearance.sizingOptions = [.preferredContentSize]
+        let appearanceItem = NSTabViewItem(viewController: appearance)
+        appearanceItem.label = "Appearance"
+        appearanceItem.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: nil)
+        tabs.addTabViewItem(appearanceItem)
 
         let queryHosting = NSHostingController(rootView: QueryRulesSettingsView(model: queryRules))
         queryHosting.sizingOptions = [.preferredContentSize]

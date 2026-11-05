@@ -17,7 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
-    private var builtInSkins: [InstalledSkin] = []
+    private var skins: SkinStore!
+    private var skinImporter: SkinImporter!
+    private var pendingSkinURLs: [URL] = []
     private var accessibilityObserver: NSObjectProtocol?
     private let logger = Logger(subsystem: Webby.bundleID, category: "app")
 
@@ -27,11 +29,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permission = AccessibilityPermission()
         monitor = ContextMonitor(permission: permission)
         settingsStore = SettingsStore()
-        builtInSkins = NoteThemes.loadBuiltInSkins(from: NoteThemes.bundledSkinsDirectory)
-        if builtInSkins.count < NoteThemes.builtInIDs.count {
-            logger.error("Loaded \(self.builtInSkins.count) of \(NoteThemes.builtInIDs.count) built-in skins; notes use the fallback look")
+        let noteStore = NoteStore()
+        skins = SkinStore(
+            userRoot: Self.userSkinsRoot,
+            builtInDirectory: NoteThemes.bundledSkinsDirectory,
+            settings: settingsStore,
+            noteStore: noteStore
+        )
+        if skins.rows.filter({ !$0.isUserSkin && $0.isAccepted }).count < NoteThemes.builtInIDs.count {
+            logger.error("Fewer than \(NoteThemes.builtInIDs.count) built-in skins loaded; notes use the fallback look")
         }
-        notes = NotesController(store: NoteStore(), monitor: monitor, permission: permission, themes: resolveThemes())
+        if let notice = skins.notice { logger.notice("\(notice, privacy: .public)") }
+        let assets = SkinAssetCache(folder: skins.assetFolderProvider)
+        skins.assetCache = assets
+        notes = NotesController(store: noteStore, monitor: monitor, permission: permission, skins: skins, assets: assets)
+        skinImporter = SkinImporter(store: skins)
+        skins.onThemesChanged = { [weak self] in self?.notes.refreshThemes() }
+        skins.onNotesMutated = { [weak self] in self?.notes.workspacesMutated() }
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil,
@@ -39,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.notes.updateThemes(self.resolveThemes())
+                self.skins.accessibilityChanged()
             }
         }
 
@@ -52,6 +66,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notes: notes,
             openLibrary: { [weak self] in self?.showLibrary() },
             openSettings: { [weak self] in self?.showSettings() },
+            importSkin: { [weak self] in self?.skinImporter.chooseFiles() },
+            revealSkinsFolder: { [weak self] in self?.revealSkinsFolder() },
             showMoveToApplications: { [weak self] in self?.showMoveToApplications() }
         )
         hotkeys.onStatusChange = { [weak self] in self?.hotkeyStatusChanged() }
@@ -67,6 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         notes.start()
 
+        // Files opened while launching arrive before this point.
+        if !pendingSkinURLs.isEmpty {
+            skinImporter.enqueue(pendingSkinURLs)
+            pendingSkinURLs = []
+        }
+
         linkRouter.onRoute = { [weak self] id in
             guard let self else { return false }
             self.ensureLibraryWindow()
@@ -76,10 +98,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         linkRouter.markReady()
     }
 
-    /// External `webby://note/<uuid>` links. Links that arrive before launch finishes
-    /// are queued by the router and flushed once `notes.start()` has completed.
+    /// Double-clicked or dropped `.webbyskin` files and external `webby://note/<uuid>`
+    /// links. This is the only open entry point needed: AppKit prefers it to
+    /// `application(_:openFile:)` when it exists. Links that arrive before launch
+    /// finishes are queued by the router and flushed once `notes.start()` has completed.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
+        let skinFiles = urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "webbyskin" }
+        if !skinFiles.isEmpty {
+            if let skinImporter {
+                skinImporter.enqueue(skinFiles)
+            } else {
+                pendingSkinURLs.append(contentsOf: skinFiles)
+            }
+        }
+        for url in urls where !skinFiles.contains(url) {
             linkRouter.receive(url)
         }
     }
@@ -95,16 +127,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        skinImporter?.discardAll()
+        skins.stop()
         chromeBridge.stop()
         monitor.stop()
     }
 
-    private func resolveThemes() -> NoteThemes {
-        NoteThemes(
-            skins: builtInSkins,
-            globalSkinID: settingsStore.settings.globalSkinID,
-            accessibility: NoteThemes.systemAccessibility
-        )
+    private static var userSkinsRoot: URL {
+        SettingsStore.defaultFileURL.deletingLastPathComponent().appendingPathComponent("Skins", isDirectory: true)
     }
 
     private func showLibrary() {
@@ -143,6 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = SettingsWindowController(
                 settings: settingsStore,
                 notes: notes,
+                skins: skins,
+                importSkin: { [weak self] in self?.skinImporter.chooseFiles() },
                 hotkeys: hotkeys,
                 permission: permission,
                 storedShortcutProblem: storedShortcutProblem
@@ -152,6 +184,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow = window
         }
         settingsWindow?.present()
+    }
+
+    private func revealSkinsFolder() {
+        do {
+            NSWorkspace.shared.activateFileViewerSelecting([try skins.skinsFolderURL])
+        } catch {
+            NSApp.activate()
+            let alert = NSAlert()
+            alert.messageText = "Couldn't open the skins folder"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     /// The menu shows the shortcut only while it is registered.
