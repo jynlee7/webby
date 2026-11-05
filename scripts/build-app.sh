@@ -23,6 +23,9 @@ cp Resources/Info.plist "$app/Contents/Info.plist"
 if [[ -n "$build_number" ]]; then
   plutil -replace CFBundleVersion -string "$build_number" "$app/Contents/Info.plist"
 fi
+# A development build may register the Chrome bridge from any non-translocated folder
+# (RegistrationPolicy.development); release artifacts must never carry this key.
+plutil -replace WebbyDevelopmentBuild -bool true "$app/Contents/Info.plist"
 cp "$bin/Webby" "$app/Contents/MacOS/Webby"
 cp "$bin/webby-bridge" "$app/Contents/MacOS/webby-bridge"
 
@@ -39,7 +42,7 @@ cp -R Resources/Skins "$app/Contents/Resources/Skins"
 "$root/scripts/package-extension.sh" --output-dir "$root/dist/package"
 cp -R "$root/dist/package/Extension" "$app/Contents/Resources/Extension"
 
-"$root/scripts/check-version-identifiers.sh" --plist "$app/Contents/Info.plist"
+"$root/scripts/check-version-identifiers.sh" --plist "$app/Contents/Info.plist" --allow-development
 bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")"
 
 # An ad-hoc signature changes with every build, so macOS drops privacy grants such as

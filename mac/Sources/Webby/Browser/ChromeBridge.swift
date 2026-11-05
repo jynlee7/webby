@@ -16,8 +16,11 @@ final class ChromeBridge {
     /// Called on the main actor after each event is logged.
     var onEvent: ((BridgeEvent) -> Void)?
 
-    /// True when Webby runs from a translocated location and can't register the bridge.
+    /// True when Webby runs from a translocated or unapproved location and can't register the bridge.
     private(set) var needsMoveToApplications = false
+
+    /// What the last launch did with the native host manifest, for the Chrome settings.
+    private(set) var hostRegistration: NativeHostInstaller.Outcome?
 
     /// What the last launch did with the bundled extension, for the Chrome settings.
     private(set) var extensionInstall: BundledExtensionInstaller.Outcome?
@@ -67,7 +70,12 @@ final class ChromeBridge {
         guard let executable = Bundle.main.executableURL else { return }
         let bridge = executable.deletingLastPathComponent().appendingPathComponent(BridgeConstants.bridgeExecutableName)
         do {
-            switch try NativeHostInstaller(bridgeExecutableURL: bridge).install() {
+            // Release builds register only from Applications; a staged development build may
+            // register from anywhere that isn't translocated.
+            let policy = RegistrationPolicy.forApp(infoDictionary: Bundle.main.infoDictionary)
+            let outcome = try NativeHostInstaller(bridgeExecutableURL: bridge, policy: policy).install()
+            hostRegistration = outcome
+            switch outcome {
             case .installed(let url):
                 logger.info("Registered the Chrome bridge at \(url.path, privacy: .public)")
             case .unchanged:
@@ -79,6 +87,12 @@ final class ChromeBridge {
                 logger.error("No \(BridgeConstants.bridgeExecutableName, privacy: .public) next to Webby; not registering the Chrome bridge")
             case .chromeNotFound:
                 logger.info("Chrome's support folder doesn't exist; not registering the Chrome bridge")
+            case .unstableLocation:
+                needsMoveToApplications = true
+                logger.error("Webby is not in Applications; not registering the Chrome bridge")
+            case .preservedExisting:
+                needsMoveToApplications = true
+                logger.error("Webby is not in Applications; kept the existing Chrome bridge registration")
             }
         } catch {
             logger.error("Couldn't register the Chrome bridge: \(error.localizedDescription, privacy: .public)")
