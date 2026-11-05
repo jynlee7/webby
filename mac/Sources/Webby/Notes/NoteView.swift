@@ -18,6 +18,8 @@ final class NoteModel {
     /// "Whole site", "This app"), and the choice its anchor matches.
     var scopes: [NoteScope] = []
     var selectedScope: Int?
+    /// Re-attached after a Chrome restart by its page address and not yet confirmed.
+    var restored = false
 
     @ObservationIgnored var onTextChange: @MainActor () -> Void = {}
     @ObservationIgnored var onToggleCollapsed: @MainActor () -> Void = {}
@@ -26,6 +28,8 @@ final class NoteModel {
     @ObservationIgnored var onDone: @MainActor () -> Void = {}
     @ObservationIgnored var onResizeEnded: @MainActor () -> Void = {}
     @ObservationIgnored var onScope: @MainActor (NoteScope.Choice) -> Void = { _ in }
+    @ObservationIgnored var onKeepRestored: @MainActor () -> Void = {}
+    @ObservationIgnored var onMoveToClosedTabs: @MainActor () -> Void = {}
 
     init(id: UUID, text: String, collapsed: Bool, isEditable: Bool, themes: NoteThemes) {
         self.id = id
@@ -137,6 +141,10 @@ struct NoteView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if model.restored {
+                restoredBadge
+            }
+
             Menu {
                 if model.scopes.count > 1 {
                     Menu("Stick To") {
@@ -171,6 +179,33 @@ struct NoteView: View {
         .padding(.horizontal, 6)
         .frame(height: controlRowHeight)
         .background(model.collapsed ? Color.clear : Color(theme.header.fill))
+    }
+
+    /// Decision: the header shows the note's first line, not a scope label, so the badge
+    /// is its own label after the title instead of "· RESTORED" appended to a scope. It
+    /// uses the moodboard's scope style (mono caps, 10.5 pt, wide tracking, the icon ink)
+    /// and is a real control (design.md principle 6), with text rather than colour alone.
+    /// It appears without animation (principle 4) and never covers the title or icons.
+    private var restoredBadge: some View {
+        Menu {
+            Button("Keep on This Tab", action: model.onKeepRestored)
+            Button("Move to Closed Tabs", action: model.onMoveToClosedTabs)
+        } label: {
+            Text("Restored")
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .tracking(0.84)
+                .textCase(.uppercase)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(minHeight: 22)
+        .tint(Color(theme.icons.tint))
+        .foregroundStyle(Color(theme.icons.tint))
+        .help("Restored after Chrome restarted, matched by page address")
+        .accessibilityLabel("Restored after Chrome restarted, matched by page address")
+        .accessibilityHint("Keep the note on this tab, or move it to Closed Tabs.")
+        .disabled(!model.isEditable)
     }
 
     private var content: some View {

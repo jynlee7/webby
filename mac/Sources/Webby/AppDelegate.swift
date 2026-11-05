@@ -66,11 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
-        // Both consumers see every event: Open Tabs lists tabs, the browser monitor
-        // follows the focused window's page for web notes.
+        notes.tabs.chromeSession = { BrowserMonitor.runningChromeSession() }
+        notes.tabs.openTabs = { [weak self] in self?.openTabs.inventory ?? LibraryInventory() }
+        notes.tabs.liveTab = { [weak self] ref in self?.browser.tab(ref) }
+        // Every consumer sees every event: Open Tabs lists tabs, the browser monitor
+        // follows the focused window's page, and tab notes follow their tabs last, once
+        // the open tabs are current.
         chromeBridge.onEvent = { [weak self] event in
             self?.openTabs.receive(event)
             self?.browser.receive(event)
+            self?.notes.receiveBridgeEvent(event)
         }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
