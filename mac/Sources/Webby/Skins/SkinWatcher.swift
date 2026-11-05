@@ -41,8 +41,23 @@ final class SkinWatcher {
         guard stream == nil else { return }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue else { return }
+        guard let created = Self.makeStream(root: root, queue: queue, onChange: onChange) else { return }
+        if FSEventStreamStart(created) {
+            stream = created
+        } else {
+            FSEventStreamInvalidate(created)
+            FSEventStreamRelease(created)
+        }
+    }
 
-        let onChange = self.onChange
+    /// Built outside the main actor on purpose. FSEvents calls the event and release
+    /// callbacks on `queue`; closures formed in main-actor code are inferred to be
+    /// main-actor isolated, and Swift 6's isolation check traps when they run there.
+    nonisolated private static func makeStream(
+        root: URL,
+        queue: DispatchQueue,
+        onChange: @escaping @MainActor () -> Void
+    ) -> FSEventStreamRef? {
         let box = Box {
             Task { @MainActor in onChange() }
         }
@@ -72,15 +87,10 @@ final class SkinWatcher {
         ) else {
             // The stream never took ownership of the context.
             Unmanaged<Box>.fromOpaque(context.info!).release()
-            return
+            return nil
         }
         FSEventStreamSetDispatchQueue(created, queue)
-        if FSEventStreamStart(created) {
-            stream = created
-        } else {
-            FSEventStreamInvalidate(created)
-            FSEventStreamRelease(created)
-        }
+        return created
     }
 
     func stop() {
