@@ -17,10 +17,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let general: GeneralSettingsModel
     private let notes: NotesController
     private let queryRules = QueryRulesSettingsModel()
+    private let agent = AgentSettingsModel()
+    private let credentials: KeychainCredentialStore
     private var keyMonitor: Any?
 
-    init(settings: SettingsStore, notes: NotesController, hotkeys: Hotkeys, permission: AccessibilityPermission, storedShortcutProblem: String?) {
+    init(
+        settings: SettingsStore,
+        notes: NotesController,
+        hotkeys: Hotkeys,
+        permission: AccessibilityPermission,
+        storedShortcutProblem: String?,
+        credentials: KeychainCredentialStore = KeychainCredentialStore()
+    ) {
         self.settings = settings
+        self.credentials = credentials
         self.notes = notes
         self.hotkeys = hotkeys
         self.permission = permission
@@ -45,6 +55,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryItem.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         tabs.addTabViewItem(queryItem)
 
+        let agentHosting = NSHostingController(rootView: AgentSettingsView(model: agent))
+        agentHosting.sizingOptions = [.preferredContentSize]
+        let agentItem = NSTabViewItem(viewController: agentHosting)
+        agentItem.label = "AI"
+        agentItem.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        tabs.addTabViewItem(agentItem)
+
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
@@ -59,6 +76,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         general.allowAccessibility = { [weak self] in self?.permission.requestAccess() }
         general.openAccessibilitySettings = { [weak self] in self?.permission.openSystemSettings() }
         permission.onChange { [weak self] in self?.refresh() }
+        agent.saveKey = { [weak self] in self?.saveKey() }
+        agent.removeKey = { [weak self] in self?.removeKey() }
+        agent.saveModel = { [weak self] in self?.saveModel() }
+        agent.useDefaultModel = { [weak self] in
+            self?.agent.modelDraft = ""
+            self?.saveModel()
+        }
+        agent.modelDraft = settings.settings.agentModel
+        refreshKey()
         queryRules.add = { [weak self] in self?.addQueryRule() }
         queryRules.remove = { [weak self] row in self?.removeQueryRule(row) }
         queryRules.convert = { [weak self] row in self?.convertQueryRule(row) }
@@ -101,6 +127,58 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         queryRules.storageProblem = general.storageProblem
         refreshQueryRules()
+    }
+
+    // MARK: AI
+
+    private func refreshKey() {
+        do {
+            agent.hasKey = try credentials.storedValue(for: .anthropicAPIKey) != nil
+        } catch {
+            agent.hasKey = false
+            agent.keyMessage = "Webby couldn't read the Keychain. The agent is unavailable until it can."
+        }
+    }
+
+    private func saveKey() {
+        do {
+            try credentials.save(agent.keyDraft, for: .anthropicAPIKey)
+            agent.keyDraft = ""
+            agent.keyMessage = "Saved in your Keychain."
+            agent.keyFailed = false
+        } catch {
+            agent.keyMessage = "The key wasn't saved. Paste the whole key, with no spaces inside."
+            agent.keyFailed = true
+        }
+        refreshKey()
+    }
+
+    private func removeKey() {
+        do {
+            try credentials.remove(.anthropicAPIKey)
+            agent.keyMessage = "Removed. The agent is unavailable until you add a key."
+            agent.keyFailed = false
+        } catch {
+            agent.keyMessage = "The key couldn't be removed from the Keychain."
+            agent.keyFailed = true
+        }
+        refreshKey()
+    }
+
+    private func saveModel() {
+        if let problem = AgentModelSetting.problem(with: agent.modelDraft) {
+            agent.modelMessage = problem
+            return
+        }
+        var updated = settings.settings
+        updated.agentModel = agent.modelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try settings.replace(updated)
+            agent.modelDraft = updated.agentModel
+            agent.modelMessage = nil
+        } catch {
+            agent.modelMessage = error.localizedDescription
+        }
     }
 
     // MARK: Pages that differ by query
@@ -379,6 +457,72 @@ private struct QueryRulesSettingsView: View {
                 Section {
                     Label(problem, systemImage: "exclamationmark.triangle")
                 }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+@MainActor @Observable
+final class AgentSettingsModel {
+    var hasKey = false
+    var keyDraft = ""
+    var keyMessage: String?
+    var keyFailed = false
+    var modelDraft = ""
+    var modelMessage: String?
+
+    @ObservationIgnored var saveKey: @MainActor () -> Void = {}
+    @ObservationIgnored var removeKey: @MainActor () -> Void = {}
+    @ObservationIgnored var saveModel: @MainActor () -> Void = {}
+    @ObservationIgnored var useDefaultModel: @MainActor () -> Void = {}
+}
+
+private struct AgentSettingsView: View {
+    @Bindable var model: AgentSettingsModel
+
+    var body: some View {
+        Form {
+            Section("Anthropic key") {
+                LabeledContent("Status") {
+                    Text(model.hasKey ? "Saved in your Keychain" : "No key")
+                }
+                SecureField("API key", text: $model.keyDraft, prompt: Text("Paste your key"))
+                    .onSubmit { model.saveKey() }
+                HStack {
+                    Button(model.hasKey ? "Replace Key" : "Save Key") { model.saveKey() }
+                        .disabled(model.keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Remove Key", role: .destructive) { model.removeKey() }
+                        .disabled(!model.hasKey)
+                }
+                if let message = model.keyMessage {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(model.keyFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                }
+                Text("The key stays in the macOS Keychain. When you ask a question, it is sent only to Anthropic, with the question, the notes in scope (never notes kept away from AI) and the page you asked from.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Model") {
+                TextField("Model ID", text: $model.modelDraft, prompt: Text(AgentModelSetting.pinnedDefault))
+                    .onSubmit { model.saveModel() }
+                HStack {
+                    Button("Save Model") { model.saveModel() }
+                    Button("Use Default (\(AgentModelSetting.pinnedDefault))") { model.useDefaultModel() }
+                        .disabled(model.modelDraft.isEmpty)
+                }
+                if let message = model.modelMessage {
+                    Text(message).font(.callout).foregroundStyle(.red)
+                }
+                Text("New conversations use this model. A conversation keeps its model, so its cached notes stay valid.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
