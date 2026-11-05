@@ -236,4 +236,49 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         #expect(h.store.note(id: note.id)?.tab?.pendingRestore == true)
         #expect(h.store.note(id: note.id)?.revision == note.revision)
     }
+
+    @Test func theLibraryShowsClosedTabsAndPutsThemBack() throws {
+        let h = harness()
+        defer { h.close() }
+        hello(h)
+        h.send(.inventory(windows: [window("chrome://newtab/")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+        h.send(.tabUpdated(tabId: 1, url: "https://a.example/docs/intro?token=secret", title: ""))
+        let model = LibraryModel(controller: h.controller, openTabs: h.feed)
+
+        var live = try #require(h.store.note(id: note.id))
+        #expect(LibraryNotePresentation.scopeDescription(for: live) == "Just this tab: Tab 1")
+        live.tab?.lastTitle = nil
+        #expect(LibraryNotePresentation.scopeDescription(for: live) == "Just this tab: a.example")
+        #expect(!LibraryNotePresentation.scopeDescription(for: live).contains("secret"))
+        #expect(LibraryNotePresentation.closedTabStatus(live.tab, outcome: nil) == nil)
+
+        h.send(.tabClosed(tabId: 1, windowClosing: false))
+        let closed = try #require(h.store.note(id: note.id))
+        #expect(LibraryNotePresentation.scopeDescription(for: closed) == "Closed tab: Tab 1")
+        #expect(LibraryNotePresentation.closedTabStatus(closed.tab, outcome: nil) == "Tab closed")
+        #expect(LibraryNotePresentation.closedTabStatus(closed.tab, outcome: .ambiguous) == "More than one tab matched")
+        var waiting = closed.tab
+        waiting?.pendingRestore = true
+        #expect(LibraryNotePresentation.closedTabStatus(waiting, outcome: nil) == "Waiting for Chrome to restore tabs")
+
+        // Reattach targets the last verified tab, named by its title.
+        #expect(model.reattachTargetTitle(for: note.id) == nil)
+        h.send(.inventory(windows: [window("https://b.example/", tabID: 4)]))
+        #expect(model.reattachTargetTitle(for: note.id) == "Tab 4")
+
+        // Stick to Page offers the tab's last page and promotes with one revision.
+        let promotions = model.promotions(for: closed)
+        #expect(promotions.map(\.title) == ["This page", "/docs/intro and below", "/docs and below", "Whole site"])
+        model.attach(id: note.id, anchor: try #require(promotions.last?.anchor), workspace: nil)
+        let promoted = try #require(h.store.note(id: note.id))
+        #expect(promoted.tab == nil)
+        #expect(promoted.anchor == promotions.last?.anchor)
+        #expect(promoted.revision == closed.revision + 1)
+        #expect(model.promotions(for: promoted).isEmpty)
+        var newTab = closed
+        newTab.tab?.lastURL = "chrome://newtab/"
+        #expect(model.promotions(for: newTab).isEmpty)
+    }
 }
