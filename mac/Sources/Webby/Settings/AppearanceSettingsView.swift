@@ -34,7 +34,9 @@ struct AppearanceSettingsView: View {
 
             HStack {
                 Button("Import Skin…") { importSkin() }
-                Button("Export…", action: export).disabled(selectedRow == nil)
+                Button("Export…", action: export)
+                    .disabled(selectedRow?.isUserSkin != true)
+                    .help("Built-in skins can't be exported. Use Duplicate to Edit, then export the copy.")
                 Button("Duplicate to Edit", action: duplicate).disabled(selectedRow == nil)
                 Button("Reveal Skins Folder", action: Self.revealSkinsFolder(store, report: report))
                 Spacer()
