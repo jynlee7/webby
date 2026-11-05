@@ -80,14 +80,12 @@ struct NoteView: View {
     let model: NoteModel
 
     @Environment(\.webbyTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
     @State private var hovering = false
 
     private var surface: ResolvedSurface { theme.surface }
 
-    private var palette: RGBAColor? {
-        guard let index = theme.selectedIndex, theme.palette.indices.contains(index) else { return nil }
-        return theme.palette[index]
-    }
+    private var palette: RGBAColor? { theme.selectedPaletteColor }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: surface.cornerRadius, style: .continuous)
@@ -111,6 +109,10 @@ struct NoteView: View {
                     VisualEffectBackground(material: material, cornerRadius: surface.cornerRadius)
                 }
                 Color(surface.fill)
+                // The selected slot over the surface: the pair the contrast checks measure.
+                if let palette {
+                    Color(palette)
+                }
                 if let image = surface.image {
                     SurfaceArtwork(image: image, tint: palette)
                 }
@@ -183,9 +185,10 @@ struct NoteView: View {
     private var skinItems: some View {
         let themes = model.themes
         if themes.paletteSlotCount > 0 {
-            // A saved index past the end of a shrunken palette resolves to slot 1.
+            // The resolver's slot, so a saved index past the end of a shrunken palette
+            // checks Color 1, which is the color it shows.
             let saved = model.appearance?.paletteIndex
-            let selected = saved.map { min($0, themes.paletteSlotCount - 1) }
+            let selected = saved == nil ? nil : themes.light.selectedIndex
             Menu("Color") {
                 Toggle("Skin Default", isOn: Binding(get: { saved == nil }, set: { _ in model.onSelectPalette(nil) }))
                 Divider()
@@ -219,6 +222,14 @@ struct NoteView: View {
                     .padding(.leading, NoteTextView.lineFragmentPadding)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+            }
+        }
+        .background {
+            // Artwork is never measured, so text over it sits on the opaque fill the
+            // checks did measure. The artwork shows in the padding around the text.
+            if surface.image != nil {
+                Color(theme.textBacking(page: scheme == .dark ? .dark : .light))
+                    .allowsHitTesting(false)
             }
         }
         // The control row already sits above the text, so only padding beyond it applies.

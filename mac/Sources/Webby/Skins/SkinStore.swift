@@ -88,6 +88,7 @@ final class SkinStore: NoteThemeSource {
     @ObservationIgnored private var reloadGeneration = 0
     @ObservationIgnored private var debouncer: AutosaveDebouncer!
     @ObservationIgnored private var watcher: SkinWatcher!
+    @ObservationIgnored private let staging = SkinStagingTracker()
 
     /// Loads the catalog synchronously so the first layout already has its skins.
     init(userRoot: URL, builtInDirectory: URL?, settings: SettingsStore, noteStore: NoteStore) {
@@ -98,8 +99,19 @@ final class SkinStore: NoteThemeSource {
         globalSkinID = settings.settings.globalSkinID
         apply(SkinCatalogLoader.load(builtInDirectory: builtInDirectory, library: library), notify: false)
         debouncer = SkinReload.makeDebouncer { [weak self] in self?.scheduleReload() }
+        // Create the folder now, so skins copied in from Finder later are watched
+        // without a relaunch. Webby's Application Support folder holds notes anyway.
+        do {
+            try Self.createSkinsFolder(at: userRoot)
+        } catch {
+            logger.error("Could not create the skins folder: \(error.localizedDescription, privacy: .public)")
+        }
         watcher = SkinWatcher(root: userRoot) { [weak self] in self?.debouncer.schedule() }
         watcher.startIfPossible()
+    }
+
+    nonisolated static func createSkinsFolder(at root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
     func stop() {
@@ -188,13 +200,38 @@ final class SkinStore: NoteThemeSource {
     // MARK: Library operations
 
     /// Unpacks `url` into staging without touching the library. Runs off the main actor.
+    /// Throws `CancellationError` when the app started quitting meanwhile; the staged
+    /// folder is removed then.
     func stageArchive(at url: URL) async throws -> StagedSkinPreview {
         let near = library.root.deletingLastPathComponent()
         let bases = baseIDs
-        return try await Task.detached(priority: .userInitiated) {
-            try FileManager.default.createDirectory(at: near, withIntermediateDirectories: true)
-            return try SkinArchiveImporter.stage(archiveAt: url, stagingNear: near, availableBaseIDs: bases)
+        let tracker = staging
+        tracker.begin()
+        let preview = try await Task.detached(priority: .userInitiated) {
+            let preview: StagedSkinPreview
+            do {
+                try FileManager.default.createDirectory(at: near, withIntermediateDirectories: true)
+                preview = try SkinArchiveImporter.stage(archiveAt: url, stagingNear: near, availableBaseIDs: bases)
+            } catch {
+                _ = tracker.finish(root: nil)
+                throw error
+            }
+            guard tracker.finish(root: preview.root) else { throw CancellationError() }
+            return preview
         }.value
+        guard tracker.claim(preview.root) else {
+            discard(preview)
+            throw CancellationError()
+        }
+        return preview
+    }
+
+    /// For app termination: waits briefly for staging in progress and removes every
+    /// staged folder that no preview window owns yet.
+    func discardPendingStaging() {
+        if !staging.discardUnclaimed(waitingUpTo: 3) {
+            logger.error("Skin staging was still running at quit; its folder may remain in the temporary items folder")
+        }
     }
 
     /// Installs a staged skin, replacing one with the same id, and shows it live when
@@ -251,9 +288,35 @@ final class SkinStore: NoteThemeSource {
         return copy.id
     }
 
+    /// Built-in skins can't be exported: their reserved `webby.*` ids fail the
+    /// installed-skin checks. Duplicate to Edit gives an exportable copy.
     func exportArchive(skinID: String, to destination: URL) throws {
         guard let source = held[skinID] else { throw SkinStoreError.unknownSkin(skinID) }
-        try SkinArchiveExporter.export(folder: source.folder, to: destination, availableBaseIDs: baseIDs)
+        guard source.origin == .installed else { throw SkinStoreError.builtIn(skinID) }
+        let bases = baseIDs
+        try Self.write(replacing: destination) { temporary in
+            try SkinArchiveExporter.export(folder: source.folder, to: temporary, availableBaseIDs: bases)
+        }
+    }
+
+    /// Writes a new file beside `destination` and only then swaps it in, so a file the
+    /// user agreed to replace in the save panel is replaced, and kept when writing fails.
+    static func write(replacing destination: URL, with write: (URL) throws -> Void) throws {
+        let fileManager = FileManager.default
+        let scratch = try fileManager.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: destination,
+            create: true
+        )
+        defer { try? fileManager.removeItem(at: scratch) }
+        let temporary = scratch.appendingPathComponent(destination.lastPathComponent)
+        try write(temporary)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: destination)
+        }
     }
 
     /// Deletes an installed skin. Notes that used it fall back to the next choice.
@@ -345,9 +408,14 @@ final class SkinStore: NoteThemeSource {
             order.append(id)
         }
 
-        // Anything user-made that existed before or exists now may have new files.
+        // Anything user-made that existed before or exists now may have new files,
+        // except a skin still showing its last good load, which keeps that artwork.
         for (id, item) in held.merging(next, uniquingKeysWith: { $1 }) where item.origin == .installed {
-            assetCache?.invalidate(skinID: id)
+            if next[id]?.usingLastGood == true {
+                assetCache?.keepLastGood(skinID: id)
+            } else {
+                assetCache?.invalidate(skinID: id)
+            }
         }
 
         held = next
