@@ -6,7 +6,7 @@ import WebbyCore
 /// the bridge socket and writes what arrives to the debug log. Nothing consumes the
 /// messages yet; web notes arrive in Step 4b. To watch the log:
 ///
-///     log stream --level debug --predicate 'subsystem == "com.webby.app" AND category == "bridge"'
+///     log stream --level debug --predicate 'subsystem == "io.github.jynlee7.webby" AND category == "bridge"'
 @MainActor
 final class ChromeBridge {
     private let logger = Logger(subsystem: Webby.bundleID, category: "bridge")

@@ -27,6 +27,12 @@ jobs:
       - name: Check skin archive dependency
         run: scripts/check-skin-dependency.sh
 
+      - name: Check identifiers and versions
+        run: |
+          plutil -lint mac/Resources/Info.plist
+          scripts/check-version-identifiers.sh
+          scripts/test-version-identifiers.sh
+
       - name: Cache SwiftPM build
         uses: actions/cache@v6
         with:
