@@ -214,7 +214,7 @@ private final class Harness {
     var opened: [UUID] = []
     private(set) var controller: AgentController!
 
-    init(notes: [Note], scripts: [[ScriptedTransport.Step]], key: String? = "sk-test-synthetic") {
+    init(notes: [Note], scripts: [[ScriptedTransport.Step]], key: String? = "sk-test-synthetic", store: ConversationStore? = nil) {
         self.notes = FakeNotes(notes)
         self.transport = ScriptedTransport(scripts)
         let transport = self.transport
@@ -227,6 +227,7 @@ private final class Harness {
                 model: { "synthetic-model" },
                 queryRules: { [] },
                 now: { fixedNow },
+                conversations: store,
                 debugLog: { [unowned self] in self.logs.append($0) }
             )
         )
@@ -496,5 +497,167 @@ private final class Harness {
         #expect(taken.isFailure)
         #expect(taken.agentMessage.contains("already used"))
         #expect(Hotkeys.Status.registered(combo).agentMessage == "\(combo.displayString) opens the agent panel.")
+    }
+}
+
+// MARK: Stored conversations
+
+private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    var now: Date {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
+    }
+}
+
+private func temporaryConversations(clock: TestClock = TestClock(fixedNow)) throws -> (ConversationStore, URL) {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WebbyAgentConversations-\(UUID().uuidString)", isDirectory: true)
+    return (ConversationStore(directory: directory, clock: { clock.now }), directory)
+}
+
+@MainActor
+@Suite struct AgentConversationStorageTests {
+    @Test func turnsAreStoredWithoutTheKeyOrExcludedNotes() async throws {
+        let (store, directory) = try temporaryConversations()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let harness = Harness(
+            notes: [webNote(1, "Two-sum: hash map"), webNote(2, "SENTINEL secret", excluded: true)],
+            scripts: [answer("A hash map [N1].")],
+            store: store
+        )
+
+        await harness.ask("What did I decide?")
+        await harness.controller.waitForStorage()
+
+        let ids = try await store.conversationIDs()
+        #expect(ids.count == 1)
+        let firstID = try #require(ids.first)
+        let document = try #require(await store.load(firstID))
+        #expect(document.turns.map(\.question) == ["What did I decide?"])
+        #expect(document.turns.first?.answerText == "A hash map [N1].")
+        #expect(document.turns.first?.status == .complete)
+        #expect(document.turns.first?.citations.map(\.alias) == ["N1"])
+        #expect(document.aliases.alias(for: uuid(1)) == "N1")
+        let bytes = String(decoding: try Data(contentsOf: store.fileURL(for: document.id)), as: UTF8.self)
+        #expect(!bytes.contains("sk-test-synthetic"))
+        #expect(!bytes.contains("SENTINEL"))
+        #expect(!bytes.contains("https://"))
+    }
+
+    @Test func aFailedTurnIsStoredWithItsPartialAnswer() async throws {
+        let (store, directory) = try temporaryConversations()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let harness = Harness(
+            notes: [webNote(1, "Two-sum")],
+            scripts: [[.send(messageStart() + textStart(0) + textDelta(0, "Partial")), .fail(.network)]],
+            store: store
+        )
+
+        await harness.ask("What did I decide?")
+        await harness.controller.waitForStorage()
+
+        let storedIDs = try await store.conversationIDs()
+        let id = try #require(storedIDs.first)
+        let turn = try #require(await store.load(id)?.turns.first)
+        #expect(turn.answerText == "Partial")
+        guard case .failed(let reason) = turn.status else {
+            Issue.record("Expected a failed stored turn")
+            return
+        }
+        #expect(reason.contains("connection"))
+    }
+
+    @Test func purgedNotesBecomeNoteDeletedInThePanelAndOnDisk() async throws {
+        let (store, directory) = try temporaryConversations()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let purged = webNote(1, "Two-sum: hash map")
+        let harness = Harness(notes: [purged, webNote(2, "Other")], scripts: [answer("A hash map [N1].")], store: store)
+        await harness.ask("What did I decide?")
+        await harness.controller.waitForStorage()
+
+        harness.notes.mutate { $0.removeAll { $0.id == purged.id } }
+        harness.controller.notesPurged([purged.id])
+        await harness.controller.waitForStorage()
+
+        let turn = try #require(harness.controller.turns.first)
+        #expect(turn.manifest.entries.first { $0.noteID == purged.id }?.summary == "note deleted")
+        #expect(harness.controller.chips(for: turn).first?.snippet == "note deleted")
+        #expect(harness.controller.chips(for: turn).first?.mark == .noteDeleted)
+
+        let storedIDs = try await store.conversationIDs()
+        let id = try #require(storedIDs.first)
+        let document = try #require(await store.load(id))
+        #expect(document.redactedNoteIDs?.contains(purged.id) == true)
+        #expect(document.turns.first?.citations.first?.status == .deleted)
+        #expect(document.turns.first?.citations.first?.snippet == "note deleted")
+        let bytes = String(decoding: try Data(contentsOf: store.fileURL(for: id)), as: UTF8.self)
+        #expect(!bytes.contains("Two-sum: hash map"))
+    }
+
+    @Test func emptyTrashFindsAndCanDeleteTheConversationsThatUsedANote() async throws {
+        let (store, directory) = try temporaryConversations()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let used = webNote(1, "Two-sum")
+        let unused = webNote(9, "Elsewhere", host: "example.com", path: "/")
+        let harness = Harness(notes: [used, unused], scripts: [answer("Hash map [N1].")], store: store)
+        await harness.ask("What did I decide about two-sum?")
+
+        #expect(await harness.controller.conversations(referencing: [unused.id]).isEmpty)
+        let affected = await harness.controller.conversations(referencing: [used.id])
+        #expect(affected.map(\.title) == ["What did I decide about two-sum?"])
+
+        harness.controller.deleteConversations(affected.map(\.id))
+        await harness.controller.waitForStorage()
+
+        #expect(harness.controller.turns.isEmpty)
+        #expect(try await store.conversationIDs().isEmpty)
+    }
+
+    @Test func conversationsPastTheRetentionWindowArePurged() async throws {
+        let clock = TestClock(fixedNow)
+        let (store, directory) = try temporaryConversations(clock: clock)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let harness = Harness(notes: [webNote(1, "Two-sum")], scripts: [answer("Hash map [N1].")], store: store)
+        await harness.ask("What did I decide?")
+        await harness.controller.waitForStorage()
+
+        harness.controller.purgeExpiredConversations(retentionDays: 30)
+        await harness.controller.waitForStorage()
+        #expect(try await store.conversationIDs().count == 1)
+
+        clock.now = fixedNow.addingTimeInterval(31 * 86_400)
+        harness.controller.purgeExpiredConversations(retentionDays: 30)
+        await harness.controller.waitForStorage()
+        #expect(try await store.conversationIDs().isEmpty)
+    }
+
+    @Test func notesControllerReportsNotesItPurgesFromTrash() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WebbyAgentPurge-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let trashed = Note(text: "old", frame: NoteFrame(), placement: .screen, trashedAt: fixedNow, createdAt: fixedNow)
+        let kept = Note(text: "kept", frame: NoteFrame(), placement: .screen, trashedAt: fixedNow, createdAt: fixedNow)
+        #expect(store.add(trashed))
+        #expect(store.add(kept))
+        let permission = AccessibilityPermission()
+        let controller = NotesController(
+            store: store,
+            monitor: ContextMonitor(permission: permission),
+            permission: permission,
+            themes: .fallback,
+            now: { fixedNow }
+        )
+        var reported: [[UUID]] = []
+        controller.onNotesPurged = { reported.append($0) }
+
+        #expect(controller.emptyTrash(ids: [trashed.id]) == 1)
+        #expect(reported == [[trashed.id]])
+        #expect(controller.emptyTrash(ids: [trashed.id]) == 0)
+        #expect(reported.count == 1)
     }
 }

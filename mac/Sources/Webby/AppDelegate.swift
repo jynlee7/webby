@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import WebbyAgent
 import WebbyCore
 
 @MainActor
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController?
     private var libraryWindow: LibraryWindowController?
     private var agentPanel: AgentPanelController?
+    private var agent: AgentController!
     private let linkRouter = NoteLinkRouter()
     private var isShowingMissingNoteAlert = false
     private var permission: AccessibilityPermission!
@@ -70,7 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self.showMoveToApplications() }
         }
 
+        agent = makeAgent()
         notes.start()
+        agent.purgeExpiredConversations(retentionDays: settingsStore.settings.conversationRetentionDays)
 
         linkRouter.onRoute = { [weak self] id in
             guard let self else { return false }
@@ -130,26 +134,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The agent panel. The Anthropic key comes from the Keychain through #24's
-    /// credential seam; without one the panel explains how to add it and sends nothing.
+    /// The agent's view model exists from launch, before notes start, so the 30-day
+    /// Trash purge already redacts stored conversations. The key comes from the
+    /// Keychain through #24's credential seam; without one the panel sends nothing.
+    private func makeAgent() -> AgentController {
+        let directory = SettingsStore.defaultFileURL.deletingLastPathComponent()
+            .appendingPathComponent(ConversationStore.directoryName, isDirectory: true)
+        let controller = AgentController(
+            notes: notes,
+            dependencies: AgentController.Dependencies(
+                credentials: KeychainCredentialStore(),
+                currentContext: { [weak self] in self?.monitor.context },
+                model: { [weak self] in AgentModelSetting.resolve(self?.settingsStore.settings.agentModel ?? "") },
+                queryRules: { [weak self] in self?.settingsStore.settings.enabledQueryRules ?? QueryRules.builtIns },
+                conversations: ConversationStore(directory: directory)
+            )
+        )
+        controller.openNote = { [weak self] id in
+            guard let self else { return }
+            self.ensureLibraryWindow()
+            self.libraryWindow?.showNote(id)
+        }
+        controller.openSettings = { [weak self] in self?.showSettings() }
+        notes.onNotesPurged = { [weak controller] ids in controller?.notesPurged(ids) }
+        return controller
+    }
+
     private func showAgent(toggling: Bool = false) {
         if agentPanel == nil {
-            let controller = AgentController(
-                notes: notes,
-                dependencies: AgentController.Dependencies(
-                    credentials: KeychainCredentialStore(),
-                    currentContext: { [weak self] in self?.monitor.context },
-                    model: { [weak self] in AgentModelSetting.resolve(self?.settingsStore.settings.agentModel ?? "") },
-                    queryRules: { [weak self] in self?.settingsStore.settings.enabledQueryRules ?? QueryRules.builtIns }
-                )
-            )
-            controller.openNote = { [weak self] id in
-                guard let self else { return }
-                self.ensureLibraryWindow()
-                self.libraryWindow?.showNote(id)
-            }
-            controller.openSettings = { [weak self] in self?.showSettings() }
-            agentPanel = AgentPanelController(controller: controller, themes: resolveThemes())
+            agentPanel = AgentPanelController(controller: agent, themes: resolveThemes())
         }
         if toggling { agentPanel?.toggle() } else { agentPanel?.show() }
     }

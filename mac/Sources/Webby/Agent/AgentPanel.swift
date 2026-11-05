@@ -87,6 +87,12 @@ struct AgentPanelView: View {
             transcript
             if let prompt = model.scopePrompt { scopePrompt(prompt) }
             if model.needsKey { keyNotice }
+            if let problem = model.storageProblem {
+                Label(problem, systemImage: "externaldrive.badge.exclamationmark")
+                    .font(.callout)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             questionBox
         }
         .foregroundStyle(ink)

@@ -36,6 +36,7 @@ struct AgentTurnView: Identifiable, Equatable {
 
     let id: UUID
     let question: String
+    let askedAt: String
     var answer: String
     var manifest: ContextManifest
     var citations: [CitationValidator.Citation]
@@ -49,6 +50,13 @@ struct AgentTurnView: Identifiable, Equatable {
         case .streaming, .complete: return false
         }
     }
+}
+
+/// A stored conversation, as the Empty Trash sheet lists it.
+struct AgentConversationSummary: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let title: String
+    let updatedAt: String
 }
 
 struct AgentCitationChip: Identifiable, Equatable {
@@ -77,6 +85,9 @@ final class AgentController {
         var queryRules: @MainActor () -> [QueryRule] = { QueryRules.builtIns }
         var now: @MainActor () -> Date = { Date() }
         var scopeTitle: @MainActor (Context) -> String = { AgentContextLabel.scopeLabel(for: $0) }
+        /// Where conversations are stored (`conversations/<uuid>.json`), or nil to keep
+        /// them in memory only.
+        var conversations: ConversationStore?
         var debugLog: @MainActor (String) -> Void = { line in
             Logger(subsystem: Webby.bundleID, category: "agent").debug("\(line, privacy: .public)")
         }
@@ -103,6 +114,8 @@ final class AgentController {
     private(set) var needsKey = false
     private(set) var scopePrompt: ScopePrompt?
     private(set) var notesVersion = 0
+    /// Set when a conversation couldn't be written. Answers still show.
+    private(set) var storageProblem: String?
 
     @ObservationIgnored var openNote: @MainActor (UUID) -> Void = { _ in }
     @ObservationIgnored var openSettings: @MainActor () -> Void = {}
@@ -122,6 +135,10 @@ final class AgentController {
     /// to notes the model read successfully.
     @ObservationIgnored private var readSession: AgentReadSession?
     @ObservationIgnored private var readAliases: Set<String> = []
+    @ObservationIgnored private var document: ConversationDocument?
+    @ObservationIgnored private var redactedNoteIDs: Set<UUID> = []
+    @ObservationIgnored private var storageChain: Task<Void, Never>?
+    @ObservationIgnored private var persistPending = false
 
     init(notes: AgentNotesSource, dependencies: Dependencies) {
         self.notes = notes
@@ -157,6 +174,8 @@ final class AgentController {
 
     private func resetConversation() {
         conversation = nil
+        document = nil
+        redactedNoteIDs = []
         turns = []
         scopePrompt = nil
     }
@@ -246,19 +265,24 @@ final class AgentController {
         }
 
         if conversation == nil {
-            conversation = AgentConversationState(
+            let configuration = AgentModelSetting.configuration(model: dependencies.model(), context: context)
+            conversation = AgentConversationState(scope: scope, startContext: context, configuration: configuration)
+            document = ConversationDocument(
                 scope: scope,
-                startContext: context,
-                configuration: AgentModelSetting.configuration(model: dependencies.model(), context: context)
+                context: context,
+                configuration: configuration,
+                workspaces: notes.agentWorkspaces,
+                createdAt: dependencies.now()
             )
         }
         guard let state = conversation else { return }
         let snapshot = makeSnapshot()
+        let askedAt = dependencies.now()
         let assembled = ContextAssembler.assemble(
             snapshot: snapshot,
             context: context,
             conversation: state,
-            now: dependencies.now(),
+            now: askedAt,
             question: question
         )
         // Aliases sent to the provider stay bound to their notes for the conversation.
@@ -268,6 +292,7 @@ final class AgentController {
         turns.append(AgentTurnView(
             id: turnID,
             question: question,
+            askedAt: AgentTimestamp.rfc3339(askedAt),
             answer: "",
             manifest: assembled.manifest,
             citations: [],
@@ -282,6 +307,8 @@ final class AgentController {
         readAliases = []
         invalidated = false
         activeFingerprint = assembled.turnSnapshot.authorizationFingerprint
+        // The turn is on disk before anything is sent, so a crash still records it.
+        persist()
 
         let prepared = PreparedTurn(assembled: assembled) { [weak self] fingerprint in
             await self?.authorizationIsCurrent(fingerprint) ?? false
@@ -306,6 +333,7 @@ final class AgentController {
             activity = nil
             roundText += text
             updateAnswer(turnID: turnID)
+            persistSoon()
         case .usage(let usage):
             roundUsage = usage
         case .completed(let completion):
@@ -345,6 +373,7 @@ final class AgentController {
             conversation?.appendCompletedTurn(userMessage: userMessage, assistantText: result.answerText)
         }
         dependencies.debugLog(Self.usageLogLine(turns[index].usage))
+        persist()
     }
 
     private func fail(turnID: UUID, message: String, snapshot: AgentTurnSnapshot) {
@@ -362,6 +391,7 @@ final class AgentController {
         turns[index].usage = Self.adding(completedUsage, roundUsage)
         turns[index].status = .failed(message)
         dependencies.debugLog(Self.usageLogLine(turns[index].usage))
+        persist()
     }
 
     /// Mirrors `ClaudeConversationRunner`: an alias counts as read when its
@@ -406,6 +436,164 @@ final class AgentController {
         "agent turn usage: input_tokens=\(usage.inputTokens) output_tokens=\(usage.outputTokens) "
             + "cache_creation_input_tokens=\(usage.cacheCreationInputTokens) "
             + "cache_read_input_tokens=\(usage.cacheReadInputTokens)"
+    }
+
+    // MARK: Storage
+
+    /// The stored form of the conversation: fixed configuration, aliases, and each
+    /// turn's question, manifest, answer text, citations, usage and status. Never a
+    /// key, a thinking block or a raw URL (#24's `ConversationDocument`).
+    private func makeDocument() -> ConversationDocument? {
+        guard var document, let conversation else { return nil }
+        document.aliases = conversation.ledger
+        document.turns = turns.map { turn in
+            ConversationTurn(
+                question: turn.question,
+                askedAt: turn.askedAt,
+                manifest: turn.manifest,
+                answerText: turn.answer,
+                citations: turn.citations,
+                usage: turn.usage,
+                status: Self.storedStatus(turn.status)
+            )
+        }
+        if !redactedNoteIDs.isEmpty {
+            document.redactedNoteIDs = (document.redactedNoteIDs ?? []).union(redactedNoteIDs)
+        }
+        return document
+    }
+
+    private static func storedStatus(_ status: AgentTurnView.Status) -> ConversationTurnStatus {
+        switch status {
+        case .streaming: return .failed(reason: "The answer had not finished.")
+        case .complete: return .complete
+        case .truncated: return .truncated
+        case .refused: return .refused
+        case .failed(let message): return .failed(reason: message)
+        }
+    }
+
+    /// Runs storage work in order on one chain, so a later save never lands first.
+    private func enqueue(_ work: @escaping @Sendable (ConversationStore) async throws -> Void) {
+        guard let store = dependencies.conversations else { return }
+        let previous = storageChain
+        storageChain = Task { [weak self] in
+            await previous?.value
+            do {
+                try await work(store)
+            } catch {
+                self?.storageProblem = "This conversation couldn't be saved: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func persist() {
+        guard let document = makeDocument() else { return }
+        enqueue { try await $0.save(document) }
+    }
+
+    /// Streaming text is saved as it arrives, with at most one save waiting.
+    private func persistSoon() {
+        guard !persistPending, dependencies.conversations != nil else { return }
+        persistPending = true
+        enqueue { [weak self] store in
+            guard let document = await self?.takePendingDocument() else { return }
+            try await store.save(document)
+        }
+    }
+
+    private func takePendingDocument() -> ConversationDocument? {
+        persistPending = false
+        return makeDocument()
+    }
+
+    /// Waits for queued storage work. Tests and quit use it.
+    func waitForStorage() async {
+        await storageChain?.value
+    }
+
+    /// Notes removed for good: stored conversations replace their manifest lines and
+    /// citation snippets with "note deleted" (decision 7), and so does this panel.
+    /// Answer text that may quote a note is not rewritten.
+    func notesPurged(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        for id in ids { redactInMemory(id) }
+        redactedNoteIDs.formUnion(ids)
+        enqueue { store in
+            for id in ids { try await store.redactNote(id) }
+        }
+    }
+
+    /// The same replacement `ConversationStore.redactNote` makes on disk.
+    private func redactInMemory(_ noteID: UUID) {
+        var aliases = Set(conversation?.ledger.entries.filter { $0.noteID == noteID }.map(\.alias) ?? [])
+        for index in turns.indices {
+            var turn = turns[index]
+            for entry in turn.manifest.entries where entry.noteID == noteID { aliases.insert(entry.alias) }
+            let entries = turn.manifest.entries.map { entry -> ContextManifest.Entry in
+                guard entry.noteID == noteID else { return entry }
+                return ContextManifest.Entry(
+                    alias: entry.alias, noteID: entry.noteID, status: entry.status, revision: entry.revision,
+                    page: "note deleted", updated: entry.updated, summary: "note deleted", omittedCharacters: 0
+                )
+            }
+            let omitted = turn.manifest.omittedLines.map { line in
+                aliases.contains { line.hasPrefix($0 + " ") } ? "note deleted" : line
+            }
+            turn.manifest = ContextManifest(entries: entries, omittedLines: omitted, screen: turn.manifest.screen)
+            turn.citations = turn.citations.map { citation in
+                guard citation.noteID == noteID else { return citation }
+                return CitationValidator.Citation(
+                    alias: citation.alias, noteID: citation.noteID, revision: citation.revision,
+                    status: .deleted, snippet: "note deleted"
+                )
+            }
+            turns[index] = turn
+        }
+        conversation?.ledger.retire(noteID: noteID)
+    }
+
+    /// Removes conversations older than the retention window (decision 7).
+    func purgeExpiredConversations(retentionDays: Int) {
+        enqueue { _ = try await $0.purgeExpired(retentionDays: retentionDays) }
+    }
+
+    /// Stored conversations that sent, listed or cited any of `noteIDs`.
+    func conversations(referencing noteIDs: Set<UUID>) async -> [AgentConversationSummary] {
+        guard let store = dependencies.conversations, !noteIDs.isEmpty else { return [] }
+        await storageChain?.value
+        guard let ids = try? await store.conversationIDs() else { return [] }
+        var result: [AgentConversationSummary] = []
+        for id in ids {
+            guard let document = await store.load(id), Self.references(document, noteIDs) else { continue }
+            result.append(AgentConversationSummary(
+                id: id,
+                title: document.turns.first.map { Note.summaryLine(of: $0.question, limit: 60) ?? $0.question } ?? "Conversation",
+                updatedAt: document.updatedAt
+            ))
+        }
+        return result.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private static func references(_ document: ConversationDocument, _ noteIDs: Set<UUID>) -> Bool {
+        document.aliases.entries.contains { noteIDs.contains($0.noteID) }
+            || document.turns.contains { turn in
+                turn.manifest.entries.contains { noteIDs.contains($0.noteID) }
+                    || turn.citations.contains { noteIDs.contains($0.noteID) }
+            }
+    }
+
+    /// Deletes stored conversations, for Empty Trash's "Also delete those
+    /// conversations". The open conversation closes if it is one of them.
+    func deleteConversations(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        if let current = document?.id, ids.contains(current) {
+            runTask?.cancel()
+            resetConversation()
+        }
+        enqueue { store in
+            for id in ids { try await store.delete(id) }
+        }
     }
 
     // MARK: Authorization
