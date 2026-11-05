@@ -80,14 +80,12 @@ struct NoteView: View {
     let model: NoteModel
 
     @Environment(\.webbyTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
     @State private var hovering = false
 
     private var surface: ResolvedSurface { theme.surface }
 
-    private var palette: RGBAColor? {
-        guard let index = theme.selectedIndex, theme.palette.indices.contains(index) else { return nil }
-        return theme.palette[index]
-    }
+    private var palette: RGBAColor? { theme.selectedPaletteColor }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: surface.cornerRadius, style: .continuous)
@@ -111,6 +109,10 @@ struct NoteView: View {
                     VisualEffectBackground(material: material, cornerRadius: surface.cornerRadius)
                 }
                 Color(surface.fill)
+                // The selected slot over the surface: the pair the contrast checks measure.
+                if let palette {
+                    Color(palette)
+                }
                 if let image = surface.image {
                     SurfaceArtwork(image: image, tint: palette)
                 }
@@ -219,6 +221,14 @@ struct NoteView: View {
                     .padding(.leading, NoteTextView.lineFragmentPadding)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+            }
+        }
+        .background {
+            // Artwork is never measured, so text over it sits on the opaque fill the
+            // checks did measure. The artwork shows in the padding around the text.
+            if surface.image != nil {
+                Color(theme.textBacking(page: scheme == .dark ? .dark : .light))
+                    .allowsHitTesting(false)
             }
         }
         // The control row already sits above the text, so only padding beyond it applies.
