@@ -133,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 notes: notes,
                 openTabs: openTabs,
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
+                currentContext: { [weak self] in self?.monitor.context },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
         }
@@ -161,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }
+            window.chromeIncognitoAccess = { [weak self] in self?.browser.incognitoAccess ?? [:] }
             window.onQueryRulesChange = { [weak self] rules in
                 self?.libraryWindow?.model.enabledQueryRules = rules
                 // Page identity may have changed for the current Chrome tab.

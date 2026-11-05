@@ -7,6 +7,7 @@ import WebbyCore
 @MainActor
 final class BrowserMonitor {
     private var session = BrowserSession()
+    private var incognito: [String: (connection: Int, allowed: Bool)] = [:]
     private let sessionIdentity: @MainActor () -> String?
 
     /// The query rules that decide page identity: the enabled rules plus every key a
@@ -20,10 +21,24 @@ final class BrowserMonitor {
         self.sessionIdentity = sessionIdentity
     }
 
+    /// Whether each connected Chrome profile allows the extension in Incognito, from
+    /// its latest `hello`. Keyed by profile key.
+    var incognitoAccess: [String: Bool] { incognito.mapValues(\.allowed) }
+
     func receive(_ event: BridgeEvent) {
         // Establish the process identity before accepting its first hello.
         session.setIdentity(sessionIdentity())
         session.receive(event)
+        switch event {
+        case .message(let connection, let profile, .hello(let hello)):
+            incognito[profile] = (connection, hello.incognitoAllowed)
+        case .disconnected(let connection, let profile?):
+            if incognito[profile]?.connection == connection { incognito[profile] = nil }
+        case .disconnected(let connection, nil), .dropped(let connection?, _):
+            incognito = incognito.filter { $0.value.connection != connection }
+        default:
+            break
+        }
         onChange?()
     }
 
