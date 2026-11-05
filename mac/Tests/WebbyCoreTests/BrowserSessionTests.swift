@@ -193,3 +193,20 @@ func recordedPrivateWindowNeverReusesNormalPage(_ name: String) throws {
     #expect(sawNormalPage)
     #expect(sawPrivateTransition)
 }
+
+@Test func scopePickerSelectsTheChoiceAnAnchorCovers() throws {
+    let created = try #require(PageURL(string: "https://example.com/docs/intro"))
+    let current = try #require(PageURL(string: "https://example.com/docs/setup"))
+    let scopes = NoteScope.choices(for: Context(appBundleID: BrowserSession.bundleID, page: current))
+    #expect(NoteScope.index(of: .web(page: created, scope: .site), in: scopes) == 3)
+    #expect(NoteScope.index(of: .web(page: created, scope: .prefix(path: "/docs")), in: scopes) == 2)
+    #expect(NoteScope.index(of: .web(page: current, scope: .page), in: scopes) == 0)
+    #expect(NoteScope.index(of: .web(page: created, scope: .page), in: scopes) == nil)
+    #expect(NoteScope.index(of: .app(bundleID: BrowserSession.bundleID), in: scopes) == 4)
+    #expect(NoteScope.index(of: .app(bundleID: "com.example.other"), in: scopes) == nil)
+    #expect(NoteScope.index(of: nil, in: scopes) == nil)
+    // A page anchor stored without a query still covers every query value.
+    let video = try #require(PageURL(string: "https://youtube.com/watch?v=one", queryRules: QueryRules.builtIns))
+    let videoScopes = NoteScope.choices(for: Context(appBundleID: BrowserSession.bundleID, page: video))
+    #expect(NoteScope.index(of: .web(page: PageURL(host: "youtube.com", path: "/watch"), scope: .page), in: videoScopes) == 0)
+}

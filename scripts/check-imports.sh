@@ -25,8 +25,7 @@ allowed_for() {
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
       # Observation: @Observable models such as LibraryModel (its plugin ships with the CLT).
       # WebKit: the locked-down Compiled view, app-only and never used by WebbyCore.
-      # ApplicationServices: Accessibility reads of the focused Chrome window's bounds.
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics ApplicationServices OSLog Carbon Observation WebbyCore WebKit"
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon Observation WebbyCore WebKit"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"

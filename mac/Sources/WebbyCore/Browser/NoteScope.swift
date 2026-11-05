@@ -18,4 +18,27 @@ public struct NoteScope: Equatable, Sendable {
         choices.append(NoteScope(title: "This app", anchor: .app(bundleID: context.appBundleID)))
         return choices
     }
+
+    /// The choice that describes `anchor`, if any. Path and site anchors keep the page
+    /// they were created on, so they are compared by what they cover, not by equality.
+    public static func index(of anchor: Anchor?, in choices: [NoteScope]) -> Int? {
+        guard let anchor else { return nil }
+        return choices.firstIndex { $0.covers(anchor) }
+    }
+
+    private func covers(_ other: Anchor) -> Bool {
+        switch (anchor, other) {
+        case let (.app(current), .app(stored)):
+            return current == stored
+        case let (.web(current, .page), .web(stored, .page)):
+            return current.matchesPageAnchor(stored)
+        case let (.web(current, .site), .web(stored, .site)):
+            return current.host == stored.host
+        case let (.web(current, .prefix(path)), .web(stored, .prefix(storedPath))):
+            return current.host == stored.host
+                && PageURL(host: current.host, path: path).path == PageURL(host: stored.host, path: storedPath).path
+        default:
+            return false
+        }
+    }
 }
