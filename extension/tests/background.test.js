@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 function event() {
   const listeners = [];
@@ -26,7 +27,7 @@ async function worker() {
       session: { get: async () => { throw new Error("quota storage must not be needed"); } },
     },
     extension: { isAllowedIncognitoAccess: async () => false },
-    windows: { getAll: async () => windows, onFocusChanged: event(), onBoundsChanged: event(), onRemoved: event(), WINDOW_ID_NONE: -1 },
+    windows: { getAll: async () => windows, onFocusChanged: event(), onBoundsChanged: event(), onRemoved: event(), onCreated: event(), WINDOW_ID_NONE: -1 },
     tabs: Object.fromEntries(["onActivated", "onCreated", "onUpdated", "onRemoved", "onMoved", "onAttached", "onReplaced"].map((name) => [name, event()])),
   };
   await import(`../background.js?test=${serial++}`);
@@ -129,4 +130,33 @@ test("window movement publishes fresh bounds", async () => {
   w.chrome.windows.onBoundsChanged.fire({ id: 1 });
   await w.drain();
   assert.deepEqual(w.messages.at(-1).windows[0].bounds, { left: 42, top: 80, width: 1000, height: 700 });
+});
+
+// Shared with the Swift tests (TabBindingReconcilerTests), which replay it through the
+// app's reducers. Synthetic: produced by this worker, not recorded from Chrome.
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
+
+test("a window restored in the background is reported by an inventory", async () => {
+  const w = await worker();
+  const docs = { id: 10, windowId: 1, index: 0, active: true, incognito: false, url: "https://a.example/docs?id=4", title: "Docs" };
+  const front = { id: 1, focused: true, incognito: false, left: 0, top: 25, width: 1200, height: 800, tabs: [docs] };
+  w.chrome.windows.getAll = async () => [front];
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  const pricing = { id: 20, windowId: 2, index: 0, active: true, incognito: false, url: "https://b.example/pricing#annual", title: "Pricing" };
+  const restored = { id: 2, focused: false, incognito: false, left: 40, top: 65, width: 1000, height: 700, tabs: [pricing] };
+  w.chrome.windows.getAll = async () => [front, restored];
+  w.chrome.windows.onCreated.fire(restored);
+  await w.drain();
+  assert.deepEqual(w.messages, fixture("browser-session-restore-synthetic"));
+});
+
+test("a replaced tab is reported before the inventory that follows", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  w.chrome.tabs.onReplaced.fire(5, 1);
+  await w.drain();
+  assert.deepEqual(w.messages.slice(-2).map((m) => m.type), ["tabReplaced", "inventory"]);
+  assert.deepEqual(w.messages.at(-2), { type: "tabReplaced", added: 5, removed: 1 });
 });

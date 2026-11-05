@@ -158,6 +158,9 @@ async function refreshWindows() {
 chrome.windows.onFocusChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onBoundsChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onRemoved.addListener(() => enqueueBrowserEvent(refreshWindows));
+// Session restore opens background windows that never get focus. Without an inventory
+// the app can't tell whether they are incognito, so their tabs couldn't take back notes.
+chrome.windows.onCreated.addListener(() => enqueueBrowserEvent(refreshWindows));
 
 chrome.tabs.onCreated.addListener((tab) => {
   enqueueBrowserEvent(() => send(tabCreatedMessage(tab)));

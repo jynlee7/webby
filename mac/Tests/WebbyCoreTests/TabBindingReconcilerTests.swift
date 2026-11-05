@@ -390,6 +390,29 @@ import Testing
         #expect(NoteVisibility.isAttached(notes[0], to: context))
     }
 
+    @Test func replayedRestoreReattachesTabsOfBackgroundWindows() throws {
+        // The extension's own output for a restore that opens a second window in the
+        // background (background.test.js produces the same file).
+        let messages = try JSONDecoder().decode([ExtensionMessage].self, from: fixture("browser-session-restore-synthetic"))
+        let docs = pending(tabID: 7, url: "https://a.example/docs?id=4")
+        let pricing = pending(tabID: 8, url: "https://b.example/pricing")
+        var feed = OpenTabsInventory(session: newSession)
+        for (offset, message) in messages.enumerated() {
+            feed.receive(.message(connection: 3, profile: profile, message))
+            if offset == 2 {
+                // Before the window's inventory its tabs are unknown, so they can't match.
+                let early = TabRestore.evaluate(notes: [docs, pricing], profile: profile, session: newSession, inventory: feed.inventory)
+                #expect(early.outcomes[docs.id] == .rebound)
+                #expect(early.outcomes[pricing.id] == .unmatched)
+            }
+        }
+        let result = TabRestore.evaluate(notes: [docs, pricing], profile: profile, session: newSession, inventory: feed.inventory)
+        #expect(result.outcomes[docs.id] == .rebound)
+        #expect(result.outcomes[pricing.id] == .rebound)
+        #expect(result.updates.first { $0.noteID == pricing.id }?.binding.tabID == 20)
+        #expect(result.updates.first { $0.noteID == pricing.id }?.binding.windowID == 2)
+    }
+
     // MARK: Restore timing
 
     @Test func restoreWaitsForQuietThenRunsOncePerProfileAndRun() {
