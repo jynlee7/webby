@@ -251,9 +251,35 @@ final class SkinStore: NoteThemeSource {
         return copy.id
     }
 
+    /// Built-in skins can't be exported: their reserved `webby.*` ids fail the
+    /// installed-skin checks. Duplicate to Edit gives an exportable copy.
     func exportArchive(skinID: String, to destination: URL) throws {
         guard let source = held[skinID] else { throw SkinStoreError.unknownSkin(skinID) }
-        try SkinArchiveExporter.export(folder: source.folder, to: destination, availableBaseIDs: baseIDs)
+        guard source.origin == .installed else { throw SkinStoreError.builtIn(skinID) }
+        let bases = baseIDs
+        try Self.write(replacing: destination) { temporary in
+            try SkinArchiveExporter.export(folder: source.folder, to: temporary, availableBaseIDs: bases)
+        }
+    }
+
+    /// Writes a new file beside `destination` and only then swaps it in, so a file the
+    /// user agreed to replace in the save panel is replaced, and kept when writing fails.
+    static func write(replacing destination: URL, with write: (URL) throws -> Void) throws {
+        let fileManager = FileManager.default
+        let scratch = try fileManager.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: destination,
+            create: true
+        )
+        defer { try? fileManager.removeItem(at: scratch) }
+        let temporary = scratch.appendingPathComponent(destination.lastPathComponent)
+        try write(temporary)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
+        } else {
+            try fileManager.moveItem(at: temporary, to: destination)
+        }
     }
 
     /// Deletes an installed skin. Notes that used it fall back to the next choice.
