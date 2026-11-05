@@ -30,6 +30,11 @@ public enum BridgeConstants {
         applicationSupportDirectory.appendingPathComponent("Webby", isDirectory: true)
     }
 
+    /// Where Webby installs the bundled extension for Chrome's Load unpacked.
+    public static var extensionDirectory: URL {
+        supportDirectory.appendingPathComponent("Extension", isDirectory: true)
+    }
+
     /// The socket the app listens on and the bridge connects to.
     public static var defaultSocketURL: URL {
         supportDirectory.appendingPathComponent("bridge.sock")

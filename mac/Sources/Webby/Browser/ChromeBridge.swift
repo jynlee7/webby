@@ -19,7 +19,11 @@ final class ChromeBridge {
     /// True when Webby runs from a translocated location and can't register the bridge.
     private(set) var needsMoveToApplications = false
 
+    /// What the last launch did with the bundled extension, for the Chrome settings.
+    private(set) var extensionInstall: BundledExtensionInstaller.Outcome?
+
     func start() {
+        installExtension()
         installHost()
         startServer()
     }
@@ -28,6 +32,35 @@ final class ChromeBridge {
         eventsTask?.cancel()
         server?.stop()
         server = nil
+    }
+
+    /// Copies the bundled extension to Application Support. A failure is logged and never
+    /// blocks notes or the bridge.
+    private func installExtension() {
+        guard let resources = Bundle.main.resourceURL else { return }
+        let installer = BundledExtensionInstaller(
+            bundleDirectory: resources.appendingPathComponent("Extension", isDirectory: true)
+        )
+        let outcome = installer.install()
+        extensionInstall = outcome
+        switch outcome {
+        case .bundleMissing:
+            logger.info("No bundled Chrome extension; not installing it")
+        case .bundleInvalid:
+            logger.error("The bundled Chrome extension is incomplete; not installing it")
+        case .installed(_, let version):
+            logger.info("Installed Chrome extension \(version.description, privacy: .public)")
+        case .unchanged(_, let version):
+            logger.info("Chrome extension \(version.description, privacy: .public) is up to date")
+        case .installedNewer(_, let version):
+            logger.info("Kept the newer installed Chrome extension \(version.description, privacy: .public)")
+        case .installationInvalid:
+            logger.error("The installed Chrome extension folder is invalid; kept it for repair")
+        case .conflict:
+            logger.info("The Chrome extension folder changed during install; will retry next launch")
+        case .failed(let message):
+            logger.error("Couldn't install the Chrome extension: \(message, privacy: .public)")
+        }
     }
 
     private func installHost() {
