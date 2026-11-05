@@ -185,9 +185,10 @@ struct NoteView: View {
     private var skinItems: some View {
         let themes = model.themes
         if themes.paletteSlotCount > 0 {
-            // A saved index past the end of a shrunken palette resolves to slot 1.
+            // The resolver's slot, so a saved index past the end of a shrunken palette
+            // checks Color 1, which is the color it shows.
             let saved = model.appearance?.paletteIndex
-            let selected = saved.map { min($0, themes.paletteSlotCount - 1) }
+            let selected = saved == nil ? nil : themes.light.selectedIndex
             Menu("Color") {
                 Toggle("Skin Default", isOn: Binding(get: { saved == nil }, set: { _ in model.onSelectPalette(nil) }))
                 Divider()

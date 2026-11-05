@@ -54,3 +54,9 @@ func textBackingIsOpaqueAndMeetsTheFloorForEverySlot(skinID: String) throws {
     #expect(tinted.textBacking(page: .light) == color.composited(over: tinted.surface.contrastBacking.overWhite))
     #expect(tinted.textBacking(page: .dark) == color.composited(over: tinted.surface.contrastBacking.overBlack))
 }
+
+@Test func anIndexPastAShrunkenPaletteResolvesToTheFirstSlot() throws {
+    let theme = select("webby.mono", paletteIndex: 99).light.theme
+    #expect(theme.selectedIndex == 0)
+    #expect(theme.selectedPaletteColor == theme.palette.first)
+}
