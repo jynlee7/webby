@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         hotkeys.onStatusChange = { [weak self] in self?.hotkeyStatusChanged() }
         hotkeys.registerNewNote(shortcut)
+        hotkeys.agent = { [weak self] in self?.showAgent(toggling: true) }
+        hotkeys.registerAgent(SettingsWindowController.agentShortcut(from: settingsStore.settings))
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
         chromeBridge.onEvent = { [weak self] event in self?.openTabs.receive(event) }
@@ -130,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The agent panel. The Anthropic key comes from the Keychain through #24's
     /// credential seam; without one the panel explains how to add it and sends nothing.
-    private func showAgent() {
+    private func showAgent(toggling: Bool = false) {
         if agentPanel == nil {
             let controller = AgentController(
                 notes: notes,
@@ -149,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.openSettings = { [weak self] in self?.showSettings() }
             agentPanel = AgentPanelController(controller: controller, themes: resolveThemes())
         }
-        agentPanel?.show()
+        if toggling { agentPanel?.toggle() } else { agentPanel?.show() }
     }
 
     private func showMissingNoteLinkAlert() {

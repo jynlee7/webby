@@ -441,3 +441,25 @@ private final class Harness {
         #expect(AgentModelSetting.problem(with: "claude-x-1") == nil)
     }
 }
+
+@MainActor
+@Suite struct AgentShortcutTests {
+    @Test func theAgentShortcutDefaultsToControlOptionA() {
+        #expect(KeyCombo.defaultAgent.storageString == "ctrl+opt+a")
+        #expect(KeyCombo("ctrl+opt+a") == KeyCombo.defaultAgent)
+        #expect(SettingsWindowController.agentShortcut(from: .default) == .defaultAgent)
+        var settings = WebbyCore.Settings.default
+        settings.agentHotkey = "a"
+        #expect(SettingsWindowController.agentShortcut(from: settings) == .defaultAgent)
+        settings.agentHotkey = "cmd+shift+k"
+        #expect(SettingsWindowController.agentShortcut(from: settings).storageString == "shift+cmd+k" || SettingsWindowController.agentShortcut(from: settings) == KeyCombo("cmd+shift+k"))
+    }
+
+    @Test func registrationFailuresReadAsFailuresInSettings() {
+        let combo = KeyCombo.defaultAgent
+        let taken = Hotkeys.Status.failed(combo, OSStatus(-9878))
+        #expect(taken.isFailure)
+        #expect(taken.agentMessage.contains("already used"))
+        #expect(Hotkeys.Status.registered(combo).agentMessage == "\(combo.displayString) opens the agent panel.")
+    }
+}

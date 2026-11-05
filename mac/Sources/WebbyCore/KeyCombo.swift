@@ -22,6 +22,9 @@ public struct KeyCombo: Hashable, Sendable, CustomStringConvertible {
 
     /// ⌃⌥N, the proposed default for New Note (plan §8.3, question 13).
     public static let defaultNewNote = KeyCombo(key: "n", keyCode: 0x2D, modifiers: [.control, .option])
+    /// ⌃⌥A, the proposed default for the agent panel (plan Step 12b). ⌃⌥Space is avoided
+    /// because macOS uses it to select the next input source.
+    public static let defaultAgent = KeyCombo(key: "a", keyCode: 0x00, modifiers: [.control, .option])
 
     private init(key: String, keyCode: UInt16, modifiers: Modifiers) {
         self.key = key
