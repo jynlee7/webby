@@ -2,6 +2,28 @@ import AppKit
 import OSLog
 import WebbyCore
 
+/// Where a Library-created note belongs.
+enum LibraryDestination: Equatable, Sendable {
+    case inbox
+    case workspace(WorkspaceKey)
+    case record(UUID)
+}
+
+/// The result of an applied import, for a future import UI.
+struct ImportResult: Equatable, Sendable {
+    let summary: ImportPlan.Summary
+    let backupURL: URL?
+    let generation: UInt64
+}
+
+/// The visible state of the Library import transaction. No UI renders it yet.
+enum ImportState: Equatable, Sendable {
+    case idle
+    case importing
+    case succeeded(ImportResult)
+    case failed(String)
+}
+
 /// Owns the notes: the store, the overlays for the current app, autosave with retry,
 /// trash with Undo, and the quit flush.
 ///
@@ -10,20 +32,37 @@ import WebbyCore
 /// note, and before quitting; each commit is one content revision.
 @MainActor
 final class NotesController {
+    /// Notes older than this are purged from Trash once, when the app starts.
+    static let trashRetentionPeriod: TimeInterval = 30 * 24 * 60 * 60
+
     let store: NoteStore
+    /// The latest import state, for a future import UI. Nothing renders it yet.
+    private(set) var importState: ImportState = .idle
+    /// True while a serialized import transaction owns the store.
+    private(set) var isImporting = false
+    /// Set by the retained Library window so an import can commit its editor draft
+    /// before the barrier, exactly as quit does.
+    var commitLibraryDrafts: (@MainActor () -> Void)?
     /// Called when the save or read-only status changes.
     var onStatusChange: (@MainActor () -> Void)?
+    /// Called after a note or workspace mutation, never for save-status changes alone.
+    /// Kept for the existing app-level callback; Library consumers should register with
+    /// `addLibraryObserver(_:)` so more than one can listen at a time.
+    var onLibraryChange: (@MainActor () -> Void)?
+    private var libraryObservers: [UUID: @MainActor () -> Void] = [:]
 
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
-    private let skins: SkinStore
+    private let now: @MainActor () -> Date
+    private let skins: any NoteThemeSource
     private let assets: SkinAssetCache
     private let latestSave: LatestSave
     private let logger = Logger(subsystem: Webby.bundleID, category: "notes")
     private lazy var autosave = AutosaveDebouncer { [weak self] in self?.saveNow() }
     private(set) lazy var quit = makeQuitCoordinator()
+    private var started = false
 
-    private var windows: [UUID: NoteWindowController] = [:]
+    private(set) var windows: [UUID: NoteWindowController] = [:]
     private var toasts: [UUID: UndoToast] = [:]
     private let banner = StatusBanner()
     private var onboardingShown = false
@@ -37,13 +76,39 @@ final class NotesController {
     /// The latest save error, while saving keeps failing.
     private(set) var saveFailure: String?
 
-    init(store: NoteStore, monitor: ContextMonitor, permission: AccessibilityPermission, skins: SkinStore, assets: SkinAssetCache) {
+    init(
+        store: NoteStore,
+        monitor: ContextMonitor,
+        permission: AccessibilityPermission,
+        skins: any NoteThemeSource,
+        assets: SkinAssetCache,
+        now: @escaping @MainActor () -> Date = { Date() }
+    ) {
         self.store = store
         self.monitor = monitor
         self.permission = permission
         self.skins = skins
         self.assets = assets
+        self.now = now
         latestSave = LatestSave(store.saveRequest())
+    }
+
+    /// One look for every note and no skin artwork, for callers without a skin library.
+    convenience init(
+        store: NoteStore,
+        monitor: ContextMonitor,
+        permission: AccessibilityPermission,
+        themes: NoteThemes,
+        now: @escaping @MainActor () -> Date = { Date() }
+    ) {
+        self.init(
+            store: store,
+            monitor: monitor,
+            permission: permission,
+            skins: FixedNoteThemes(themes),
+            assets: SkinAssetCache(folder: { _ in nil }),
+            now: now
+        )
     }
 
     /// Re-reads every open note's look after a skin, accessibility or workspace change.
@@ -73,7 +138,7 @@ final class NotesController {
     }
 
     private func updateAppearance(_ id: UUID, _ change: (inout NoteAppearance) -> Void) {
-        guard let note = store.note(id: id) else { return }
+        guard !isImporting, let note = store.note(id: id) else { return }
         var appearance = note.appearance ?? NoteAppearance()
         change(&appearance)
         let stored: NoteAppearance? = appearance == NoteAppearance() ? nil : appearance
@@ -86,6 +151,8 @@ final class NotesController {
     }
 
     func start() {
+        guard !started else { return }
+        started = true
         monitor.onChange = { [weak self] in self?.layout() }
         permission.onChange { [weak self] in
             self?.monitor.permissionChanged()
@@ -106,11 +173,22 @@ final class NotesController {
             MainActor.assumeIsolated { self?.layout() }
         }
         _ = quit
+        purgeExpiredTrash()
         monitor.start()
         layout()
         if let problem = readOnlyProblem {
             showReadOnlyBanner(problem)
+        } else if case let .recovered(backupURL) = store.outcome {
+            showRecoveredBanner(backupURL)
         }
+    }
+
+    private func purgeExpiredTrash() {
+        guard isWritable else { return }
+        let cutoff = now().addingTimeInterval(-Self.trashRetentionPeriod)
+        guard store.purgeTrash(olderThan: cutoff, includingEphemeral: false) > 0 else { return }
+        didMutate()
+        onStatusChange?()
     }
 
     // MARK: State for the menu bar and Settings
@@ -132,9 +210,299 @@ final class NotesController {
         return OverlayPlanner.contextNotes(store.notes, context: monitor.context)
     }
 
+    // MARK: Library bridge
+
+    /// Registers a Library observer and returns its removal token. The callback runs
+    /// after a note or workspace mutation, alongside the legacy `onLibraryChange`.
+    @discardableResult
+    func addLibraryObserver(_ observer: @escaping @MainActor () -> Void) -> UUID {
+        let token = UUID()
+        libraryObservers[token] = observer
+        return token
+    }
+
+    func removeLibraryObserver(_ token: UUID) {
+        libraryObservers.removeValue(forKey: token)
+    }
+
+    /// The number of currently registered Library observers, for tests and diagnostics.
+    var libraryObserverCount: Int { libraryObservers.count }
+
+    private func notifyLibraryChange() {
+        onLibraryChange?()
+        // Snapshot the callbacks so an observer may remove itself while being called.
+        for observer in Array(libraryObservers.values) {
+            observer()
+        }
+    }
+
+    /// Read-only Library snapshots. Ephemeral notes are overlay-only until Step 7b.
+    var libraryNotes: [Note] {
+        store.notes.filter { !$0.ephemeral }
+    }
+
+    var libraryWorkspaces: [WorkspaceRecord] {
+        store.workspaces
+    }
+
+    private func libraryNoteForMutation(id: UUID) -> Note? {
+        guard !isImporting, isWritable, let note = store.note(id: id), !note.ephemeral else { return nil }
+        return note
+    }
+
+    private func finishLibraryMutation(changed: Bool, draftsChanged: Bool, relayout: Bool = false) {
+        guard changed || draftsChanged else { return }
+        didMutate()
+        if changed && relayout { layout() }
+    }
+
+    func updateLibraryText(id: UUID, text: String) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(id: id, change: .text(text), now: now())
+        if changed {
+            // A stale overlay draft must not replace the Library's newer text.
+            windows[id]?.model.setTextSilently(text)
+        }
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    /// Replaces a note's anchor and clears any tab binding. A nil workspace clears the
+    /// override so the anchor decides the workspace (Inbox only when there is no anchor);
+    /// a workspace ID must already exist.
+    func setLibraryAttachment(id: UUID, anchor: Anchor?, workspace: UUID?) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        if let workspace, !store.workspaces.contains(where: { $0.id == workspace }) { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(
+            id: id,
+            changes: [
+                .attachment(anchor: anchor, tab: nil),
+                .workspaceOverride(workspace),
+            ],
+            now: now()
+        )
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    /// Replaces page anchors in one mutation and one queued save, for converting notes
+    /// off a query key. Returns the number of notes changed; nothing changes while the
+    /// store is read-only or an import owns it.
+    @discardableResult
+    func applyAnchorRewrites(_ rewrites: [QueryRulesPane.AnchorRewrite]) -> Int {
+        guard isWritable, !isImporting else { return 0 }
+        let draftsChanged = commitDrafts()
+        var changedCount = 0
+        for rewrite in rewrites where libraryNoteForMutation(id: rewrite.noteID) != nil {
+            if store.updateContent(id: rewrite.noteID, change: .anchor(rewrite.anchor), now: now()) {
+                changedCount += 1
+            }
+        }
+        finishLibraryMutation(changed: changedCount > 0, draftsChanged: draftsChanged, relayout: true)
+        return changedCount
+    }
+
+    func setPinned(id: UUID, pinned: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .pinnedAt(pinned ? now() : nil))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    func setHidden(id: UUID, hidden: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .hidden(hidden))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    func setExcludedFromAgent(id: UUID, excluded: Bool) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateLayout(id: id, change: .excludedFromAgent(excluded))
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
+    }
+
+    /// Library Trash has no overlay panel, so it deliberately shows no Undo toast.
+    /// The overlay menu keeps its existing 10-second Undo path.
+    func trashLibraryNote(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt == nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.trash(id: id, now: now())
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    func restoreLibraryNote(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt != nil else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.restore(id: id)
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    /// Permanently removes the given trashed non-ephemeral notes and returns the count.
+    /// IDs that were restored or newly trashed after the confirmation are not included.
+    @discardableResult
+    func emptyTrash(ids: Set<UUID>) -> Int {
+        guard isWritable, !isImporting else { return 0 }
+        let draftsChanged = commitDrafts()
+        let removed = store.purgeTrash(ids: ids, includingEphemeral: false)
+        finishLibraryMutation(changed: removed > 0, draftsChanged: draftsChanged, relayout: removed > 0)
+        return removed
+    }
+
+    /// Creates an anchorless, tabless note for the Inbox or a workspace. This does not
+    /// require a current app context, unlike `newNote()`.
+    func createLibraryNote(destination: LibraryDestination) -> UUID? {
+        guard isWritable, !isImporting else { return nil }
+
+        var newWorkspace: WorkspaceRecord?
+        var workspaceOverride: UUID?
+        switch destination {
+        case .inbox:
+            break
+        case .record(let id):
+            guard store.workspaces.contains(where: { $0.id == id }) else { return nil }
+            workspaceOverride = id
+        case .workspace(let key):
+            if let existing = store.workspaces
+                .filter({ $0.keys.contains(key) })
+                .min(by: { $0.id.uuidString.lowercased() < $1.id.uuidString.lowercased() }) {
+                workspaceOverride = existing.id
+            } else {
+                let record = WorkspaceRecord(keys: [key], createdAt: now())
+                newWorkspace = record
+                workspaceOverride = record.id
+            }
+        }
+
+        let draftsChanged = commitDrafts()
+        let createdAt = now()
+        let note = Note(
+            workspaceOverride: workspaceOverride,
+            frame: NoteFrame(),
+            placement: .screen,
+            createdAt: createdAt,
+            updatedAt: createdAt
+        )
+        guard store.add(note, workspace: newWorkspace) else {
+            if draftsChanged { didMutate() }
+            return nil
+        }
+        didMutate()
+        return note.id
+    }
+
+    /// Builds and applies one workspace edit, saving once. Returns where a selection
+    /// on the edited workspace should go, or nil if nothing was applied.
+    func applyWorkspaceEdit(
+        _ make: ([WorkspaceRecord], [Note], Date) throws -> WorkspaceEdit
+    ) -> WorkspaceDestination? {
+        guard isWritable, !isImporting else { return nil }
+        let draftsChanged = commitDrafts()
+        do {
+            let date = now()
+            let edit = try make(store.workspaces, store.notes, date)
+            let before = store.mutationGeneration
+            try store.apply(edit, now: date)
+            finishLibraryMutation(
+                changed: store.mutationGeneration != before,
+                draftsChanged: draftsChanged
+            )
+            return edit.destination
+        } catch {
+            finishLibraryMutation(changed: false, draftsChanged: draftsChanged)
+            return nil
+        }
+    }
+
+    // MARK: Import
+
+    /// Applies a validated import as one serialized transaction.
+    ///
+    /// Competing Library and overlay mutations are rejected while it runs. Drafts are
+    /// committed first, the current state is flushed, and only then is a candidate built
+    /// from the freshly captured notes/workspaces and generation. The gate creates the
+    /// pre-import backup and writes the candidate on its serial queue; memory is
+    /// published only for the exact acknowledgement. A failure leaves memory and the
+    /// existing notes file untouched, and an edit that lands before the barrier stays in
+    /// the candidate rather than being dropped.
+    @discardableResult
+    func importNotes(_ plan: ImportPlan) async throws -> ImportPlan.Summary {
+        if case .readOnly(let problem) = store.mode {
+            let error = NoteStore.StoreError.readOnly(problem)
+            importState = .failed(error.localizedDescription)
+            throw error
+        }
+        guard !isImporting else {
+            throw NoteStore.StoreError.staleImportGeneration(
+                expected: store.committedGeneration,
+                found: store.mutationGeneration
+            )
+        }
+
+        // The Library keeps its own editor draft; commit it before the freeze, since
+        // Library mutations are rejected once the import starts.
+        commitLibraryDrafts?()
+
+        isImporting = true
+        importState = .importing
+        // Layout requests dropped while importing are replayed on every exit. The
+        // success path ends the import itself before refreshing.
+        defer {
+            if isImporting {
+                isImporting = false
+                layout()
+            }
+        }
+
+        do {
+            // Overlay drafts are committed in the same step as the quit path, then the
+            // editors are frozen: layout() cannot refresh them while importing.
+            _ = commitDrafts(force: true)
+            for controller in windows.values { controller.model.isEditable = false }
+
+            let barrier = store.saveRequest()
+            _ = try await barrier.flush()
+            saveSucceeded(barrier.generation)
+
+            // Capture after the barrier so the candidate includes everything durable.
+            let request = store.prepareImport(plan)
+            let receipt = try await request.commit()
+            guard receipt.generation == request.generation,
+                  receipt.generation == store.committedGeneration,
+                  store.publishImport(receipt) else {
+                throw NoteStore.StoreError.staleImportGeneration(
+                    expected: request.generation,
+                    found: store.committedGeneration
+                )
+            }
+
+            let result = ImportResult(
+                summary: plan.summary,
+                backupURL: receipt.backupURL,
+                generation: receipt.generation
+            )
+            // Refresh quit, status and latest-save bookkeeping for the new generation.
+            saveSucceeded(receipt.generation)
+            quit.noteMutation(generation: store.mutationGeneration)
+            _ = currentSaveRequest()
+            autosave.schedule()
+            isImporting = false
+            layout()
+            notifyLibraryChange()
+            onStatusChange?()
+            importState = .succeeded(result)
+            return plan.summary
+        } catch {
+            importState = .failed(error.localizedDescription)
+            throw error
+        }
+    }
+
     // MARK: Note actions
 
     func newNote() {
+        guard !isImporting else { return }
         guard isWritable else {
             NSSound.beep()
             if let problem = readOnlyProblem { showReadOnlyBanner(problem) }
@@ -170,6 +538,7 @@ final class NotesController {
 
     /// Shows a note from the menu bar: unhides and expands it, then focuses it.
     func show(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         var changed = store.updateLayout(id: id, change: .hidden(false))
         changed = store.updateLayout(id: id, change: .collapsed(false)) || changed
@@ -179,6 +548,7 @@ final class NotesController {
     }
 
     func showAllHidden() {
+        guard !isImporting else { return }
         var changed = false
         for note in currentContextNotes().hidden {
             changed = store.updateLayout(id: note.id, change: .hidden(false)) || changed
@@ -188,6 +558,7 @@ final class NotesController {
     }
 
     private func toggleCollapsed(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         guard let note = store.note(id: id),
               store.updateLayout(id: id, change: .collapsed(!note.collapsed)) else { return }
@@ -196,6 +567,7 @@ final class NotesController {
     }
 
     private func hideHere(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         guard store.updateLayout(id: id, change: .hidden(true)) else { return }
         didMutate()
@@ -203,6 +575,7 @@ final class NotesController {
     }
 
     private func trash(_ id: UUID) {
+        guard !isImporting else { return }
         commitDrafts()
         let frame = windows[id]?.visualFrame
         guard store.trash(id: id) else { return }
@@ -217,6 +590,7 @@ final class NotesController {
     }
 
     private func undoTrash(_ id: UUID) {
+        guard !isImporting else { return }
         toasts.removeValue(forKey: id)?.close()
         guard store.restore(id: id) else { return }
         didMutate()
@@ -234,6 +608,7 @@ final class NotesController {
     }
 
     private func userLaidOut(_ id: UUID) {
+        guard !isImporting else { return }
         guard let controller = windows[id], let note = store.note(id: id) else { return }
         let panel = Geometry.topLeftRect(fromAppKit: controller.visualFrame, primaryScreenHeight: Self.primaryScreenHeight)
         let frame = OverlayPlanner.storedFrame(forPanel: panel, note: note, window: monitor.windowFrame)
@@ -245,6 +620,9 @@ final class NotesController {
 
     /// Shows the current app's notes where the planner puts them and closes the rest.
     func layout() {
+        // Importing freezes the editor surfaces; closing or re-planning overlay
+        // windows here would discard drafts that cannot be committed yet.
+        guard !isImporting else { return }
         let window = monitor.windowFrame
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) })
         let plans = OverlayPlanner.plan(
@@ -266,9 +644,9 @@ final class NotesController {
 
         for plan in plans {
             guard let note = store.note(id: plan.noteID) else { continue }
-            let controller = windows[plan.noteID] ?? makeWindow(for: note)
+            let controller = overlayController(for: note)
             controller.model.collapsed = plan.collapsed
-            controller.model.isEditable = isWritable
+            controller.model.isEditable = isWritable && !isImporting
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
@@ -278,6 +656,12 @@ final class NotesController {
     /// fits whichever skin a note uses.
     private var collapsedHeight: Double {
         store.notes.reduce(skins.themes().collapsedHeight) { max($0, skins.themes(for: $1).collapsedHeight) }
+    }
+
+    /// The overlay controller for a note, created on demand. The overlay layout uses
+    /// this, and tests use it to verify that a Library edit syncs an open draft.
+    func overlayController(for note: Note) -> NoteWindowController {
+        windows[note.id] ?? makeWindow(for: note)
     }
 
     private func makeWindow(for note: Note) -> NoteWindowController {
@@ -304,13 +688,20 @@ final class NotesController {
     // MARK: Saving
 
     /// Commits drafts that differ from the store. Returns true if any did.
+    /// Competing drafts stay in their editors while an import owns the store.
     @discardableResult
-    private func commitDrafts() -> Bool {
+    private func commitDrafts(force: Bool = false) -> Bool {
+        if isImporting, !force { return false }
+        guard force || !isImporting else { return false }
         var changed = false
         for (id, controller) in windows where store.note(id: id)?.text != controller.model.text {
             changed = store.updateContent(id: id, change: .text(controller.model.text)) || changed
         }
-        if changed { quit.noteMutation(generation: store.mutationGeneration) }
+        if changed {
+            quit.noteMutation(generation: store.mutationGeneration)
+            // An overlay edit becomes visible to an open Library as soon as it commits.
+            notifyLibraryChange()
+        }
         return changed
     }
 
@@ -322,6 +713,7 @@ final class NotesController {
     private func didMutate() {
         quit.noteMutation(generation: store.mutationGeneration)
         autosave.schedule()
+        notifyLibraryChange()
     }
 
     private func currentSaveRequest() -> NoteStore.SaveRequest {
@@ -332,6 +724,7 @@ final class NotesController {
 
     /// Commits drafts and writes the newest state in the background.
     private func saveNow() {
+        guard !isImporting else { return }
         commitDrafts()
         guard isWritable, store.hasUnsavedChanges else { return }
         let request = currentSaveRequest()
@@ -388,6 +781,18 @@ final class NotesController {
             guard !Task.isCancelled else { return }
             self?.saveNow()
         }
+    }
+
+    /// The store kept a copy of an unreadable file before starting empty. Say so
+    /// instead of silently appearing to have lost the notes.
+    private func showRecoveredBanner(_ backupURL: URL) {
+        banner.show(
+            title: "Webby couldn't read notes.json",
+            message: "The unreadable file was kept. Webby started with an empty note list.",
+            actions: [StatusBanner.Action(title: "Show Backup in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+            }]
+        )
     }
 
     private func showReadOnlyBanner(_ problem: String) {

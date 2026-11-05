@@ -14,6 +14,12 @@ public final class NoteStore {
         case sourceChanged
         case backupChanged
         case backupNameUnavailable
+        /// A prepared import was built from a state that is no longer current.
+        case staleImportGeneration(expected: UInt64, found: UInt64)
+        /// The import plan no longer validates against the current notes.
+        case invalidImportPlan
+        /// A workspace edit does not validate or names a missing note.
+        case invalidWorkspaceEdit
 
         public var errorDescription: String? {
             switch self {
@@ -27,6 +33,12 @@ public final class NoteStore {
                 return "The migration backup is missing or changed. The original notes were not overwritten."
             case .backupNameUnavailable:
                 return "No unused name was available for the migration backup. The original notes were not overwritten."
+            case .staleImportGeneration:
+                return "The notes changed while the import was waiting, so the import was not applied. Try again."
+            case .invalidImportPlan:
+                return "The import no longer matches the current notes, so nothing was imported."
+            case .invalidWorkspaceEdit:
+                return "The workspace change no longer matches the current notes, so nothing was changed."
             }
         }
     }
@@ -66,7 +78,10 @@ public final class NoteStore {
     public var migrationBackupURL: URL? { gate.migrationBackupURL }
 
     /// Generation of the newest in-memory mutation; 0 means nothing changed since load.
-    public private(set) var mutationGeneration: UInt64 = 0
+    ///
+    /// It lives behind a lock so a prepared import can compare it from the save queue
+    /// without touching the (non-Sendable) store.
+    public var mutationGeneration: UInt64 { clock.current }
     /// Generation known to be on disk.
     public var committedGeneration: UInt64 { gate.generation }
     public var hasUnsavedChanges: Bool { mutationGeneration > gate.generation }
@@ -79,8 +94,21 @@ public final class NoteStore {
 
     private let gate: SaveGate<NotesDocument>
     private let writer: DiskWriter<NotesDocument>
+    private let clock = MutationClock()
+    private let backupNow: @Sendable () -> Date
+    private let backupSuffix: @Sendable (Int) -> String
 
-    public init(fileURL: URL = NoteStore.defaultFileURL, now: Date = Date()) {
+    public init(
+        fileURL: URL = NoteStore.defaultFileURL,
+        now: Date = Date(),
+        backupDate: @escaping @Sendable () -> Date = { Date() },
+        backupSuffix: @escaping @Sendable (Int) -> String = { _ in
+            String(UUID().uuidString.lowercased().prefix(8))
+        },
+        atomicWrite: @escaping @Sendable (Data, URL) throws -> Void = {
+            try $0.write(to: $1, options: .atomic)
+        }
+    ) {
         let file = VersionedJSONFile<NotesDocument>(
             fileURL: fileURL,
             defaultContent: NotesDocument(),
@@ -88,7 +116,8 @@ public final class NoteStore {
             decode: { try NotesDocument.decode($0, version: $1) },
             encode: { try NotesDocument.encode($0, version: $1) },
             backupBeforeUpgrade: true,
-            now: { now }
+            now: { now },
+            atomicWrite: atomicWrite
         )
         let gate = SaveGate(file: file, committedGeneration: 0)
         self.fileURL = fileURL
@@ -96,6 +125,8 @@ public final class NoteStore {
         self.workspaces = file.content.workspaces
         self.gate = gate
         self.writer = DiskWriter(gate: gate)
+        self.backupNow = backupDate
+        self.backupSuffix = backupSuffix
     }
 
     private var document: NotesDocument {
@@ -103,7 +134,7 @@ public final class NoteStore {
     }
 
     private func advanceGeneration() {
-        mutationGeneration &+= 1
+        clock.advance()
     }
 
 
@@ -113,9 +144,17 @@ public final class NoteStore {
         notes.filter { NoteVisibility.isAttached($0, to: context) }
     }
 
+    /// Adds a note, optionally materializing one workspace record in the same
+    /// generation. The record is validated with the existing workspace rules.
     @discardableResult
-    public func add(_ note: Note) -> Bool {
+    public func add(_ note: Note, workspace: WorkspaceRecord? = nil) -> Bool {
         guard mode == .writable, self.note(id: note.id) == nil else { return false }
+        if let workspace {
+            var records = workspaces
+            records.append(workspace)
+            guard (try? NotesDocument.validateWorkspaces(records)) != nil else { return false }
+            workspaces = records
+        }
         notes.append(note)
         advanceGeneration()
         return true
@@ -123,24 +162,44 @@ public final class NoteStore {
 
     @discardableResult
     public func updateContent(id: UUID, change: ContentChange, now: Date = Date()) -> Bool {
-        guard mode == .writable, let index = notes.firstIndex(where: { $0.id == id }) else { return false }
+        updateContent(id: id, changes: [change], now: now)
+    }
+
+    /// Applies several content changes as one revision, for actions that change both
+    /// an attachment and its workspace override.
+    @discardableResult
+    public func updateContent(id: UUID, changes: [ContentChange], now: Date = Date()) -> Bool {
+        guard mode == .writable,
+              !changes.isEmpty,
+              let index = notes.firstIndex(where: { $0.id == id }) else { return false }
         var candidate = notes[index]
-        switch change {
-        case .text(let text):
-            guard candidate.text != text else { return false }
-            candidate.text = text
-        case .anchor(let anchor):
-            guard candidate.anchor != anchor else { return false }
-            candidate.anchor = anchor
-        case .workspaceOverride(let workspace):
-            guard candidate.workspaceOverride != workspace else { return false }
-            candidate.workspaceOverride = workspace
-        case .attachment(let anchor, let tab):
-            guard candidate.anchor != anchor || (candidate.tab == nil) != (tab == nil) else { return false }
-            candidate.anchor = anchor
-            candidate.tab = tab
+        var changed = false
+        for change in changes {
+            switch change {
+            case .text(let text):
+                if candidate.text != text {
+                    candidate.text = text
+                    changed = true
+                }
+            case .anchor(let anchor):
+                if candidate.anchor != anchor {
+                    candidate.anchor = anchor
+                    changed = true
+                }
+            case .workspaceOverride(let workspace):
+                if candidate.workspaceOverride != workspace {
+                    candidate.workspaceOverride = workspace
+                    changed = true
+                }
+            case .attachment(let anchor, let tab):
+                if candidate.anchor != anchor || (candidate.tab == nil) != (tab == nil) {
+                    candidate.anchor = anchor
+                    candidate.tab = tab
+                    changed = true
+                }
+            }
         }
-        guard candidate.revision < Int.max else { return false }
+        guard changed, candidate.revision < Int.max else { return false }
         candidate.revision += 1
         candidate.updatedAt = now
         notes[index] = candidate
@@ -202,11 +261,36 @@ public final class NoteStore {
     }
 
     /// Permanently removes only notes trashed before the cutoff. Read-only stores never purge.
+    /// Library paths pass `includingEphemeral: false` so in-memory notes stay overlay-only.
     @discardableResult
-    public func purgeTrash(olderThan cutoff: Date) -> Int {
+    public func purgeTrash(olderThan cutoff: Date, includingEphemeral: Bool = true) -> Int {
         guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in note.trashedAt.map { $0 < cutoff } ?? false },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    /// Permanently removes only the given notes that are still in Trash. A note
+    /// trashed after a confirmation was requested is not part of that confirmation.
+    @discardableResult
+    public func purgeTrash(ids: Set<UUID>, includingEphemeral: Bool = false) -> Int {
+        guard mode == .writable else { return 0 }
+        return purgeTrash(
+            where: { note in ids.contains(note.id) && note.trashedAt != nil },
+            includingEphemeral: includingEphemeral
+        )
+    }
+
+    private func purgeTrash(
+        where isIncluded: (Note) -> Bool,
+        includingEphemeral: Bool
+    ) -> Int {
         let oldCount = notes.count
-        notes.removeAll { note in note.trashedAt.map { $0 < cutoff } ?? false }
+        notes.removeAll { note in
+            guard isIncluded(note) else { return false }
+            return includingEphemeral || !note.ephemeral
+        }
         let removed = oldCount - notes.count
         if removed > 0 { advanceGeneration() }
         return removed
@@ -217,6 +301,43 @@ public final class NoteStore {
         try NotesDocument.validateWorkspaces(records)
         guard records != workspaces else { return }
         workspaces = records
+        advanceGeneration()
+    }
+
+    /// Applies a workspace edit as one generation: the new records, the edit's
+    /// override changes, and a cleared override on every note that points at a record
+    /// the edit removes. Overrides change with the same revision and `updatedAt`
+    /// semantics as `ContentChange.workspaceOverride`. Memory is untouched on failure.
+    public func apply(_ edit: WorkspaceEdit, now: Date = Date()) throws {
+        if case .readOnly(let reason) = mode { throw StoreError.readOnly(reason) }
+        try NotesDocument.validateWorkspaces(edit.records)
+
+        let survivingIDs = Set(edit.records.map(\.id))
+        var requested: [UUID: UUID?] = [:]
+        for change in edit.overrideChanges {
+            guard notes.contains(where: { $0.id == change.noteID }) else {
+                throw StoreError.invalidWorkspaceEdit
+            }
+            requested[change.noteID] = change.workspace
+        }
+
+        var candidate = notes
+        for index in candidate.indices {
+            var note = candidate[index]
+            var override = note.workspaceOverride
+            if let change = requested[note.id] { override = change }
+            if let id = override, !survivingIDs.contains(id) { override = nil }
+            guard override != note.workspaceOverride else { continue }
+            guard note.revision < Int.max else { throw StoreError.invalidWorkspaceEdit }
+            note.workspaceOverride = override
+            note.revision += 1
+            note.updatedAt = now
+            candidate[index] = note
+        }
+
+        guard edit.records != workspaces || candidate != notes else { return }
+        workspaces = edit.records
+        notes = candidate
         advanceGeneration()
     }
 
@@ -254,6 +375,176 @@ public final class NoteStore {
         )
     }
 
+    /// Captures an immutable candidate and the generation it expects to replace.
+    ///
+    /// The plan is applied only to this snapshot; the store itself does not change
+    /// until `publishImport(_:)` accepts the acknowledged receipt. The returned value
+    /// carries no reference to the store, so it can cross actors.
+    public func prepareImport(_ plan: ImportPlan) -> ImportRequest {
+        let baseMutation = mutationGeneration
+        let expectedGeneration = gate.generation
+
+        var records = workspaces
+        for update in plan.workspaceUpdates {
+            if let index = records.firstIndex(where: { $0.id == update.id }) {
+                records[index] = update
+            } else {
+                records.append(update)
+            }
+        }
+        records.append(contentsOf: plan.workspacesToAdd)
+
+        var candidateNotes = notes
+        candidateNotes.append(contentsOf: plan.notesToAdd)
+        let isValid = (try? NotesDocument.validateWorkspaces(records)) != nil
+
+        let backup = PreImportBackup(
+            fileURL: fileURL,
+            now: backupNow,
+            suffix: backupSuffix,
+            clock: clock,
+            baseMutationGeneration: baseMutation
+        )
+
+        return ImportRequest(
+            document: NotesDocument(notes: candidateNotes, workspaces: records),
+            expectedGeneration: expectedGeneration,
+            candidateGeneration: max(baseMutation, expectedGeneration) &+ 1,
+            baseMutationGeneration: baseMutation,
+            gate: gate,
+            isValid: isValid,
+            prepare: { try backup.create() }
+        )
+    }
+
+    /// Applies an acknowledged import to memory. Only a receipt written by this store's
+    /// gate for the exact mutation state it was built from is accepted.
+    @discardableResult
+    public func publishImport(_ receipt: ImportReceipt) -> Bool {
+        guard mode == .writable,
+              receipt.baseMutationGeneration == mutationGeneration,
+              receipt.generation == gate.generation else { return false }
+        notes = receipt.document.notes
+        workspaces = receipt.document.workspaces
+        clock.set(receipt.generation)
+        return true
+    }
+
+    /// A prepared import: immutable candidate content plus everything needed to write
+    /// it through the gate. It never holds the store, so it is safe to send.
+    public struct ImportRequest: Sendable {
+        fileprivate let document: NotesDocument
+        fileprivate let expectedGeneration: UInt64
+        fileprivate let candidateGeneration: UInt64
+        fileprivate let baseMutationGeneration: UInt64
+        fileprivate let gate: SaveGate<NotesDocument>
+        fileprivate let isValid: Bool
+        fileprivate let prepare: @Sendable () throws -> URL?
+
+        /// The generation the candidate will have once written.
+        public var generation: UInt64 { candidateGeneration }
+        public var expectedCommittedGeneration: UInt64 { expectedGeneration }
+
+        /// Creates the pre-import backup and writes the candidate on the gate's serial
+        /// queue. Throws when the expected generation is stale, the backup fails, or the
+        /// write fails; only a returned receipt may be published.
+        public func commit() async throws -> ImportReceipt {
+            guard isValid else { throw NoteStore.StoreError.invalidImportPlan }
+            do {
+                let acknowledgement = try await gate.commitPrepared(
+                    SaveGate<NotesDocument>.Snapshot(
+                        generation: candidateGeneration,
+                        content: document
+                    ),
+                    expectedGeneration: expectedGeneration,
+                    prepare: prepare
+                )
+                guard acknowledgement.generation == candidateGeneration else {
+                    throw NoteStore.StoreError.staleImportGeneration(
+                        expected: candidateGeneration,
+                        found: acknowledgement.generation
+                    )
+                }
+                return ImportReceipt(
+                    generation: acknowledgement.generation,
+                    backupURL: acknowledgement.preImportBackupURL,
+                    document: document,
+                    baseMutationGeneration: baseMutationGeneration
+                )
+            } catch let error as SaveFailure {
+                switch error {
+                case .readOnly(let problem): throw NoteStore.StoreError.readOnly(problem)
+                case .sourceChanged: throw NoteStore.StoreError.sourceChanged
+                case .backupChanged: throw NoteStore.StoreError.backupChanged
+                case .backupNameUnavailable: throw NoteStore.StoreError.backupNameUnavailable
+                case .staleGeneration(let expected, let committed):
+                    throw NoteStore.StoreError.staleImportGeneration(expected: expected, found: committed)
+                }
+            }
+        }
+    }
+
+    /// An acknowledged write of one prepared import candidate.
+    public struct ImportReceipt: Sendable {
+        public let generation: UInt64
+        /// The pre-import backup, created before the candidate was written.
+        public let backupURL: URL?
+        fileprivate let document: NotesDocument
+        fileprivate let baseMutationGeneration: UInt64
+    }
+
+    /// Creates the pre-import backup from the current file and verifies it before the
+    /// candidate is allowed to replace it. Runs inside the save gate's queue.
+    private struct PreImportBackup: Sendable {
+        let fileURL: URL
+        let now: @Sendable () -> Date
+        let suffix: @Sendable (Int) -> String
+        let clock: MutationClock
+        let baseMutationGeneration: UInt64
+
+        func create() throws -> URL? {
+            // An edit that landed after the candidate was built must abort the write.
+            guard clock.current == baseMutationGeneration else {
+                throw NoteStore.StoreError.staleImportGeneration(
+                    expected: baseMutationGeneration,
+                    found: clock.current
+                )
+            }
+
+            let target = fileURL.resolvingSymlinksInPath()
+            let sourceData: Data
+            if FileManager.default.fileExists(atPath: target.path) {
+                sourceData = try Data(contentsOf: target)
+            } else {
+                // The first import still gets a restore point: the empty pre-import state.
+                sourceData = try NotesDocument.encode(NotesDocument(), version: 2)
+            }
+
+            let baseName = target.deletingPathExtension().lastPathComponent
+            let fileExtension = target.pathExtension.isEmpty ? "json" : target.pathExtension
+            let timestamp = BackupFileNaming.timestamp(from: now())
+            let directory = target.deletingLastPathComponent()
+            let suffix = self.suffix
+
+            let backup: URL
+            do {
+                backup = try BackupFileNaming.createExclusiveBackup(sourceData, in: directory) { attempt in
+                    "\(baseName).pre-import-\(timestamp)-\(suffix(attempt)).\(fileExtension)"
+                }
+            } catch BackupFileError.nameUnavailable {
+                throw NoteStore.StoreError.backupNameUnavailable
+            }
+
+            let attributes = try FileManager.default.attributesOfItem(atPath: backup.path)
+            guard attributes[.type] as? FileAttributeType == .typeRegular,
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600,
+                  try Data(contentsOf: backup) == sourceData else {
+                throw NoteStore.StoreError.backupChanged
+            }
+            return backup
+        }
+    }
+
     /// The store's state at one generation, ready to be written.
     public struct SaveRequest: Sendable {
         fileprivate let snapshot: SaveGate<NotesDocument>.Snapshot
@@ -288,8 +579,35 @@ public final class NoteStore {
                 case .sourceChanged: throw StoreError.sourceChanged
                 case .backupChanged: throw StoreError.backupChanged
                 case .backupNameUnavailable: throw StoreError.backupNameUnavailable
+                case .staleGeneration(let expected, let committed):
+                    throw StoreError.staleImportGeneration(expected: expected, found: committed)
                 }
             }
         }
+    }
+}
+
+/// A lock-guarded mutation counter so a prepared import can read the store's newest
+/// in-memory generation from the save queue without touching the store itself.
+private final class MutationClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+
+    var current: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func advance() {
+        lock.lock()
+        value &+= 1
+        lock.unlock()
+    }
+
+    func set(_ newValue: UInt64) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
     }
 }

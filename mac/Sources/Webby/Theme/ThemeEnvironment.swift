@@ -61,6 +61,27 @@ struct NoteThemes: Sendable, Equatable {
     }
 }
 
+/// Where `NotesController` reads each note's look. `SkinStore` is the app's source.
+@MainActor
+protocol NoteThemeSource {
+    /// The look for `note`, with its workspace skin and palette and decoration choices.
+    func themes(for note: Note) -> NoteThemes
+    /// The look of a note with no workspace skin and no choices of its own.
+    func themes() -> NoteThemes
+}
+
+/// The same look for every note.
+struct FixedNoteThemes: NoteThemeSource {
+    let value: NoteThemes
+
+    init(_ value: NoteThemes) {
+        self.value = value
+    }
+
+    func themes(for note: Note) -> NoteThemes { value }
+    func themes() -> NoteThemes { value }
+}
+
 // Hand-written rather than with SwiftUI's Entry macro, whose plugin ships only with Xcode (plan §5.4.8).
 private struct WebbyThemeKey: EnvironmentKey {
     static let defaultValue: ResolvedTheme = NoteThemes.fallback.light

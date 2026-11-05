@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>evil.example</title>
+<style>
+:root { color-scheme: light dark; }
+body { margin: 0; padding: 24px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+main { max-width: 720px; margin: 0 auto; }
+h1 { margin: 0 0 24px; font-size: 24px; }
+h2 { margin: 28px 0 12px; font-size: 18px; }
+h3 { margin: 0 0 8px; font-size: 15px; }
+.note { padding: 16px 0; border-top: 1px solid #8884; }
+.body { white-space: pre-wrap; }
+.meta { margin: 8px 0 0; color: #666; font-size: 13px; }
+.states { font-weight: 600; }
+a { color: inherit; }
+.tag { margin-right: 4px; }
+</style>
+</head>
+<body>
+<main>
+<h1>evil.example</h1>
+<section>
+<h2>Whole site</h2>
+<article class="note">
+<h3>&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;</h3>
+<div class="body">&lt;img src=&quot;https://remote.example/pixel.png&quot;&gt; and [link](https://remote.example) and `code`.
+# not a heading
+&amp; &lt; &gt; &quot; &#39;</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000001">Open note</a> · <a href="https://evil.example/">Open page</a> · created 2001-01-01</p>
+</article>
+<article class="note">
+<h3>Remote &lt;img src=&quot;https://remote.example/x.png&quot;&gt; image</h3>
+<div class="body">**bold** and [x](https://remote.example) and `tick`.
+A tag stays literal: #safe_tag</div>
+<p class="meta"><a href="webby://note/00000000-0000-0000-0000-000000000002">Open note</a> · <a href="https://evil.example/">Open page</a> · created 2001-01-02 · <span class="tag">#safe_tag</span></p>
+</article>
+</section>
+</main>
+</body>
+</html>

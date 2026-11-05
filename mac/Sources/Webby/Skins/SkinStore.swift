@@ -43,7 +43,7 @@ enum SkinStoreError: Error, LocalizedError, Equatable {
 /// and calls `onThemesChanged`, and the notes controller re-reads each open note.
 @MainActor
 @Observable
-final class SkinStore {
+final class SkinStore: NoteThemeSource {
     private struct Held {
         var skin: InstalledSkin?
         var name: String
@@ -121,7 +121,11 @@ final class SkinStore {
         return themes(workspaceSkinID: workspaceSkinID, appearance: note.appearance)
     }
 
-    func themes(workspaceSkinID: String? = nil, appearance: NoteAppearance? = nil) -> NoteThemes {
+    func themes() -> NoteThemes {
+        themes(workspaceSkinID: nil, appearance: nil)
+    }
+
+    func themes(workspaceSkinID: String?, appearance: NoteAppearance? = nil) -> NoteThemes {
         let key = ThemeKey(
             workspaceSkinID: workspaceSkinID,
             paletteIndex: appearance?.paletteIndex,

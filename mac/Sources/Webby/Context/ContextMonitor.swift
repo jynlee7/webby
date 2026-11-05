@@ -15,7 +15,7 @@ final class ContextMonitor {
         let name: String
     }
 
-    private(set) var app: FrontApp?
+    var app: FrontApp?
     private(set) var windowFrame: CGRect?
     /// Called after `app` or `windowFrame` changes.
     var onChange: (() -> Void)?

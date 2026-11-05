@@ -25,7 +25,9 @@ allowed_for() {
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
       # UniformTypeIdentifiers: the .webbyskin type for the open and save panels.
       # CoreServices: FSEvents watches the user skins folder for hot reload (plan.md §5.4.8).
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics CoreServices OSLog Carbon UniformTypeIdentifiers WebbyCore WebbySkinArchive"
+      # Observation: @Observable models such as LibraryModel (its plugin ships with the CLT).
+      # WebKit: the locked-down Compiled view, app-only and never used by WebbyCore.
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics CoreServices OSLog Carbon Observation UniformTypeIdentifiers WebbyCore WebbySkinArchive WebKit"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"
@@ -34,12 +36,23 @@ allowed_for() {
       # ImageIO and AVFAudio are decode-level checks in SkinAssetChecker (plan.md §5.4.6).
       printf '%s\n' "Foundation WebbyCore ZIPFoundation ImageIO AVFAudio"
       ;;
+    WebbyAgent)
+      # #24 keeps the agent tests-only and limited to Core (plan.md Step 12a).
+      printf '%s\n' "Foundation WebbyCore"
+      ;;
     WebbyCoreTests)
       # Darwin/Glibc are platform shims used behind #if canImport.
       printf '%s\n' "Testing Foundation CoreGraphics WebbyCore Darwin Glibc"
       ;;
     WebbySkinArchiveTests)
       printf '%s\n' "Testing Foundation CryptoKit WebbyCore WebbySkinArchive ZIPFoundation"
+      ;;
+    WebbyAgentTests)
+      printf '%s\n' "Testing Foundation WebbyAgent WebbyCore"
+      ;;
+    WebbyTests)
+      # WebKit is allowed only for direct compiled-view configuration and security tests.
+      printf '%s\n' "Testing Foundation AppKit SwiftUI Webby WebbyCore WebKit"
       ;;
     *)
       return 1

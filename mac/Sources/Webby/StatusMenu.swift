@@ -11,6 +11,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let notes: NotesController
+    private let openLibrary: @MainActor () -> Void
     private let openSettings: @MainActor () -> Void
     private let importSkin: @MainActor () -> Void
     private let revealSkinsFolder: @MainActor () -> Void
@@ -18,12 +19,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     init(
         notes: NotesController,
+        openLibrary: @escaping @MainActor () -> Void,
         openSettings: @escaping @MainActor () -> Void,
         importSkin: @escaping @MainActor () -> Void,
         revealSkinsFolder: @escaping @MainActor () -> Void,
         showMoveToApplications: @escaping @MainActor () -> Void
     ) {
         self.notes = notes
+        self.openLibrary = openLibrary
         self.openSettings = openSettings
         self.importSkin = importSkin
         self.revealSkinsFolder = revealSkinsFolder
@@ -94,10 +97,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        // The Library arrives in Step 5b.
-        let library = NSMenuItem(title: "Library", action: nil, keyEquivalent: "")
-        library.isEnabled = false
-        menu.addItem(library)
+        menu.addItem(ActionMenuItem("Open Library", key: "l", run: openLibrary))
         menu.addItem(ActionMenuItem("Import Skin…", run: importSkin))
         menu.addItem(ActionMenuItem("Reveal Skins Folder", run: revealSkinsFolder))
         menu.addItem(ActionMenuItem("Settings…", key: ",", run: openSettings))

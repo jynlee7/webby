@@ -5,11 +5,15 @@ import WebbyCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chromeBridge = ChromeBridge()
+    private let openTabs = OpenTabsFeed()
     private var notes: NotesController!
     private var statusMenu: StatusMenu!
     private var hotkeys: Hotkeys!
     private var settingsStore: SettingsStore!
     private var settingsWindow: SettingsWindowController?
+    private var libraryWindow: LibraryWindowController?
+    private let linkRouter = NoteLinkRouter()
+    private var isShowingMissingNoteAlert = false
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
@@ -60,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusMenu = StatusMenu(
             notes: notes,
+            openLibrary: { [weak self] in self?.showLibrary() },
             openSettings: { [weak self] in self?.showSettings() },
             importSkin: { [weak self] in self?.skinImporter.chooseFiles() },
             revealSkinsFolder: { [weak self] in self?.revealSkinsFolder() },
@@ -69,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
+        chromeBridge.onEvent = { [weak self] event in self?.openTabs.receive(event) }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
             statusMenu.needsMoveToApplications = true
@@ -82,22 +88,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             skinImporter.enqueue(pendingSkinURLs)
             pendingSkinURLs = []
         }
+
+        linkRouter.onRoute = { [weak self] id in
+            guard let self else { return false }
+            self.ensureLibraryWindow()
+            return self.libraryWindow?.showNote(id) ?? false
+        }
+        linkRouter.onUnroutable = { [weak self] _ in self?.showMissingNoteLinkAlert() }
+        linkRouter.markReady()
     }
 
-    /// Double-clicked or dropped `.webbyskin` files. This is the only open entry point
-    /// needed: AppKit prefers it to `application(_:openFile:)` when it exists.
+    /// Double-clicked or dropped `.webbyskin` files and external `webby://note/<uuid>`
+    /// links. This is the only open entry point needed: AppKit prefers it to
+    /// `application(_:openFile:)` when it exists. Links that arrive before launch
+    /// finishes are queued by the router and flushed once `notes.start()` has completed.
     func application(_ application: NSApplication, open urls: [URL]) {
-        let skinFiles = urls.filter { $0.pathExtension.lowercased() == "webbyskin" }
-        guard !skinFiles.isEmpty else { return }
-        if let skinImporter {
-            skinImporter.enqueue(skinFiles)
-        } else {
-            pendingSkinURLs.append(contentsOf: skinFiles)
+        let skinFiles = urls.filter { $0.isFileURL && $0.pathExtension.lowercased() == "webbyskin" }
+        if !skinFiles.isEmpty {
+            if let skinImporter {
+                skinImporter.enqueue(skinFiles)
+            } else {
+                pendingSkinURLs.append(contentsOf: skinFiles)
+            }
+        }
+        for url in urls where !skinFiles.contains(url) {
+            linkRouter.receive(url)
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        notes.terminationReply()
+        // The Library keeps its own draft; commit it before quit captures the request.
+        libraryWindow?.commitPendingEdits()
+        return notes.terminationReply()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -111,10 +137,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsStore.defaultFileURL.deletingLastPathComponent().appendingPathComponent("Skins", isDirectory: true)
     }
 
+    private func showLibrary() {
+        ensureLibraryWindow()
+        libraryWindow?.present()
+    }
+
+    /// Creates the one retained Library without presenting it. Both the status menu
+    /// and external URL routing use this so a link never waits for a menu action.
+    private func ensureLibraryWindow() {
+        if libraryWindow == nil {
+            libraryWindow = LibraryWindowController(
+                notes: notes,
+                openTabs: openTabs,
+                currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
+                enabledQueryRules: settingsStore.settings.enabledQueryRules
+            )
+        }
+    }
+
+    private func showMissingNoteLinkAlert() {
+        // runModal spins a nested loop; links arriving meanwhile are absorbed.
+        guard !isShowingMissingNoteAlert else { return }
+        isShowingMissingNoteAlert = true
+        defer { isShowingMissingNoteAlert = false }
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "Note Not Found"
+        alert.informativeText = "This link points to a note that is not in the Library anymore. Nothing was changed."
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
     private func showSettings() {
         if settingsWindow == nil {
             let window = SettingsWindowController(
                 settings: settingsStore,
+                notes: notes,
                 skins: skins,
                 importSkin: { [weak self] in self?.skinImporter.chooseFiles() },
                 hotkeys: hotkeys,
@@ -122,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }
+            window.onQueryRulesChange = { [weak self] rules in self?.libraryWindow?.model.enabledQueryRules = rules }
             settingsWindow = window
         }
         settingsWindow?.present()
