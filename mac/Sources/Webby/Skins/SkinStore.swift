@@ -98,6 +98,13 @@ final class SkinStore: NoteThemeSource {
         globalSkinID = settings.settings.globalSkinID
         apply(SkinCatalogLoader.load(builtInDirectory: builtInDirectory, library: library), notify: false)
         debouncer = SkinReload.makeDebouncer { [weak self] in self?.scheduleReload() }
+        // Create the folder now, so skins copied in from Finder later are watched
+        // without a relaunch. Webby's Application Support folder holds notes anyway.
+        do {
+            try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Could not create the skins folder: \(error.localizedDescription, privacy: .public)")
+        }
         watcher = SkinWatcher(root: userRoot) { [weak self] in self?.debouncer.schedule() }
         watcher.startIfPossible()
     }
