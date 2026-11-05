@@ -149,8 +149,3 @@ enum AgentErrorMessage {
         }
     }
 }
-
-/// A provider with nothing stored, used until a Keychain-backed store is wired in.
-struct NoStoredCredentials: CredentialProvider {
-    func credential(for kind: CredentialKind) async throws -> CredentialValue? { nil }
-}

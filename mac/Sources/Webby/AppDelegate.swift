@@ -128,14 +128,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The agent panel. Until #25's Keychain slice lands there is no stored key, so
-    /// the panel explains how to add one and never reaches the network.
+    /// The agent panel. The Anthropic key comes from the Keychain through #24's
+    /// credential seam; without one the panel explains how to add it and sends nothing.
     private func showAgent() {
         if agentPanel == nil {
             let controller = AgentController(
                 notes: notes,
                 dependencies: AgentController.Dependencies(
-                    credentials: NoStoredCredentials(),
+                    credentials: KeychainCredentialStore(),
                     currentContext: { [weak self] in self?.monitor.context },
                     model: { [weak self] in AgentModelSetting.resolve(self?.settingsStore.settings.agentModel ?? "") },
                     queryRules: { [weak self] in self?.settingsStore.settings.enabledQueryRules ?? QueryRules.builtIns }
