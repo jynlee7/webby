@@ -96,9 +96,11 @@ final class SkinImporter {
         startNext()
     }
 
-    /// Removes the staged folder of an open preview and drops the queue.
+    /// For app termination: drops the queue, waits briefly for an archive still being
+    /// staged, and removes every staged folder, including the open preview's.
     func discardAll() {
         queue.removeAll()
+        store.discardPendingStaging()
         window?.discardIfOpen()
     }
 
@@ -119,6 +121,9 @@ final class SkinImporter {
             switch result {
             case .success(let preview):
                 present(preview, from: url)
+            case .failure(is CancellationError):
+                // The app is quitting, and the staged folder is already gone.
+                break
             case .failure(let error):
                 NSApp.activate()
                 let alert = NSAlert()

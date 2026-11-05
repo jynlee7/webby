@@ -88,6 +88,7 @@ final class SkinStore: NoteThemeSource {
     @ObservationIgnored private var reloadGeneration = 0
     @ObservationIgnored private var debouncer: AutosaveDebouncer!
     @ObservationIgnored private var watcher: SkinWatcher!
+    @ObservationIgnored private let staging = SkinStagingTracker()
 
     /// Loads the catalog synchronously so the first layout already has its skins.
     init(userRoot: URL, builtInDirectory: URL?, settings: SettingsStore, noteStore: NoteStore) {
@@ -195,13 +196,38 @@ final class SkinStore: NoteThemeSource {
     // MARK: Library operations
 
     /// Unpacks `url` into staging without touching the library. Runs off the main actor.
+    /// Throws `CancellationError` when the app started quitting meanwhile; the staged
+    /// folder is removed then.
     func stageArchive(at url: URL) async throws -> StagedSkinPreview {
         let near = library.root.deletingLastPathComponent()
         let bases = baseIDs
-        return try await Task.detached(priority: .userInitiated) {
-            try FileManager.default.createDirectory(at: near, withIntermediateDirectories: true)
-            return try SkinArchiveImporter.stage(archiveAt: url, stagingNear: near, availableBaseIDs: bases)
+        let tracker = staging
+        tracker.begin()
+        let preview = try await Task.detached(priority: .userInitiated) {
+            let preview: StagedSkinPreview
+            do {
+                try FileManager.default.createDirectory(at: near, withIntermediateDirectories: true)
+                preview = try SkinArchiveImporter.stage(archiveAt: url, stagingNear: near, availableBaseIDs: bases)
+            } catch {
+                _ = tracker.finish(root: nil)
+                throw error
+            }
+            guard tracker.finish(root: preview.root) else { throw CancellationError() }
+            return preview
         }.value
+        guard tracker.claim(preview.root) else {
+            discard(preview)
+            throw CancellationError()
+        }
+        return preview
+    }
+
+    /// For app termination: waits briefly for staging in progress and removes every
+    /// staged folder that no preview window owns yet.
+    func discardPendingStaging() {
+        if !staging.discardUnclaimed(waitingUpTo: 3) {
+            logger.error("Skin staging was still running at quit; its folder may remain in the temporary items folder")
+        }
     }
 
     /// Installs a staged skin, replacing one with the same id, and shows it live when
