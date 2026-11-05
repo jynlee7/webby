@@ -462,6 +462,27 @@ private final class Harness {
         #expect(harness.logs.last == AgentController.usageLogLine(turn.usage))
     }
 
+    @Test func aNoteLongerThanTheCapIsReadInFullAndTheTurnCompletes() async throws {
+        let tail = "TAIL-SENTINEL decided on a one-pass hash map."
+        let long = webNote(1, String(repeating: "Earlier exploration of two-sum. ", count: 200) + tail)
+        let harness = Harness(notes: [long], scripts: [
+            [.send(messageStart() + toolUse(0, id: "toolu_long", alias: "N1") + messageEnd("tool_use"))],
+            answer("You settled on a one-pass hash map [N1]."),
+        ])
+
+        await harness.ask("What did I finally decide about two-sum?")
+
+        let turn = try #require(harness.controller.turns.first)
+        #expect(turn.manifest.entries.first?.status == .truncated)
+        #expect(!harness.requestBody(0).contains("TAIL-SENTINEL"))
+        #expect(harness.transport.requests.count == 2)
+        #expect(harness.requestBody(1).contains("TAIL-SENTINEL"))
+        #expect(harness.requestBody(1).contains("\"tool_use_id\":\"toolu_long\""))
+        #expect(turn.status == .complete)
+        #expect(turn.answer == "You settled on a one-pass hash map [N1].")
+        #expect(turn.citations.map(\.alias) == ["N1"])
+    }
+
     @Test func shortcutsCanNeverBeSavedTwiceOnEitherPath() {
         let agent = KeyCombo.defaultAgent
         #expect(SettingsWindowController.shortcutConflict(agent, forAgent: true, other: agent)?.contains("already creates a note") == true)
