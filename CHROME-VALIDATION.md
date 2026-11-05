@@ -38,15 +38,19 @@ separate YouTube videos. These synthetic cases are not claimed as live recording
 
 Window verification requires Accessibility access. Denial, revocation, unknown
 bounds, conflicting profile focus reports and disconnected bridges fall back to
-app context. If no focused frame is available, overlays are hidden. The extension
-sends fresh inventories on focus loss, bounds changes and window removal, so an
-inaccessible incognito window clears the last normal page even when its bounds
-happen to be identical. Incognito context never supplies a page or tab to note
-creation. App notes remain eligible in verified incognito windows.
+Chrome's app context: web notes are hidden, while Chrome app notes still show.
+Without a window frame those app notes are placed at their stored offsets read as
+screen coordinates, as for any app without Accessibility. The extension sends fresh
+inventories on focus loss, bounds changes and window removal, so an inaccessible
+incognito window clears the last normal page even when its bounds happen to be
+identical. Incognito context never supplies a page or tab to note creation. App
+notes remain eligible in verified incognito windows.
 
-The monitor polls the focused window every 100 ms, with bounded AX messaging time,
-and places notes relative to that window. Chrome only reports committed bounds;
-web notes may briefly hide during a window move until the extension catches up.
+`ContextMonitor` reads the focused window's frame through Accessibility when the
+frontmost app changes and on window focus, move and resize notifications, with a
+bounded AX messaging time, and places notes relative to that window. Chrome only
+reports committed bounds; web notes may briefly hide during a window move until
+the extension catches up.
 
 ## Validation
 
