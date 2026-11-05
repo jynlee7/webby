@@ -102,12 +102,16 @@ final class SkinStore: NoteThemeSource {
         // Create the folder now, so skins copied in from Finder later are watched
         // without a relaunch. Webby's Application Support folder holds notes anyway.
         do {
-            try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+            try Self.createSkinsFolder(at: userRoot)
         } catch {
             logger.error("Could not create the skins folder: \(error.localizedDescription, privacy: .public)")
         }
         watcher = SkinWatcher(root: userRoot) { [weak self] in self?.debouncer.schedule() }
         watcher.startIfPossible()
+    }
+
+    nonisolated static func createSkinsFolder(at root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
     func stop() {
