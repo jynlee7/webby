@@ -645,6 +645,8 @@ final class NotesController {
         for plan in plans {
             guard let note = store.note(id: plan.noteID) else { continue }
             let controller = overlayController(for: note)
+            // A reused overlay may show a note that moved to a workspace with another skin.
+            applyAppearance(of: note, to: controller)
             controller.model.collapsed = plan.collapsed
             controller.model.isEditable = isWritable && !isImporting
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))

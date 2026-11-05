@@ -62,6 +62,24 @@ public struct SkinLibraryFolder: Sendable, Equatable {
         }
     }
 
+    /// Skin folders whose `skin.json` is missing, for example mid-edit. They are
+    /// still installed skins: the catalog reports them as failed loads so the last
+    /// good look stays in use, while a folder that was removed is simply gone.
+    public func foldersMissingManifest() -> [SkinLibraryFolderEntry] {
+        let fileManager = FileManager.default
+        guard let names = try? fileManager.contentsOfDirectory(atPath: root.path) else {
+            return []
+        }
+        return names.sorted().compactMap { name in
+            guard SkinValidator.isValidSkinID(name) else { return nil }
+            let folder = self.folder(for: name)
+            guard Self.isRealDirectory(folder),
+                  !fileManager.fileExists(atPath: folder.appendingPathComponent("skin.json").path)
+            else { return nil }
+            return SkinLibraryFolderEntry(id: name, folder: folder)
+        }
+    }
+
     /// Moves a validated staged folder to `<root>/<id>`, replacing a user skin with
     /// the same id in one step so the old skin is never missing without the new one
     /// in place. The staged folder is consumed.

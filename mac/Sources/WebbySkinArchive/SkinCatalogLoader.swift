@@ -87,6 +87,16 @@ public enum SkinCatalogLoader {
             }
         }
 
+        // A folder whose skin.json was removed or renamed during an edit is a failed
+        // load, not an uninstall, so the app keeps its last good look.
+        for missing in library.foldersMissingManifest() {
+            skipped.append(SkippedSkinFolder(
+                folder: missing.folder,
+                origin: .installed,
+                diagnostics: [fatal("manifest-missing", "Folder '\(missing.id)' has no skin.json.")]
+            ))
+        }
+
         return SkinCatalog(entries: entries, skipped: skipped, availableBaseIDs: baseIDs)
     }
 
