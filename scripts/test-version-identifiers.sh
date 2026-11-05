@@ -195,6 +195,17 @@ set_json history.json ".releases = [$(history_entry 99.0.0 3)]"
 set_plist CFBundleVersion -string 4
 WEBBY_BUILD_NUMBER=4 expect_fail "release version below history" "is lower than the last accepted release 99.0.0" 1 --release
 
+same="$(printf '%064d' 0)"
+changed="$(printf '%064d' 1)"
+reset_fixtures
+set_json history.json ".releases = [$(history_entry "$version" 3)]"
+expect_pass "unchanged extension payload" --extension-payload "$same"
+expect_fail "changed extension payload, same version" "extension payload differs from accepted release" 1 --extension-payload "$changed"
+
+reset_fixtures
+set_json history.json ".releases = [$(history_entry 0.0.9 3)]"
+expect_pass "changed extension payload, new version" --extension-payload "$changed"
+
 if [[ "$failures" -ne 0 ]]; then
   echo "test-version-identifiers: $failures failed, $passed passed" >&2
   exit 1

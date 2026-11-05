@@ -10,10 +10,14 @@
 # With --release, WEBBY_BUILD_NUMBER is required, must equal CFBundleVersion and exceed
 # every accepted build, and the plist must not carry WebbyDevelopmentBuild. Without
 # --release the key is still rejected unless --allow-development is given (the staged
-# development build). Fails closed with one line per mismatch. macOS only (PlistBuddy).
+# development build). With --extension-payload HASH (package-extension.sh's
+# extensionPayload), a payload that differs from an accepted release of the same marketing
+# version fails: an extension change needs a new version. Fails closed with one line per
+# mismatch. macOS only (PlistBuddy).
 #
 # Usage: check-version-identifiers.sh [--plist PATH] [--extension-manifest PATH]
-#          [--history PATH] [--swift PATH] [--release | --allow-development]
+#          [--history PATH] [--swift PATH] [--extension-payload HASH]
+#          [--release | --allow-development]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -23,6 +27,7 @@ history="$root/release/history.json"
 swift="$root/mac/Sources/WebbyCore/Webby.swift"
 release=0
 allow_development=0
+extension_payload=""
 
 usage() {
   echo "usage: $0 [--plist PATH] [--extension-manifest PATH] [--history PATH] [--swift PATH] [--release | --allow-development]" >&2
@@ -35,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --extension-manifest) [[ $# -ge 2 ]] || usage; manifest="$2"; shift 2 ;;
     --history) [[ $# -ge 2 ]] || usage; history="$2"; shift 2 ;;
     --swift) [[ $# -ge 2 ]] || usage; swift="$2"; shift 2 ;;
+    --extension-payload) [[ $# -ge 2 ]] || usage; extension_payload="$2"; shift 2 ;;
     --release) release=1; shift ;;
     --allow-development) allow_development=1; shift ;;
     *) usage ;;
@@ -183,6 +189,18 @@ if [[ "$history_ok" -eq 1 ]]; then
     last_build="$build"
     last_version="$version"
   done < <(jq -r '.releases | to_entries[] | select(.value | type == "object") | "\(.key)\t\(.value.version)\t\(.value.build)"' "$history")
+fi
+
+if [[ -n "$extension_payload" && "$history_ok" -eq 1 ]]; then
+  if [[ ! "$extension_payload" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "--extension-payload '$extension_payload' is not a SHA-256 hex digest"
+  else
+    while IFS= read -r accepted; do
+      [[ -z "$accepted" ]] && continue
+      fail "extension payload differs from accepted release $swift_version ($accepted); bump the marketing version"
+    done < <(jq -r --arg version "$swift_version" --arg payload "$extension_payload" \
+      '[.releases[] | select(type == "object" and .version == $version and .extensionPayload != $payload)] | first | .build // empty | "build \(.)"' "$history")
+  fi
 fi
 
 if [[ "$release" -eq 1 ]]; then

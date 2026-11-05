@@ -34,6 +34,11 @@ for skin in webby.clear webby.mono; do
 done
 cp -R Resources/Skins "$app/Contents/Resources/Skins"
 
+# The extension Settings → Chrome points Load unpacked at: the same stage as the
+# standalone archive, copied flat (no wrapper folder) before signing.
+"$root/scripts/package-extension.sh" --output-dir "$root/dist/package"
+cp -R "$root/dist/package/Extension" "$app/Contents/Resources/Extension"
+
 "$root/scripts/check-version-identifiers.sh" --plist "$app/Contents/Info.plist"
 bundle_id="$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")"
 

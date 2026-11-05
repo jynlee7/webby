@@ -67,7 +67,10 @@ jobs:
         run: scripts/build-app.sh
 
       - name: Check extension
-        run: scripts/check-extension.sh
+        run: scripts/check-extension.sh --app dist/Webby.app
+
+      - name: Test extension packaging
+        run: scripts/test-extension-packaging.sh
 
       - name: Shellcheck
         run: |
