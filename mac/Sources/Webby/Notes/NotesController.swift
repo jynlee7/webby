@@ -561,8 +561,8 @@ final class NotesController {
         }
     }
 
-    private func changeScope(_ id: UUID, to anchor: Anchor) {
-        guard !isImporting, isWritable else { return }
+    private func changeScope(_ id: UUID, to choice: NoteScope.Choice) {
+        guard !isImporting, isWritable, case .anchor(let anchor) = choice else { return }
         commitDrafts()
         guard store.updateContent(id: id, change: .anchor(anchor), now: now()) else { return }
         didMutate()
@@ -634,7 +634,7 @@ final class NotesController {
         model.onTrash = { [weak self] in self?.trash(id) }
         model.onDone = { [weak self] in self?.done(id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
-        model.onScope = { [weak self] anchor in self?.changeScope(id, to: anchor) }
+        model.onScope = { [weak self] choice in self?.changeScope(id, to: choice) }
 
         let controller = NoteWindowController(model: model)
         controller.onUserLayout = { [weak self] in self?.userLaidOut(id) }

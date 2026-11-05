@@ -25,7 +25,7 @@ final class NoteModel {
     @ObservationIgnored var onTrash: @MainActor () -> Void = {}
     @ObservationIgnored var onDone: @MainActor () -> Void = {}
     @ObservationIgnored var onResizeEnded: @MainActor () -> Void = {}
-    @ObservationIgnored var onScope: @MainActor (WebbyCore.Anchor) -> Void = { _ in }
+    @ObservationIgnored var onScope: @MainActor (NoteScope.Choice) -> Void = { _ in }
 
     init(id: UUID, text: String, collapsed: Bool, isEditable: Bool, themes: NoteThemes) {
         self.id = id
@@ -50,7 +50,7 @@ final class NoteModel {
     /// so a page anchor stored without a query is never rewritten by accident.
     func chooseScope(at index: Int) {
         guard index != selectedScope, scopes.indices.contains(index) else { return }
-        onScope(scopes[index].anchor)
+        onScope(scopes[index].choice)
     }
 }
 
