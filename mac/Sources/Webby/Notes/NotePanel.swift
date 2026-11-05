@@ -33,6 +33,13 @@ final class NotePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// The planner already keeps the visible note on screen, and the transparent
+    /// decoration margin may overhang a screen edge. Without this, AppKit moves the
+    /// panel when it is ordered in, which reads as a user move and shifts the stored frame.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+
     /// ⌘Q quits Webby while a note has the keyboard. Webby isn't the active app then,
     /// so no menu bar would handle it.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
