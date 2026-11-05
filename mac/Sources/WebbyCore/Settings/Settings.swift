@@ -15,6 +15,8 @@ public struct Settings: Codable, Sendable, Equatable {
     public var removedBuiltInQueryRules: [QueryRule]
     public var newNoteHotkey: String
     public var agentHotkey: String
+    /// The agent model ID. Empty means the reviewed model pinned by the agent module,
+    /// so the default lives in one place instead of a copy of a model name here.
     public var agentModel: String
     public var notesBudgetTokens: Int
     public var conversationRetentionDays: Int
@@ -29,7 +31,7 @@ public struct Settings: Codable, Sendable, Equatable {
         removedBuiltInQueryRules: [QueryRule] = [],
         newNoteHotkey: String = "ctrl+opt+n",
         agentHotkey: String = "ctrl+opt+a",
-        agentModel: String = "claude-haiku-5-5",
+        agentModel: String = "",
         notesBudgetTokens: Int = 8000,
         conversationRetentionDays: Int = 30,
         screenCaptureDefault: Bool = false,

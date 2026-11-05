@@ -25,7 +25,8 @@ allowed_for() {
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
       # Observation: @Observable models such as LibraryModel (its plugin ships with the CLT).
       # WebKit: the locked-down Compiled view, app-only and never used by WebbyCore.
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon Observation WebbyCore WebKit"
+      # WebbyAgent: the agent panel (#25). Security: the Anthropic key in the Keychain.
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon Observation WebbyCore WebKit WebbyAgent Security"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"
@@ -35,7 +36,7 @@ allowed_for() {
       printf '%s\n' "Foundation WebbyCore ZIPFoundation ImageIO AVFAudio"
       ;;
     WebbyAgent)
-      # #24 keeps the agent tests-only and limited to Core (plan.md Step 12a).
+      # The agent depends only on Core; the app links it from #25 (plan.md Step 12b).
       printf '%s\n' "Foundation WebbyCore"
       ;;
     WebbyCoreTests)
@@ -50,7 +51,7 @@ allowed_for() {
       ;;
     WebbyTests)
       # WebKit is allowed only for direct compiled-view configuration and security tests.
-      printf '%s\n' "Testing Foundation AppKit SwiftUI Webby WebbyCore WebKit"
+      printf '%s\n' "Testing Foundation AppKit SwiftUI Webby WebbyCore WebKit WebbyAgent"
       ;;
     *)
       return 1

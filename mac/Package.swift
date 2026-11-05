@@ -22,12 +22,12 @@ let package = Package(
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ]
         ),
-        .executableTarget(name: "Webby", dependencies: ["WebbyCore"]),
+        .executableTarget(name: "Webby", dependencies: ["WebbyCore", "WebbyAgent"]),
         .executableTarget(name: "WebbyBridge", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyCoreTests", dependencies: ["WebbyCore"]),
         .testTarget(name: "WebbyAgentTests", dependencies: ["WebbyAgent", "WebbyCore"]),
         .testTarget(name: "WebbySkinArchiveTests", dependencies: ["WebbyCore", "WebbySkinArchive"]),
-        .testTarget(name: "WebbyTests", dependencies: ["Webby", "WebbyCore"]),
+        .testTarget(name: "WebbyTests", dependencies: ["Webby", "WebbyCore", "WebbyAgent"]),
     ],
     swiftLanguageModes: [.v6]
 )
