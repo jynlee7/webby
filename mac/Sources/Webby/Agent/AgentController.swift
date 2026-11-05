@@ -115,6 +115,13 @@ final class AgentController {
     @ObservationIgnored private var invalidated = false
     @ObservationIgnored private var committedText = ""
     @ObservationIgnored private var roundText = ""
+    /// Usage of finished requests in this turn, and of the request in flight.
+    @ObservationIgnored private var completedUsage = ClaudeUsage.zero
+    @ObservationIgnored private var roundUsage = ClaudeUsage.zero
+    /// Replays the runner's `read_note` bookkeeping, so a failed turn keeps citations
+    /// to notes the model read successfully.
+    @ObservationIgnored private var readSession: AgentReadSession?
+    @ObservationIgnored private var readAliases: Set<String> = []
 
     init(notes: AgentNotesSource, dependencies: Dependencies) {
         self.notes = notes
@@ -269,6 +276,10 @@ final class AgentController {
         ))
         committedText = ""
         roundText = ""
+        completedUsage = .zero
+        roundUsage = .zero
+        readSession = AgentReadSession(snapshot: assembled.turnSnapshot)
+        readAliases = []
         invalidated = false
         activeFingerprint = assembled.turnSnapshot.authorizationFingerprint
 
@@ -295,9 +306,14 @@ final class AgentController {
             activity = nil
             roundText += text
             updateAnswer(turnID: turnID)
+        case .usage(let usage):
+            roundUsage = usage
         case .completed(let completion):
+            completedUsage = Self.adding(completedUsage, completion.usage)
+            roundUsage = .zero
             // Text from a tool round is not the answer; a paused turn keeps its text.
             if completion.stopReason == .toolUse {
+                recordReads(completion)
                 roundText = ""
             } else if completion.stopReason == .pauseTurn {
                 committedText = Self.joined(committedText, roundText)
@@ -333,11 +349,56 @@ final class AgentController {
 
     private func fail(turnID: UUID, message: String, snapshot: AgentTurnSnapshot) {
         guard let index = turns.firstIndex(where: { $0.id == turnID }) else { return }
-        // The partial answer stays, with citations checked against what was sent.
-        let validation = CitationValidator.validate(answerText: turns[index].answer, snapshot: snapshot)
+        // The partial answer stays, with citations checked as the runner checks a
+        // finished answer: against the aliases sent and the notes read successfully.
+        let validation = CitationValidator.validate(
+            answerText: turns[index].answer,
+            snapshot: snapshot,
+            sentAliases: Self.sentAliases(snapshot: snapshot, manifest: turns[index].manifest),
+            readAliases: readAliases
+        )
         turns[index].answer = validation.answerText
         turns[index].citations = validation.citations
+        turns[index].usage = Self.adding(completedUsage, roundUsage)
         turns[index].status = .failed(message)
+        dependencies.debugLog(Self.usageLogLine(turns[index].usage))
+    }
+
+    /// Mirrors `ClaudeConversationRunner`: an alias counts as read when its
+    /// `read_note` call returned the note rather than an error.
+    private func recordReads(_ completion: ClaudeCompletion) {
+        for block in completion.blocks {
+            guard case let .toolUse(_, name, inputJSON) = block, name == "read_note",
+                  case let .object(fields)? = try? ClaudeJSON.parse(inputJSON),
+                  case let .string(alias)? = fields["alias"],
+                  let result = readSession?.readNote(alias: alias),
+                  !result.isError
+            else { continue }
+            readAliases.insert(alias)
+        }
+    }
+
+    /// The aliases the request carried: packed notes plus omitted-manifest lines.
+    private static func sentAliases(snapshot: AgentTurnSnapshot, manifest: ContextManifest) -> Set<String> {
+        var sent = Set(snapshot.notesByAlias.compactMap { alias, note in
+            note.status == .omitted ? nil : alias
+        })
+        for line in manifest.omittedLines {
+            if let alias = line.split(separator: " ").first.map(String.init),
+               snapshot.notesByAlias[alias] != nil {
+                sent.insert(alias)
+            }
+        }
+        return sent
+    }
+
+    private static func adding(_ lhs: ClaudeUsage, _ rhs: ClaudeUsage) -> ClaudeUsage {
+        ClaudeUsage(
+            inputTokens: lhs.inputTokens + rhs.inputTokens,
+            outputTokens: lhs.outputTokens + rhs.outputTokens,
+            cacheCreationInputTokens: lhs.cacheCreationInputTokens + rhs.cacheCreationInputTokens,
+            cacheReadInputTokens: lhs.cacheReadInputTokens + rhs.cacheReadInputTokens
+        )
     }
 
     /// The debug line for a finished turn, from the usage the turn stores.

@@ -35,6 +35,12 @@ private func messageEnd(_ stop: String = "end_turn") -> String {
         + sse("message_stop", ["type": "message_stop"])
 }
 
+private func toolUse(_ index: Int, id: String, alias: String) -> String {
+    sse("content_block_start", ["type": "content_block_start", "index": index, "content_block": ["type": "tool_use", "id": id, "name": "read_note", "input": [:]]])
+        + sse("content_block_delta", ["type": "content_block_delta", "index": index, "delta": ["type": "input_json_delta", "partial_json": "{\"alias\":\"\(alias)\"}"]])
+        + blockStop(index)
+}
+
 private func answer(_ text: String, cacheRead: Int = 0) -> [ScriptedTransport.Step] {
     [.send(messageStart(cacheRead: cacheRead) + textStart(0) + textDelta(0, text) + blockStop(0) + messageEnd())]
 }
@@ -431,6 +437,35 @@ private final class Harness {
         #expect(created.destination == .workspace(.host(name: "leetcode.com")))
         #expect(harness.controller.turns.first?.savedNoteID != nil)
         #expect(harness.controller.saveAsNote(turn.id) == nil)
+    }
+
+    @Test func aFailedTurnKeepsCitationsToReadAndListedNotesAndItsTokenUse() async throws {
+        // Enough long notes that the last ones are past both the notes budget and the
+        // 50-line omitted manifest, so N80 reaches the model only through read_note.
+        let notes = (1...80).map { webNote($0, "Note \($0). " + String(repeating: "Detail sentence here. ", count: 190)) }
+        let harness = Harness(notes: notes, scripts: [
+            [.send(messageStart() + toolUse(0, id: "toolu_1", alias: "N80") + messageEnd("tool_use"))],
+            [.send(messageStart() + textStart(0) + textDelta(0, "Per [N80] and [N60], and not [N99]")), .fail(.network)],
+        ])
+
+        await harness.ask("What did I write?")
+
+        let turn = try #require(harness.controller.turns.first)
+        let manifestAliases = Set(turn.manifest.entries.map(\.alias))
+        #expect(!turn.manifest.omittedLines.contains { $0.hasPrefix("N80 ") })
+        #expect(manifestAliases.contains("N60"))
+        #expect(turn.answer == "Per [N80] and [N60], and not ")
+        #expect(turn.citations.map(\.alias) == ["N80", "N60"])
+        #expect(turn.usage.inputTokens == 24)
+        #expect(turn.usage.outputTokens == 5)
+        #expect(harness.logs.last == AgentController.usageLogLine(turn.usage))
+    }
+
+    @Test func shortcutsCanNeverBeSavedTwiceOnEitherPath() {
+        let agent = KeyCombo.defaultAgent
+        #expect(SettingsWindowController.shortcutConflict(agent, forAgent: true, other: agent)?.contains("already creates a note") == true)
+        #expect(SettingsWindowController.shortcutConflict(agent, forAgent: false, other: agent)?.contains("already opens the agent panel") == true)
+        #expect(SettingsWindowController.shortcutConflict(agent, forAgent: true, other: .defaultNewNote) == nil)
     }
 
     @Test func theModelDefaultComesFromTheAgentModulesPinnedConfiguration() {
