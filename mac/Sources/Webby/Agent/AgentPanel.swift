@@ -259,7 +259,14 @@ private struct AgentTurnRow: View {
     let meta: Color
     let chipFill: Color
     @Environment(\.webbyTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
     @State private var showsManifest = false
+
+    /// Warning text: design.md's orange text colour (#B8410E) in light mode, which
+    /// keeps the contrast floor that plain orange misses; system orange on dark.
+    private var warning: Color {
+        scheme == .dark ? .orange : Color(red: 0xB8 / 255, green: 0x41 / 255, blue: 0x0E / 255)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -288,9 +295,9 @@ private struct AgentTurnRow: View {
     @ViewBuilder private var statusLine: some View {
         switch turn.status {
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+            Label(message, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(warning)
         case .refused:
-            Label("The model declined this request.", systemImage: "hand.raised").font(.callout).foregroundStyle(.orange)
+            Label("The model declined this request.", systemImage: "hand.raised").font(.callout).foregroundStyle(warning)
         case .truncated:
             Label("The answer was cut off.", systemImage: "scissors").font(.callout).foregroundStyle(meta)
         case .streaming, .complete:
@@ -303,10 +310,14 @@ private struct AgentTurnRow: View {
             model.open(chip)
         } label: {
             HStack(spacing: 5) {
-                Text(chip.alias).fontWeight(.semibold)
-                Text(chip.snippet).lineLimit(1)
+                Text(chip.alias).fontWeight(.semibold).fixedSize()
+                Text(chip.snippet).lineLimit(1).truncationMode(.tail)
                 if let label = chip.mark.label {
-                    Text("· \(label)").foregroundStyle(chip.mark == .current ? meta : .orange)
+                    // The mark outranks the snippet, so truncation never hides it.
+                    Text("· \(label)")
+                        .foregroundStyle(chip.mark == .current ? meta : warning)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
             }
             .font(.system(size: 11, design: .monospaced))
@@ -369,11 +380,19 @@ private struct AgentTurnRow: View {
 struct AgentFlowLayout: Layout {
     var spacing: CGFloat
 
+    /// A chip is never measured wider than the row, so a long snippet truncates in
+    /// the chip instead of pushing its edited or excluded mark out of view.
+    private func size(of subview: LayoutSubview, maxWidth: CGFloat) -> CGSize {
+        let natural = subview.sizeThatFits(.unspecified)
+        guard natural.width > maxWidth, maxWidth.isFinite else { return natural }
+        return subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+    }
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, maxX: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = size(of: subview, maxWidth: width)
             if x > 0, x + size.width > width {
                 x = 0
                 y += lineHeight + spacing
@@ -389,7 +408,7 @@ struct AgentFlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+            let size = size(of: subview, maxWidth: bounds.width)
             if x > bounds.minX, x + size.width > bounds.maxX {
                 x = bounds.minX
                 y += lineHeight + spacing
