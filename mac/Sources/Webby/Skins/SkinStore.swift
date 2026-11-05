@@ -378,9 +378,14 @@ final class SkinStore: NoteThemeSource {
             order.append(id)
         }
 
-        // Anything user-made that existed before or exists now may have new files.
+        // Anything user-made that existed before or exists now may have new files,
+        // except a skin still showing its last good load, which keeps that artwork.
         for (id, item) in held.merging(next, uniquingKeysWith: { $1 }) where item.origin == .installed {
-            assetCache?.invalidate(skinID: id)
+            if next[id]?.usingLastGood == true {
+                assetCache?.keepLastGood(skinID: id)
+            } else {
+                assetCache?.invalidate(skinID: id)
+            }
         }
 
         held = next

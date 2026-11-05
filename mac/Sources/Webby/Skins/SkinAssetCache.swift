@@ -21,6 +21,9 @@ final class SkinAssetCache {
 
     private let folder: FolderProvider
     private var entries: [URL: Entry] = [:]
+    /// Skins showing their last good load. Their decoded images are served as they
+    /// were, without rereading files that a broken edit may have changed or removed.
+    private var lastGood: Set<String> = []
 
     init(folder: @escaping FolderProvider) {
         self.folder = folder
@@ -51,14 +54,26 @@ final class SkinAssetCache {
 
     /// Forgets everything decoded for `skinID`.
     func invalidate(skinID: String) {
+        lastGood.remove(skinID)
         entries = entries.filter { $0.value.skinID != skinID }
     }
 
+    /// Keeps serving the images already decoded for `skinID` while its folder fails
+    /// to load and the previous theme stays in use. Images never decoded before are
+    /// still read from the folder.
+    func keepLastGood(skinID: String) {
+        lastGood.insert(skinID)
+    }
+
     func removeAll() {
+        lastGood.removeAll()
         entries.removeAll()
     }
 
     private func representation(at url: URL, skinID: String, scale: SkinScale) -> NSBitmapImageRep? {
+        if lastGood.contains(skinID), let entry = entries[url] {
+            return entry.rep
+        }
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         guard let size = values?.fileSize else {
             entries.removeValue(forKey: url)
