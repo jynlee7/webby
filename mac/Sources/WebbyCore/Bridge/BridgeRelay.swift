@@ -40,13 +40,15 @@ public final class BridgeRelay: @unchecked Sendable {
     private var latestHello: Data?
     private var latestInventory: Data?
     private var latestActive: Data?
-    /// `tabReplaced` messages seen while the app was down, oldest first, and how many of
-    /// them came before `latestInventory`. Only those are replayed, before the inventory:
-    /// a replacement newer than the inventory would contradict it. Without them, a tab
-    /// note would see its old tab ID missing from the inventory and close.
-    private var missedReplacements: [Data] = []
+    /// `tabReplaced` messages since the latest `hello`, oldest first, and how many of them
+    /// came before `latestInventory`. Only those are replayed, before the inventory: a
+    /// replacement newer than the inventory would contradict it. Without them, a tab note
+    /// would see its old tab ID missing from the inventory and close. They are kept even
+    /// after a replay, because queued writes can fail with the connection, and replaying
+    /// one the app already applied changes nothing.
+    private var replacementsSinceHello: [Data] = []
     private var replacementsBeforeInventory = 0
-    static let maxMissedReplacements = 256
+    static let maxKeptReplacements = 256
     /// Set when the app may have missed a message that the replay doesn't cover.
     private var needsResend = false
 
@@ -130,7 +132,7 @@ public final class BridgeRelay: @unchecked Sendable {
             latestHello = payload
             latestInventory = nil
             latestActive = nil
-            missedReplacements.removeAll()
+            replacementsSinceHello.removeAll()
             replacementsBeforeInventory = 0
         }
         guard latestHello != nil else {
@@ -140,13 +142,13 @@ public final class BridgeRelay: @unchecked Sendable {
         switch message {
         case .inventory:
             latestInventory = payload
-            if appSocket < 0 { replacementsBeforeInventory = missedReplacements.count }
+            replacementsBeforeInventory = replacementsSinceHello.count
         case .active: latestActive = payload
-        case .tabReplaced where appSocket < 0:
-            missedReplacements.append(payload)
-            if missedReplacements.count > Self.maxMissedReplacements {
+        case .tabReplaced:
+            replacementsSinceHello.append(payload)
+            if replacementsSinceHello.count > Self.maxKeptReplacements {
                 // The oldest goes; a note on that chain ends up in Closed tabs, not lost.
-                missedReplacements.removeFirst()
+                replacementsSinceHello.removeFirst()
                 replacementsBeforeInventory = max(replacementsBeforeInventory - 1, 0)
             }
         default: break
@@ -202,9 +204,7 @@ public final class BridgeRelay: @unchecked Sendable {
         source.resume()
         log("connected to Webby")
 
-        let replacements = latestInventory == nil ? [] : Array(missedReplacements.prefix(replacementsBeforeInventory))
-        missedReplacements.removeAll()
-        replacementsBeforeInventory = 0
+        let replacements = latestInventory == nil ? [] : Array(replacementsSinceHello.prefix(replacementsBeforeInventory))
         for payload in [latestHello].compactMap({ $0 }) + replacements + [latestInventory, latestActive].compactMap({ $0 }) {
             sendToApp(payload)
             guard appSocket >= 0 else { return }
