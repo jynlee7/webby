@@ -68,10 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         hotkeys = Hotkeys { [weak self] in self?.notes.newNote() }
         chromeSettings = ChromeSettingsModel(
-            bundledVersion: { [weak self] in
-                guard let self else { return nil }
-                return Self.bundledVersion(from: self.chromeBridge.extensionInstall)
-            },
+            bundledVersion: { [weak self] in self?.chromeBridge.bundledExtensionVersion() },
             installedVersion: { [weak self] in self?.chromeBridge.installedExtensionVersion() },
             extensionOutcome: { [weak self] in self?.chromeBridge.extensionInstall },
             hostInspection: { [weak self] in self?.chromeBridge.inspectHost() ?? .missing }
