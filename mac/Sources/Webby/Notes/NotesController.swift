@@ -519,8 +519,11 @@ final class NotesController {
         let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.visualFrame, primaryScreenHeight: Self.primaryScreenHeight) }
         let absolute = OverlayPlanner.newNoteFrame(window: window, screens: screens, occupied: occupied)
         let placement = OverlayPlanner.placement(window: window)
+        // A known Chrome page defaults to "This page"; everywhere else, "This app".
+        let anchor = monitor.context.flatMap { NoteScope.choices(for: $0).first?.anchor }
+            ?? .app(bundleID: app.bundleID)
         let note = Note(
-            anchor: .app(bundleID: app.bundleID),
+            anchor: anchor,
             frame: Geometry.storedFrame(absolute: absolute, placement: placement, window: window),
             placement: placement
         )
@@ -607,6 +610,14 @@ final class NotesController {
         }
     }
 
+    private func changeScope(_ id: UUID, to anchor: Anchor) {
+        guard !isImporting, isWritable else { return }
+        commitDrafts()
+        guard store.updateContent(id: id, change: .anchor(anchor), now: now()) else { return }
+        didMutate()
+        layout()
+    }
+
     private func userLaidOut(_ id: UUID) {
         guard !isImporting else { return }
         guard let controller = windows[id], let note = store.note(id: id) else { return }
@@ -624,10 +635,12 @@ final class NotesController {
         // windows here would discard drafts that cannot be committed yet.
         guard !isImporting else { return }
         let window = monitor.windowFrame
+        let context = monitor.context
+        let scopes = context.map(NoteScope.choices(for:)) ?? []
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) })
         let plans = OverlayPlanner.plan(
             notes: store.notes,
-            context: monitor.context,
+            context: context,
             window: window,
             screens: screens,
             collapsedHeight: collapsedHeight
@@ -649,6 +662,9 @@ final class NotesController {
             applyAppearance(of: note, to: controller)
             controller.model.collapsed = plan.collapsed
             controller.model.isEditable = isWritable && !isImporting
+            let selected = NoteScope.index(of: note.anchor, in: scopes)
+            if controller.model.scopes != scopes { controller.model.scopes = scopes }
+            if controller.model.selectedScope != selected { controller.model.selectedScope = selected }
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
@@ -678,6 +694,7 @@ final class NotesController {
         model.onSelectPalette = { [weak self] index in self?.setPaletteIndex(index, for: id) }
         model.onSetDecorationHidden = { [weak self] hidden in self?.setDecorationHidden(hidden, for: id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
+        model.onScope = { [weak self] anchor in self?.changeScope(id, to: anchor) }
 
         let controller = NoteWindowController(model: model, assets: assets)
         controller.onUserLayout = { [weak self] in self?.userLaidOut(id) }
