@@ -36,6 +36,14 @@ protocol LibraryOverlayPresenting {
 protocol LibraryCurrentAppProviding {
     /// The app to attach to. This provider must never return Webby itself.
     func currentBundleID() -> String?
+    /// The current context, with Chrome's page when it is verified.
+    func currentContext() -> Context?
+}
+
+extension LibraryCurrentAppProviding {
+    func currentContext() -> Context? {
+        currentBundleID().map { Context(appBundleID: $0) }
+    }
 }
 
 /// The action surface the Library uses for app and page anchors.
@@ -88,6 +96,24 @@ struct LibraryAnchorActions {
     func attachCurrentAppAnchor(_ apply: (Anchor) -> Void) -> Bool {
         guard let anchor = currentExternalAppAnchor() else { return false }
         apply(anchor)
+        return true
+    }
+
+    /// What "Attach to Current" offers: the page-aware scopes of the current context
+    /// (This page, each parent path, Whole site, This app), or none when the provider
+    /// reports Webby or no app.
+    func currentScopes() -> [NoteScope] {
+        guard case let .app(bundleID)? = currentExternalAppAnchor() else { return [] }
+        let context = currentApp.currentContext().flatMap { $0.appBundleID == bundleID ? $0 : nil }
+        return NoteScope.choices(for: context ?? Context(appBundleID: bundleID))
+    }
+
+    /// Re-reads the current scopes and calls `apply` once with the one titled `title`,
+    /// so a menu built for an earlier page never attaches to a stale anchor.
+    @discardableResult
+    func attachCurrentScope(titled title: String, _ apply: (Anchor) -> Void) -> Bool {
+        guard let scope = currentScopes().first(where: { $0.title == title }) else { return false }
+        apply(scope.anchor)
         return true
     }
 
@@ -162,12 +188,21 @@ final class NotesControllerLibraryOverlayPresenter: LibraryOverlayPresenting {
 @MainActor
 final class LiveLibraryCurrentAppProvider: LibraryCurrentAppProviding {
     private let provider: @MainActor () -> String?
+    private let contextProvider: (@MainActor () -> Context?)?
 
-    init(currentBundleID: @escaping @MainActor () -> String?) {
+    init(
+        currentBundleID: @escaping @MainActor () -> String?,
+        currentContext: (@MainActor () -> Context?)? = nil
+    ) {
         provider = currentBundleID
+        contextProvider = currentContext
     }
 
     func currentBundleID() -> String? {
         provider()
+    }
+
+    func currentContext() -> Context? {
+        contextProvider.map { $0() } ?? currentBundleID().map { Context(appBundleID: $0) }
     }
 }
