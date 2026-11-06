@@ -308,6 +308,56 @@ private let immediateSleep: QuitFlushCoordinator.Sleep = { _ in }
     #expect(recorder.outcomes == [.fallback(generation: 3)])
 }
 
+/// Lets a test make the disk writable again between two quits.
+private final class DiskSwitch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var writable = false
+
+    var isWritable: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return writable
+    }
+
+    func recover() {
+        lock.lock()
+        writable = true
+        lock.unlock()
+    }
+}
+
+@Test func secondQuitAfterFailedSaveTriesToSaveAgain() async {
+    let recorder = Recorder()
+    let disk = DiskSwitch()
+    let coordinator = QuitFlushCoordinator(
+        now: { .zero },
+        sleep: hangingSleep,
+        flush: {
+            recorder.recordFlush()
+            guard disk.isWritable else { throw TestSaveError() }
+            return 1
+        },
+        fallback: {
+            recorder.recordFallback()
+            guard disk.isWritable else { throw TestSaveError() }
+            return 1
+        },
+        isReadOnly: { false },
+        hasUnsavedChanges: { false },
+        onOutcome: { recorder.recordOutcome($0) }
+    )
+    coordinator.noteMutation(generation: 1)
+
+    #expect(await coordinator.handleTermination() == false)
+    #expect(recorder.fallbackCalls == 1)
+
+    // The user fixes the disk and quits again without editing.
+    disk.recover()
+    #expect(await coordinator.handleTermination())
+    #expect(recorder.flushCalls == 2)
+    #expect(recorder.outcomes == [.failed(QuitFailure(TestSaveError())), .flushed(generation: 1)])
+}
+
 @Test func staleCommitDoesNotClearDirty() {
     let coordinator = QuitFlushCoordinator(
         now: { .zero },
