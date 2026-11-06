@@ -37,15 +37,89 @@ final class ChromeBridge {
         server = nil
     }
 
+    private var extensionInstaller: BundledExtensionInstaller? {
+        guard let resources = Bundle.main.resourceURL else { return nil }
+        return BundledExtensionInstaller(
+            bundleDirectory: resources.appendingPathComponent("Extension", isDirectory: true)
+        )
+    }
+
+    private var hostInstaller: NativeHostInstaller? {
+        guard let executable = Bundle.main.executableURL else { return nil }
+        let bridge = executable.deletingLastPathComponent().appendingPathComponent(BridgeConstants.bridgeExecutableName)
+        // Release builds register only from Applications; a staged development build may
+        // register from anywhere that isn't translocated.
+        let policy = RegistrationPolicy.forApp(infoDictionary: Bundle.main.infoDictionary)
+        return NativeHostInstaller(bridgeExecutableURL: bridge, policy: policy)
+    }
+
     /// Copies the bundled extension to Application Support. A failure is logged and never
     /// blocks notes or the bridge.
     private func installExtension() {
-        guard let resources = Bundle.main.resourceURL else { return }
-        let installer = BundledExtensionInstaller(
-            bundleDirectory: resources.appendingPathComponent("Extension", isDirectory: true)
-        )
+        guard let installer = extensionInstaller else { return }
         let outcome = installer.install()
         extensionInstall = outcome
+        log(extensionOutcome: outcome)
+    }
+
+    /// Replaces an installed extension folder that can't be read, then records the result.
+    @discardableResult
+    func repairExtension() -> BundledExtensionInstaller.Outcome? {
+        guard let installer = extensionInstaller else { return nil }
+        let outcome = installer.repairInvalidInstallation()
+        extensionInstall = outcome
+        log(extensionOutcome: outcome)
+        return outcome
+    }
+
+    private func installHost() {
+        guard let installer = hostInstaller else { return }
+        do {
+            let outcome = try installer.install()
+            hostRegistration = outcome
+            log(hostOutcome: outcome)
+        } catch {
+            logger.error("Couldn't register the Chrome bridge: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Writes the host manifest again with the same policy as launch, then records the result.
+    @discardableResult
+    func reRegisterHost() -> NativeHostInstaller.Outcome? {
+        guard let installer = hostInstaller else { return nil }
+        do {
+            let outcome = try installer.install()
+            hostRegistration = outcome
+            log(hostOutcome: outcome)
+            return outcome
+        } catch {
+            logger.error("Couldn't register the Chrome bridge: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The version of the app's bundled payload, independent of what is installed.
+    func bundledExtensionVersion() -> ExtensionVersion? {
+        extensionInstaller?.bundledVersion()
+    }
+
+    /// What the host manifest on disk says, without changing it.
+    func inspectHost() -> NativeHostInstaller.Inspection {
+        hostInstaller?.inspect() ?? .missing
+    }
+
+    /// The version of the extension folder Chrome loads, read from its manifest.
+    func installedExtensionVersion() -> ExtensionVersion? {
+        guard let installer = extensionInstaller else { return nil }
+        let manifest = installer.installDirectory.appendingPathComponent("manifest.json")
+        guard let data = try? Data(contentsOf: manifest),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let string = object["version"] as? String
+        else { return nil }
+        return ExtensionVersion(string)
+    }
+
+    private func log(extensionOutcome outcome: BundledExtensionInstaller.Outcome) {
         switch outcome {
         case .bundleMissing:
             logger.info("No bundled Chrome extension; not installing it")
@@ -66,36 +140,25 @@ final class ChromeBridge {
         }
     }
 
-    private func installHost() {
-        guard let executable = Bundle.main.executableURL else { return }
-        let bridge = executable.deletingLastPathComponent().appendingPathComponent(BridgeConstants.bridgeExecutableName)
-        do {
-            // Release builds register only from Applications; a staged development build may
-            // register from anywhere that isn't translocated.
-            let policy = RegistrationPolicy.forApp(infoDictionary: Bundle.main.infoDictionary)
-            let outcome = try NativeHostInstaller(bridgeExecutableURL: bridge, policy: policy).install()
-            hostRegistration = outcome
-            switch outcome {
-            case .installed(let url):
-                logger.info("Registered the Chrome bridge at \(url.path, privacy: .public)")
-            case .unchanged:
-                logger.info("Chrome bridge registration is up to date")
-            case .translocated:
-                needsMoveToApplications = true
-                logger.error("Webby is running from a translocated location; not registering the Chrome bridge")
-            case .bridgeMissing:
-                logger.error("No \(BridgeConstants.bridgeExecutableName, privacy: .public) next to Webby; not registering the Chrome bridge")
-            case .chromeNotFound:
-                logger.info("Chrome's support folder doesn't exist; not registering the Chrome bridge")
-            case .unstableLocation:
-                needsMoveToApplications = true
-                logger.error("Webby is not in Applications; not registering the Chrome bridge")
-            case .preservedExisting:
-                needsMoveToApplications = true
-                logger.error("Webby is not in Applications; kept the existing Chrome bridge registration")
-            }
-        } catch {
-            logger.error("Couldn't register the Chrome bridge: \(error.localizedDescription, privacy: .public)")
+    private func log(hostOutcome outcome: NativeHostInstaller.Outcome) {
+        switch outcome {
+        case .installed(let url):
+            logger.info("Registered the Chrome bridge at \(url.path, privacy: .public)")
+        case .unchanged:
+            logger.info("Chrome bridge registration is up to date")
+        case .translocated:
+            needsMoveToApplications = true
+            logger.error("Webby is running from a translocated location; not registering the Chrome bridge")
+        case .bridgeMissing:
+            logger.error("No \(BridgeConstants.bridgeExecutableName, privacy: .public) next to Webby; not registering the Chrome bridge")
+        case .chromeNotFound:
+            logger.info("Chrome's support folder doesn't exist; not registering the Chrome bridge")
+        case .unstableLocation:
+            needsMoveToApplications = true
+            logger.error("Webby is not in Applications; not registering the Chrome bridge")
+        case .preservedExisting:
+            needsMoveToApplications = true
+            logger.error("Webby is not in Applications; kept the existing Chrome bridge registration")
         }
     }
 

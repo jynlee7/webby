@@ -15,6 +15,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let hotkeys: Hotkeys
     private let permission: AccessibilityPermission
     private let general: GeneralSettingsModel
+    private let chrome: ChromeSettingsModel
     private let notes: NotesController
     private let skins: SkinStore
     private let queryRules = QueryRulesSettingsModel()
@@ -30,9 +31,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         importSkin: @escaping @MainActor () -> Void,
         hotkeys: Hotkeys,
         permission: AccessibilityPermission,
+        chrome: ChromeSettingsModel,
         storedShortcutProblem: String?
     ) {
         self.settings = settings
+        self.chrome = chrome
         self.notes = notes
         self.skins = skins
         self.hotkeys = hotkeys
@@ -65,6 +68,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryItem.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         tabs.addTabViewItem(queryItem)
 
+        let chromeHosting = NSHostingController(rootView: ChromeSettingsView(model: chrome))
+        chromeHosting.sizingOptions = [.preferredContentSize]
+        let chromeItem = NSTabViewItem(viewController: chromeHosting)
+        chromeItem.label = "Chrome"
+        chromeItem.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
+        tabs.addTabViewItem(chromeItem)
+
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
@@ -82,6 +92,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryRules.add = { [weak self] in self?.addQueryRule() }
         queryRules.remove = { [weak self] row in self?.removeQueryRule(row) }
         queryRules.convert = { [weak self] row in self?.convertQueryRule(row) }
+        chrome.copyPath = { [weak self] in
+            guard let folder = self?.chrome.extensionFolder else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(folder.path, forType: .string)
+        }
+        chrome.revealFolder = { [weak self] in
+            guard let folder = self?.chrome.extensionFolder else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        }
         // The window lives as long as the app, so the observer is never removed.
         notes.addLibraryObserver { [weak self] in self?.refreshQueryRules() }
         refresh()
@@ -122,6 +142,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         queryRules.storageProblem = general.storageProblem
         refreshQueryRules()
+        chrome.refresh()
     }
 
     // MARK: Pages that differ by query
