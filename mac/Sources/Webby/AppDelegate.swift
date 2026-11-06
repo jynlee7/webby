@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import WebbyAgent
 import WebbyCore
 
 @MainActor
@@ -13,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsStore: SettingsStore!
     private var settingsWindow: SettingsWindowController?
     private var libraryWindow: LibraryWindowController?
+    private var agentPanel: AgentPanelController?
+    private var agent: AgentController!
     private let linkRouter = NoteLinkRouter()
     private var isShowingMissingNoteAlert = false
     private var permission: AccessibilityPermission!
@@ -48,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.notes.updateThemes(self.resolveThemes())
+                self.agentPanel?.updateThemes(self.resolveThemes())
             }
         }
 
@@ -60,10 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notes: notes,
             openLibrary: { [weak self] in self?.showLibrary() },
             openSettings: { [weak self] in self?.showSettings() },
+            openAgent: { [weak self] in self?.showAgent() },
             showMoveToApplications: { [weak self] in self?.showMoveToApplications() }
         )
         hotkeys.onStatusChange = { [weak self] in self?.hotkeyStatusChanged() }
         hotkeys.registerNewNote(shortcut)
+        hotkeys.agent = { [weak self] in self?.showAgent(toggling: true) }
+        hotkeys.registerAgent(SettingsWindowController.agentShortcut(from: settingsStore.settings))
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
         // Both consumers see every event: Open Tabs lists tabs, the browser monitor
@@ -78,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { self.showMoveToApplications() }
         }
 
+        agent = makeAgent()
         notes.start()
+        agent.purgeExpiredConversations(retentionDays: settingsStore.settings.conversationRetentionDays)
 
         linkRouter.onRoute = { [weak self] id in
             guard let self else { return false }
@@ -136,7 +145,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 currentContext: { [weak self] in self?.monitor.context },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
+            libraryWindow?.model.conversationImpact = { [weak self] ids in
+                await self?.agent?.conversations(referencing: ids) ?? []
+            }
+            libraryWindow?.model.deleteConversations = { [weak self] ids in
+                self?.agent?.deleteConversations(ids)
+            }
         }
+    }
+
+    /// The agent's view model exists from launch, before notes start, so the 30-day
+    /// Trash purge already redacts stored conversations. The key comes from the
+    /// Keychain through #24's credential seam; without one the panel sends nothing.
+    private func makeAgent() -> AgentController {
+        let directory = SettingsStore.defaultFileURL.deletingLastPathComponent()
+            .appendingPathComponent(ConversationStore.directoryName, isDirectory: true)
+        let controller = AgentController(
+            notes: notes,
+            dependencies: AgentController.Dependencies(
+                credentials: KeychainCredentialStore(),
+                currentContext: { [weak self] in self?.monitor.context },
+                model: { [weak self] in AgentModelSetting.resolve(self?.settingsStore.settings.agentModel ?? "") },
+                queryRules: { [weak self] in self?.settingsStore.settings.enabledQueryRules ?? QueryRules.builtIns },
+                conversations: ConversationStore(directory: directory)
+            )
+        )
+        controller.openNote = { [weak self] id in
+            guard let self else { return }
+            self.ensureLibraryWindow()
+            self.libraryWindow?.showNote(id)
+        }
+        controller.openSettings = { [weak self] in self?.showSettings() }
+        notes.onNotesPurged = { [weak controller] ids in controller?.notesPurged(ids) }
+        return controller
+    }
+
+    private func showAgent(toggling: Bool = false) {
+        if agentPanel == nil {
+            agentPanel = AgentPanelController(controller: agent, themes: resolveThemes())
+        }
+        if toggling { agentPanel?.toggle() } else { agentPanel?.show() }
     }
 
     private func showMissingNoteLinkAlert() {

@@ -90,20 +90,16 @@ struct LibraryContentView: View {
                 }
             }
         }
-        .alert(
-            "Empty Trash?",
-            isPresented: emptyTrashPresented
-        ) {
-            Button("Cancel", role: .cancel) {
-                model.cancelEmptyTrash()
-            }
-            .keyboardShortcut(.cancelAction)
-            Button(emptyTrashButtonTitle, role: .destructive) {
-                draft.commit(to: model)
-                model.confirmEmptyTrash()
-            }
-        } message: {
-            Text("This permanently deletes \(trashCountText). You can't undo this.")
+        .sheet(isPresented: emptyTrashPresented) {
+            EmptyTrashSheet(
+                model: model,
+                countText: trashCountText,
+                buttonTitle: emptyTrashButtonTitle,
+                confirm: {
+                    draft.commit(to: model)
+                    model.confirmEmptyTrash()
+                }
+            )
         }
     }
 
@@ -383,5 +379,55 @@ private struct LibraryExportMenu: View {
             Label("Export", systemImage: "square.and.arrow.up")
         }
         .accessibilityHint("Exports the current workspace, page, selected notes or all notes.")
+    }
+}
+
+/// Empty Trash's confirmation. It lists the agent conversations that used these notes
+/// and offers to delete them too, off by default (decision 7). Snapshots don't exist
+/// yet, so only conversations are listed.
+private struct EmptyTrashSheet: View {
+    let model: LibraryModel
+    let countText: String
+    let buttonTitle: String
+    let confirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Empty Trash?").font(.headline)
+            Text("This permanently deletes \(countText). You can't undo this.")
+                .fixedSize(horizontal: false, vertical: true)
+            let conversations = model.emptyTrashConversations
+            if !conversations.isEmpty {
+                Text(conversations.count == 1 ? "Also in 1 conversation" : "Also in \(conversations.count) conversations")
+                    .font(.subheadline.weight(.semibold))
+                Text("Their note lists and sources will say \u{201C}note deleted\u{201D}. Answers that quote these notes keep that text.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(conversations) { conversation in
+                            Text("\(conversation.title) · \(conversation.updatedAt.prefix(10))")
+                                .font(.callout)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 120)
+                Toggle("Also delete those conversations", isOn: Binding(
+                    get: { model.alsoDeleteConversations },
+                    set: { model.alsoDeleteConversations = $0 }
+                ))
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { model.cancelEmptyTrash() }
+                    .keyboardShortcut(.cancelAction)
+                Button(buttonTitle, role: .destructive, action: confirm)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }

@@ -13,16 +13,22 @@ final class Hotkeys {
     }
 
     private(set) var newNoteStatus: Status = .paused
+    private(set) var agentStatus: Status = .paused
     /// Called after `newNoteStatus` changes.
     var onStatusChange: (@MainActor () -> Void)?
 
     private let newNote: @MainActor () -> Void
+    /// Opens the agent panel. Set after launch, once the panel can be created.
+    var agent: @MainActor () -> Void = {}
     private var handler: EventHandlerRef?
     private var newNoteRef: EventHotKeyRef?
     private var newNoteCombo: KeyCombo?
+    private var agentRef: EventHotKeyRef?
+    private var agentCombo: KeyCombo?
 
     private static let signature: OSType = 0x5742_4259  // "WBBY"
     private static let newNoteID: UInt32 = 1
+    private static let agentID: UInt32 = 2
 
     init(newNote: @escaping @MainActor () -> Void) {
         self.newNote = newNote
@@ -51,15 +57,52 @@ final class Hotkeys {
         }
     }
 
-    /// Releases the shortcut while Settings records a new one, so pressing the old
-    /// combination records it instead of creating a note.
+    /// Registers `combo` for the agent panel, replacing any earlier agent shortcut.
+    func registerAgent(_ combo: KeyCombo) {
+        installHandlerIfNeeded()
+        unregisterAgent()
+        agentCombo = combo
+
+        var ref: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            UInt32(combo.keyCode),
+            Self.carbonModifiers(combo.modifiers),
+            EventHotKeyID(signature: Self.signature, id: Self.agentID),
+            GetApplicationEventTarget(),
+            0,
+            &ref
+        )
+        if status == noErr, let ref {
+            agentRef = ref
+            setAgentStatus(.registered(combo))
+        } else {
+            setAgentStatus(.failed(combo, status))
+        }
+    }
+
+    /// Releases both shortcuts while Settings records a new one, so pressing an old
+    /// combination records it instead of acting on it.
     func pause() {
         unregisterNewNote()
+        unregisterAgent()
         setStatus(.paused)
+        setAgentStatus(.paused)
     }
 
     func resume() {
         if let newNoteCombo { registerNewNote(newNoteCombo) }
+        if let agentCombo { registerAgent(agentCombo) }
+    }
+
+    private func unregisterAgent() {
+        if let agentRef { UnregisterEventHotKey(agentRef) }
+        agentRef = nil
+    }
+
+    private func setAgentStatus(_ status: Status) {
+        guard status != agentStatus else { return }
+        agentStatus = status
+        onStatusChange?()
     }
 
     private func unregisterNewNote() {
@@ -104,6 +147,7 @@ final class Hotkeys {
 
     private func pressed(_ id: UInt32) {
         if id == Self.newNoteID { newNote() }
+        if id == Self.agentID { agent() }
     }
 
     private static func carbonModifiers(_ modifiers: KeyCombo.Modifiers) -> UInt32 {
@@ -122,6 +166,20 @@ extension Hotkeys.Status {
         switch self {
         case .registered(let combo):
             return "\(combo.displayString) creates a note in the app you're using."
+        case .failed(let combo, let status) where status == OSStatus(eventHotKeyExistsErr):
+            return "\(combo.displayString) is already used by another shortcut. Choose a different one."
+        case .failed(let combo, let status):
+            return "\(combo.displayString) couldn't be registered (error \(status)). Choose a different shortcut."
+        case .paused:
+            return "Press the new shortcut."
+        }
+    }
+
+    /// What Settings shows under the agent shortcut.
+    var agentMessage: String {
+        switch self {
+        case .registered(let combo):
+            return "\(combo.displayString) opens the agent panel."
         case .failed(let combo, let status) where status == OSStatus(eventHotKeyExistsErr):
             return "\(combo.displayString) is already used by another shortcut. Choose a different one."
         case .failed(let combo, let status):

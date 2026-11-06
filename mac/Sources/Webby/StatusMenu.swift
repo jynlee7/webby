@@ -13,17 +13,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let notes: NotesController
     private let openLibrary: @MainActor () -> Void
     private let openSettings: @MainActor () -> Void
+    private let openAgent: @MainActor () -> Void
     private let showMoveToApplications: @MainActor () -> Void
 
     init(
         notes: NotesController,
         openLibrary: @escaping @MainActor () -> Void,
         openSettings: @escaping @MainActor () -> Void,
+        openAgent: @escaping @MainActor () -> Void = {},
         showMoveToApplications: @escaping @MainActor () -> Void
     ) {
         self.notes = notes
         self.openLibrary = openLibrary
         self.openSettings = openSettings
+        self.openAgent = openAgent
         self.showMoveToApplications = showMoveToApplications
         super.init()
         menu.autoenablesItems = false
@@ -65,6 +68,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             newNote.keyEquivalentModifierMask = Self.modifierMask(newNoteShortcut.modifiers)
         }
         menu.addItem(newNote)
+        menu.addItem(ActionMenuItem("Ask About Notes…", run: openAgent))
 
         if let appName = notes.appName {
             addNotes(of: appName)

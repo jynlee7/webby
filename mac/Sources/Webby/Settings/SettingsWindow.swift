@@ -17,13 +17,25 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let general: GeneralSettingsModel
     private let notes: NotesController
     private let queryRules = QueryRulesSettingsModel()
+    private let agent = AgentSettingsModel()
+    private let credentials: KeychainCredentialStore
     private var keyMonitor: Any?
+    /// True while the recorder is for the agent shortcut rather than New Note.
+    private var recordingAgent = false
 
     /// Incognito access per connected Chrome profile, shown in General.
     var chromeIncognitoAccess: @MainActor () -> [String: Bool] = { [:] }
 
-    init(settings: SettingsStore, notes: NotesController, hotkeys: Hotkeys, permission: AccessibilityPermission, storedShortcutProblem: String?) {
+    init(
+        settings: SettingsStore,
+        notes: NotesController,
+        hotkeys: Hotkeys,
+        permission: AccessibilityPermission,
+        storedShortcutProblem: String?,
+        credentials: KeychainCredentialStore = KeychainCredentialStore()
+    ) {
         self.settings = settings
+        self.credentials = credentials
         self.notes = notes
         self.hotkeys = hotkeys
         self.permission = permission
@@ -48,6 +60,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryItem.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         tabs.addTabViewItem(queryItem)
 
+        let agentHosting = NSHostingController(rootView: AgentSettingsView(model: agent))
+        agentHosting.sizingOptions = [.preferredContentSize]
+        let agentItem = NSTabViewItem(viewController: agentHosting)
+        agentItem.label = "AI"
+        agentItem.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
+        tabs.addTabViewItem(agentItem)
+
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
@@ -62,6 +81,19 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         general.allowAccessibility = { [weak self] in self?.permission.requestAccess() }
         general.openAccessibilitySettings = { [weak self] in self?.permission.openSystemSettings() }
         permission.onChange { [weak self] in self?.refresh() }
+        agent.saveKey = { [weak self] in self?.saveKey() }
+        agent.removeKey = { [weak self] in self?.removeKey() }
+        agent.saveModel = { [weak self] in self?.saveModel() }
+        agent.useDefaultModel = { [weak self] in
+            self?.agent.modelDraft = ""
+            self?.saveModel()
+        }
+        agent.modelDraft = settings.settings.agentModel
+        agent.shortcut = Self.agentShortcut(from: settings.settings)
+        agent.startRecording = { [weak self] in self?.startRecording(agent: true) }
+        agent.stopRecording = { [weak self] in self?.stopRecording() }
+        agent.resetShortcut = { [weak self] in self?.saveAgent(.defaultAgent) }
+        refreshKey()
         queryRules.add = { [weak self] in self?.addQueryRule() }
         queryRules.remove = { [weak self] row in self?.removeQueryRule(row) }
         queryRules.convert = { [weak self] row in self?.convertQueryRule(row) }
@@ -82,6 +114,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return combo
     }
 
+    /// The agent shortcut stored in settings, or ⌃⌥A when the stored text isn't usable.
+    static func agentShortcut(from settings: WebbyCore.Settings) -> KeyCombo {
+        guard let combo = KeyCombo(settings.agentHotkey), combo.isUsableGlobally else { return .defaultAgent }
+        return combo
+    }
+
     func present() {
         refresh()
         NSApp.activate()
@@ -96,6 +134,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             general.hotkeyMessage = status.message
             general.hotkeyFailed = status.isFailure
         }
+        let agentStatus = hotkeys.agentStatus
+        if agentStatus != .paused {
+            agent.hotkeyMessage = agentStatus.agentMessage
+            agent.hotkeyFailed = agentStatus.isFailure
+        }
         general.accessibilityTrusted = permission.isTrusted
         general.chromeIncognito = GeneralSettingsModel.incognitoSummary(chromeIncognitoAccess())
         if case .readOnly(let problem) = settings.mode {
@@ -105,6 +148,58 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         queryRules.storageProblem = general.storageProblem
         refreshQueryRules()
+    }
+
+    // MARK: AI
+
+    private func refreshKey() {
+        do {
+            agent.hasKey = try credentials.storedValue(for: .anthropicAPIKey) != nil
+        } catch {
+            agent.hasKey = false
+            agent.keyMessage = "Webby couldn't read the Keychain. The agent is unavailable until it can."
+        }
+    }
+
+    private func saveKey() {
+        do {
+            try credentials.save(agent.keyDraft, for: .anthropicAPIKey)
+            agent.keyDraft = ""
+            agent.keyMessage = "Saved in your Keychain."
+            agent.keyFailed = false
+        } catch {
+            agent.keyMessage = "The key wasn't saved. Paste the whole key, with no spaces inside."
+            agent.keyFailed = true
+        }
+        refreshKey()
+    }
+
+    private func removeKey() {
+        do {
+            try credentials.remove(.anthropicAPIKey)
+            agent.keyMessage = "Removed. The agent is unavailable until you add a key."
+            agent.keyFailed = false
+        } catch {
+            agent.keyMessage = "The key couldn't be removed from the Keychain."
+            agent.keyFailed = true
+        }
+        refreshKey()
+    }
+
+    private func saveModel() {
+        if let problem = AgentModelSetting.problem(with: agent.modelDraft) {
+            agent.modelMessage = problem
+            return
+        }
+        var updated = settings.settings
+        updated.agentModel = agent.modelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try settings.replace(updated)
+            agent.modelDraft = updated.agentModel
+            agent.modelMessage = nil
+        } catch {
+            agent.modelMessage = error.localizedDescription
+        }
     }
 
     // MARK: Pages that differ by query
@@ -168,11 +263,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Recording a shortcut
 
-    private func startRecording() {
+    private func startRecording(agent forAgent: Bool = false) {
         guard keyMonitor == nil else { return }
         hotkeys.pause()
-        general.isRecording = true
-        general.recordingMessage = nil
+        recordingAgent = forAgent
+        if forAgent {
+            agent.isRecording = true
+            agent.recordingMessage = nil
+        } else {
+            general.isRecording = true
+            general.recordingMessage = nil
+        }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { self?.record(event) ?? false }
             return handled ? nil : event
@@ -193,20 +294,65 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if flags.contains(.command) { modifiers.insert(.command) }
 
         guard let combo = KeyCombo(keyCode: event.keyCode, modifiers: modifiers) else {
-            general.recordingMessage = "That key can't be used. Try a letter, number or function key."
+            setRecordingMessage("That key can't be used. Try a letter, number or function key.")
             return true
         }
         guard combo.isUsableGlobally else {
-            general.recordingMessage = "Include ⌃, ⌥ or ⌘ so the shortcut doesn't get in the way of typing."
+            setRecordingMessage("Include ⌃, ⌥ or ⌘ so the shortcut doesn't get in the way of typing.")
             return true
         }
-        save(combo)
+        if recordingAgent { saveAgent(combo) } else { save(combo) }
         return true
+    }
+
+    private func setRecordingMessage(_ message: String) {
+        if recordingAgent { agent.recordingMessage = message } else { general.recordingMessage = message }
+    }
+
+    /// Why `combo` can't be used for one action, given the other action's shortcut.
+    /// Recording and Reset both go through this, so the two never collide.
+    static func shortcutConflict(_ combo: KeyCombo, forAgent: Bool, other: KeyCombo) -> String? {
+        guard combo == other else { return nil }
+        return forAgent
+            ? "\(combo.displayString) already creates a note. Change the New Note shortcut first."
+            : "\(combo.displayString) already opens the agent panel. Change the agent shortcut first."
+    }
+
+    private func saveAgent(_ combo: KeyCombo) {
+        if let conflict = Self.shortcutConflict(combo, forAgent: true, other: general.shortcut) {
+            agent.recordingMessage = conflict
+            return
+        }
+        var updated = settings.settings
+        updated.agentHotkey = combo.storageString
+        do {
+            try settings.replace(updated)
+            agent.shortcut = combo
+            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+            keyMonitor = nil
+            agent.isRecording = false
+            agent.recordingMessage = nil
+            recordingAgent = false
+            hotkeys.resume()
+            hotkeys.registerAgent(combo)
+        } catch {
+            agent.recordingMessage = error.localizedDescription
+            stopRecording()
+        }
+        refresh()
     }
 
     private func stopRecording() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        if agent.isRecording {
+            agent.isRecording = false
+            agent.recordingMessage = nil
+            recordingAgent = false
+            hotkeys.resume()
+            refresh()
+            return
+        }
         guard general.isRecording else { return }
         general.isRecording = false
         general.recordingMessage = nil
@@ -215,6 +361,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func save(_ combo: KeyCombo) {
+        if let conflict = Self.shortcutConflict(combo, forAgent: false, other: agent.shortcut) {
+            general.recordingMessage = conflict
+            return
+        }
         var updated = settings.settings
         updated.newNoteHotkey = combo.storageString
         do {
@@ -225,6 +375,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             keyMonitor = nil
             general.isRecording = false
             general.recordingMessage = nil
+            // Recording paused both shortcuts; bring the agent's back too.
+            hotkeys.resume()
             hotkeys.registerNewNote(combo)
         } catch {
             general.recordingMessage = error.localizedDescription
@@ -400,6 +552,102 @@ private struct QueryRulesSettingsView: View {
                 Section {
                     Label(problem, systemImage: "exclamationmark.triangle")
                 }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+@MainActor @Observable
+final class AgentSettingsModel {
+    var hasKey = false
+    var keyDraft = ""
+    var keyMessage: String?
+    var keyFailed = false
+    var modelDraft = ""
+    var modelMessage: String?
+    var shortcut: KeyCombo = .defaultAgent
+    var isRecording = false
+    var recordingMessage: String?
+    var hotkeyMessage = ""
+    var hotkeyFailed = false
+
+    @ObservationIgnored var startRecording: @MainActor () -> Void = {}
+    @ObservationIgnored var stopRecording: @MainActor () -> Void = {}
+    @ObservationIgnored var resetShortcut: @MainActor () -> Void = {}
+
+    @ObservationIgnored var saveKey: @MainActor () -> Void = {}
+    @ObservationIgnored var removeKey: @MainActor () -> Void = {}
+    @ObservationIgnored var saveModel: @MainActor () -> Void = {}
+    @ObservationIgnored var useDefaultModel: @MainActor () -> Void = {}
+}
+
+private struct AgentSettingsView: View {
+    @Bindable var model: AgentSettingsModel
+
+    var body: some View {
+        Form {
+            Section("Anthropic key") {
+                LabeledContent("Status") {
+                    Text(model.hasKey ? "Saved in your Keychain" : "No key")
+                }
+                SecureField("API key", text: $model.keyDraft, prompt: Text("Paste your key"))
+                    .onSubmit { model.saveKey() }
+                HStack {
+                    Button(model.hasKey ? "Replace Key" : "Save Key") { model.saveKey() }
+                        .disabled(model.keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("Remove Key", role: .destructive) { model.removeKey() }
+                        .disabled(!model.hasKey)
+                }
+                if let message = model.keyMessage {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(model.keyFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                }
+                Text("The key stays in the macOS Keychain. When you ask a question, it is sent only to Anthropic, with the question, the notes in scope (never notes kept away from AI) and the page you asked from.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Agent shortcut") {
+                LabeledContent("Shortcut") {
+                    HStack {
+                        Button(model.isRecording ? "Press a shortcut…" : model.shortcut.displayString) {
+                            if model.isRecording { model.stopRecording() } else { model.startRecording() }
+                        }
+                        .frame(minWidth: 140)
+                        .accessibilityHint(model.isRecording ? "Press Escape to cancel" : "Records a new shortcut")
+                        Button("Reset to ⌃⌥A") { model.resetShortcut() }
+                            .disabled(model.shortcut == .defaultAgent || model.isRecording)
+                    }
+                }
+                if let message = model.recordingMessage {
+                    Text(message).font(.callout).foregroundStyle(.red)
+                } else if !model.isRecording, !model.hotkeyMessage.isEmpty {
+                    Text(model.hotkeyMessage)
+                        .font(.callout)
+                        .foregroundStyle(model.hotkeyFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                }
+            }
+
+            Section("Model") {
+                TextField("Model ID", text: $model.modelDraft, prompt: Text(AgentModelSetting.pinnedDefault))
+                    .onSubmit { model.saveModel() }
+                HStack {
+                    Button("Save Model") { model.saveModel() }
+                    Button("Use Default (\(AgentModelSetting.pinnedDefault))") { model.useDefaultModel() }
+                        .disabled(model.modelDraft.isEmpty)
+                }
+                if let message = model.modelMessage {
+                    Text(message).font(.callout).foregroundStyle(.red)
+                }
+                Text("New conversations use this model. A conversation keeps its model, so its cached notes stay valid.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
