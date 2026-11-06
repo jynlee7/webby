@@ -15,13 +15,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let hotkeys: Hotkeys
     private let permission: AccessibilityPermission
     private let general: GeneralSettingsModel
+    private let chrome: ChromeSettingsModel
     private let notes: NotesController
     private let skins: SkinStore
     private let queryRules = QueryRulesSettingsModel()
     private var keyMonitor: Any?
-
-    /// Incognito access per connected Chrome profile, shown in General.
-    var chromeIncognitoAccess: @MainActor () -> [String: Bool] = { [:] }
 
     init(
         settings: SettingsStore,
@@ -30,9 +28,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         importSkin: @escaping @MainActor () -> Void,
         hotkeys: Hotkeys,
         permission: AccessibilityPermission,
+        chrome: ChromeSettingsModel,
         storedShortcutProblem: String?
     ) {
         self.settings = settings
+        self.chrome = chrome
         self.notes = notes
         self.skins = skins
         self.hotkeys = hotkeys
@@ -65,6 +65,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryItem.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         tabs.addTabViewItem(queryItem)
 
+        let chromeHosting = NSHostingController(rootView: ChromeSettingsView(model: chrome))
+        chromeHosting.sizingOptions = [.preferredContentSize]
+        let chromeItem = NSTabViewItem(viewController: chromeHosting)
+        chromeItem.label = "Chrome"
+        chromeItem.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
+        tabs.addTabViewItem(chromeItem)
+
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
@@ -82,6 +89,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         queryRules.add = { [weak self] in self?.addQueryRule() }
         queryRules.remove = { [weak self] row in self?.removeQueryRule(row) }
         queryRules.convert = { [weak self] row in self?.convertQueryRule(row) }
+        chrome.copyPath = { [weak self] in
+            guard let folder = self?.chrome.extensionFolder else { return }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(folder.path, forType: .string)
+        }
+        chrome.revealFolder = { [weak self] in
+            guard let folder = self?.chrome.extensionFolder else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        }
         // The window lives as long as the app, so the observer is never removed.
         notes.addLibraryObserver { [weak self] in self?.refreshQueryRules() }
         refresh()
@@ -114,7 +131,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             general.hotkeyFailed = status.isFailure
         }
         general.accessibilityTrusted = permission.isTrusted
-        general.chromeIncognito = GeneralSettingsModel.incognitoSummary(chromeIncognitoAccess())
         if case .readOnly(let problem) = settings.mode {
             general.storageProblem = SettingsError.readOnly(problem).localizedDescription
         } else {
@@ -122,6 +138,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         queryRules.storageProblem = general.storageProblem
         refreshQueryRules()
+        chrome.refresh()
     }
 
     // MARK: Pages that differ by query
@@ -261,16 +278,6 @@ final class GeneralSettingsModel {
     var storedShortcutProblem: String?
     var storageProblem: String?
     var accessibilityTrusted = false
-    /// "Allowed", "Not allowed", "Differs by profile", or nil when no profile is connected.
-    var chromeIncognito: String?
-
-    static func incognitoSummary(_ access: [String: Bool]) -> String? {
-        let values = Set(access.values)
-        guard let only = values.first else { return nil }
-        guard values.count == 1 else { return "Differs by profile" }
-        return only ? "Allowed" : "Not allowed"
-    }
-
     @ObservationIgnored var startRecording: @MainActor () -> Void = {}
     @ObservationIgnored var stopRecording: @MainActor () -> Void = {}
     @ObservationIgnored var resetShortcut: @MainActor () -> Void = {}
@@ -324,14 +331,6 @@ private struct GeneralSettingsView: View {
                         Button("Open System Settings") { model.openAccessibilitySettings() }
                     }
                 }
-            }
-
-            Section("Chrome") {
-                LabeledContent("Extension in Incognito") {
-                    Text(model.chromeIncognito ?? "Not connected")
-                }
-                note("Incognito windows show only notes for Chrome itself. Web notes never appear there.",
-                     failure: false)
             }
 
             if let problem = model.storageProblem {
