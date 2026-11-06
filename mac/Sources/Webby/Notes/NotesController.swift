@@ -418,6 +418,7 @@ final class NotesController {
             if isImporting {
                 isImporting = false
                 layout()
+                replayDeferredTabWork()
             }
         }
 
@@ -455,6 +456,7 @@ final class NotesController {
             autosave.schedule()
             isImporting = false
             layout()
+            replayDeferredTabWork()
             notifyLibraryChange()
             onStatusChange?()
             importState = .succeeded(result)

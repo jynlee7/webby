@@ -418,34 +418,68 @@ import Testing
     @Test func restoreWaitsForQuietThenRunsOncePerProfileAndRun() {
         var schedule = RestoreSchedule()
         let start = later
-        schedule.hello(profile: profile, now: start)
+        schedule.hello(profile: profile, connection: 1, now: start)
         #expect(schedule.takeDue(now: start).isEmpty) // no session yet
         schedule.setSession(newSession)
-        schedule.hello(profile: profile, now: start)
+        schedule.hello(profile: profile, connection: 1, now: start)
+        // Nothing is due until the profile's tabs are known.
+        #expect(schedule.nextDeadline == nil)
+        #expect(schedule.takeDue(now: start.addingTimeInterval(60)).isEmpty)
+        schedule.activity(profile: profile, now: start, inventory: true)
         #expect(schedule.nextDeadline == start.addingTimeInterval(3))
         #expect(schedule.takeDue(now: start.addingTimeInterval(2)).isEmpty)
         schedule.activity(profile: profile, now: start.addingTimeInterval(2))
         #expect(schedule.takeDue(now: start.addingTimeInterval(4)).isEmpty)
         #expect(schedule.takeDue(now: start.addingTimeInterval(5)) == [profile])
-        schedule.hello(profile: profile, now: start.addingTimeInterval(6))
+        schedule.hello(profile: profile, connection: 2, now: start.addingTimeInterval(6))
+        schedule.activity(profile: profile, now: start.addingTimeInterval(6), inventory: true)
         #expect(schedule.takeDue(now: start.addingTimeInterval(60)).isEmpty)
         #expect(schedule.nextDeadline == nil)
         // A new Chrome run checks again.
         schedule.setSession(oldSession)
-        schedule.hello(profile: profile, now: start)
+        schedule.hello(profile: profile, connection: 3, now: start)
+        schedule.activity(profile: profile, now: start, inventory: true)
         #expect(schedule.takeDue(now: start.addingTimeInterval(3)) == [profile])
     }
 
     @Test func restoreRunsAtTheCapWhileTabsKeepArriving() {
         var schedule = RestoreSchedule()
         schedule.setSession(newSession)
-        schedule.hello(profile: profile, now: later)
+        schedule.hello(profile: profile, connection: 1, now: later)
+        schedule.activity(profile: profile, now: later, inventory: true)
         for second in stride(from: 1, through: 29, by: 2) {
             schedule.activity(profile: profile, now: later.addingTimeInterval(TimeInterval(second)))
             #expect(schedule.takeDue(now: later.addingTimeInterval(TimeInterval(second))).isEmpty)
         }
         #expect(schedule.nextDeadline == later.addingTimeInterval(30))
         #expect(schedule.takeDue(now: later.addingTimeInterval(30)) == [profile])
+    }
+
+    /// Greptile 4488242865: a disconnect before the check used to consume it against an
+    /// empty inventory.
+    @Test func aDisconnectBeforeTheCheckKeepsItForTheNextConnection() {
+        var schedule = RestoreSchedule()
+        schedule.setSession(newSession)
+        schedule.hello(profile: profile, connection: 1, now: later)
+        schedule.activity(profile: profile, now: later, inventory: true)
+        // A late disconnect from another connection, or for another profile, changes nothing.
+        schedule.disconnected(connection: 9, profile: profile)
+        schedule.disconnected(connection: 1, profile: otherProfile)
+        #expect(schedule.nextDeadline == later.addingTimeInterval(3))
+        schedule.disconnected(connection: 1, profile: profile)
+        #expect(schedule.takeDue(now: later.addingTimeInterval(10)).isEmpty)
+        #expect(schedule.nextDeadline == nil)
+        // The reconnected profile still gets its one check.
+        schedule.hello(profile: profile, connection: 2, now: later.addingTimeInterval(10))
+        schedule.activity(profile: profile, now: later.addingTimeInterval(10), inventory: true)
+        #expect(schedule.takeDue(now: later.addingTimeInterval(13)) == [profile])
+        // A dropped connection cancels every profile it spoke for.
+        var dropped = RestoreSchedule()
+        dropped.setSession(newSession)
+        dropped.hello(profile: profile, connection: 4, now: later)
+        dropped.activity(profile: profile, now: later, inventory: true)
+        dropped.disconnected(connection: 4, profile: nil)
+        #expect(dropped.takeDue(now: later.addingTimeInterval(30)).isEmpty)
     }
 
     // MARK: Scope choices

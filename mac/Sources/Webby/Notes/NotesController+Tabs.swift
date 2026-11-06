@@ -24,6 +24,14 @@ final class TabTracking {
     /// front when it reattaches a note, so it can't read the live context.
     var lastVerifiedTab: TabRef?
     var terminationObserver: NSObjectProtocol?
+    /// Tab work that arrived while an import owned the store, replayed in order after it.
+    var deferred: [DeferredTabWork] = []
+    static let maxDeferred = 4096
+}
+
+enum DeferredTabWork {
+    case event(BridgeEvent)
+    case terminated(String?)
 }
 
 extension NotesController {
@@ -47,25 +55,60 @@ extension NotesController {
     /// Applies one bridge event to tab bindings, after Open Tabs and the browser
     /// monitor have seen it, so the inventory is current.
     func receiveBridgeEvent(_ event: BridgeEvent) {
+        guard !isImporting else {
+            // The import owns the store: keep the event, so a replaced tab's new ID or a
+            // close isn't lost, and apply it once the import ends.
+            deferTabWork(.event(event))
+            return
+        }
         checkChromeSession()
         let session = tabs.session
         applyTabUpdates(tabs.reconciler.receive(event, notes: store.notes, session: session, now: now()))
-        if case let .message(_, profile, message) = event {
-            switch message {
-            case .hello:
-                tabs.schedule.hello(profile: profile, now: now())
-            case .tabCreated, .inventory:
-                tabs.schedule.activity(profile: profile, now: now())
-            default:
-                break
-            }
+        switch event {
+        case let .message(connection, profile, .hello):
+            tabs.schedule.hello(profile: profile, connection: connection, now: now())
+        case let .message(_, profile, .inventory):
+            tabs.schedule.activity(profile: profile, now: now(), inventory: true)
+        case let .message(_, profile, _):
+            // Restored tabs often get their address in a later tabUpdated.
+            tabs.schedule.activity(profile: profile, now: now())
+        case let .disconnected(connection, profile):
+            tabs.schedule.disconnected(connection: connection, profile: profile)
+        case let .dropped(connection?, _):
+            tabs.schedule.disconnected(connection: connection, profile: nil)
+        case .connected, .dropped(nil, _):
+            break
         }
         scheduleRestoreCheck()
+    }
+
+    /// Applies the tab work held back during an import, in arrival order. Called on
+    /// every import exit, successful or not.
+    func replayDeferredTabWork() {
+        guard !isImporting, !tabs.deferred.isEmpty else { return }
+        let work = tabs.deferred
+        tabs.deferred.removeAll()
+        for item in work {
+            switch item {
+            case .event(let event): receiveBridgeEvent(event)
+            case .terminated(let session): chromeTerminated(session: session)
+            }
+        }
+    }
+
+    private func deferTabWork(_ work: DeferredTabWork) {
+        tabs.deferred.append(work)
+        // Bounded; the oldest goes first. A note it concerned ends up in Closed Tabs.
+        if tabs.deferred.count > TabTracking.maxDeferred { tabs.deferred.removeFirst() }
     }
 
     /// Chrome quit while Webby runs. `session` is nil when the process can't be named;
     /// the last seen session is used then.
     func chromeTerminated(session: String?) {
+        guard !isImporting else {
+            deferTabWork(.terminated(session))
+            return
+        }
         guard let ended = session ?? tabs.session else { return }
         applyTabUpdates(tabs.reconciler.chromeTerminated(session: ended, notes: store.notes, now: now()))
         tabs.session = nil

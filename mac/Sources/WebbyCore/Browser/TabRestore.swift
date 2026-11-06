@@ -100,15 +100,19 @@ public enum TabRestore {
 
 /// Decides when a profile's restore check runs. Session restore opens windows and
 /// tabs over several seconds, and restored tabs can start with an empty URL, so the
-/// check waits for a quiet period after the profile's first `hello` of a Chrome run,
-/// up to a cap, and runs once per profile and run.
+/// check waits until the profile's connection has sent an inventory and its tabs have
+/// been quiet for a while (any tab message, URL updates included, is activity), up to a
+/// cap. It runs once per profile and run. A disconnect before then cancels the wait
+/// without using up the check: the next `hello` starts it again.
 public struct RestoreSchedule: Sendable {
     public static let quietPeriod: TimeInterval = 3
     public static let cap: TimeInterval = 30
 
     private struct Pending: Sendable {
+        let connection: Int
         let started: Date
         var lastActivity: Date
+        var sawInventory = false
     }
 
     private var session: String?
@@ -125,23 +129,34 @@ public struct RestoreSchedule: Sendable {
         evaluated.removeAll()
     }
 
-    /// A profile said hello. Starts its wait unless it already ran in this session.
-    public mutating func hello(profile: String, now: Date) {
+    /// A profile's connection said hello. Starts its wait unless it already ran in this
+    /// session; a newer connection for the profile starts the wait over.
+    public mutating func hello(profile: String, connection: Int, now: Date) {
         guard session != nil, session != OpenTabsInventory.unknownSession,
-              !evaluated.contains(profile), pending[profile] == nil else { return }
-        pending[profile] = Pending(started: now, lastActivity: now)
+              !evaluated.contains(profile), pending[profile]?.connection != connection else { return }
+        pending[profile] = Pending(connection: connection, started: now, lastActivity: now)
     }
 
-    /// Tabs were created or the open tabs changed for `profile`: restore isn't settled.
-    public mutating func activity(profile: String, now: Date) {
+    /// A tab message for `profile`: restore isn't settled yet. An inventory also makes
+    /// the check possible, because the profile's open tabs are known from then on.
+    public mutating func activity(profile: String, now: Date, inventory: Bool = false) {
         pending[profile]?.lastActivity = now
+        if inventory { pending[profile]?.sawInventory = true }
+    }
+
+    /// The connection went away (for every profile it spoke for when `profile` is nil).
+    /// Its tabs are gone from the inventory, so a check now would match nothing.
+    public mutating func disconnected(connection: Int, profile: String?) {
+        pending = pending.filter { key, wait in
+            wait.connection != connection || (profile != nil && key != profile)
+        }
     }
 
     /// The profiles whose check is due at `now`, which are then marked as run.
     public mutating func takeDue(now: Date) -> [String] {
         let due = pending.filter { _, wait in
-            now.timeIntervalSince(wait.lastActivity) >= Self.quietPeriod
-                || now.timeIntervalSince(wait.started) >= Self.cap
+            wait.sawInventory && (now.timeIntervalSince(wait.lastActivity) >= Self.quietPeriod
+                || now.timeIntervalSince(wait.started) >= Self.cap)
         }.keys.sorted()
         for profile in due {
             pending[profile] = nil
@@ -152,6 +167,8 @@ public struct RestoreSchedule: Sendable {
 
     /// When the next check could become due, for scheduling a timer.
     public var nextDeadline: Date? {
-        pending.values.map { min($0.lastActivity.addingTimeInterval(Self.quietPeriod), $0.started.addingTimeInterval(Self.cap)) }.min()
+        pending.values.filter(\.sawInventory)
+            .map { min($0.lastActivity.addingTimeInterval(Self.quietPeriod), $0.started.addingTimeInterval(Self.cap)) }
+            .min()
     }
 }

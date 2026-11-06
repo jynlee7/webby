@@ -24,7 +24,10 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         let session: SessionBox
 
         func send(_ message: ExtensionMessage, connection: Int = 1) {
-            let event = BridgeEvent.message(connection: connection, profile: profile, message)
+            deliver(.message(connection: connection, profile: profile, message))
+        }
+
+        func deliver(_ event: BridgeEvent) {
             feed.receive(event)
             browser.receive(event)
             controller.receiveBridgeEvent(event)
@@ -47,10 +50,14 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
                      tabs: [BridgeTab(id: tabID, index: 0, active: true, url: url, title: "Tab \(tabID)")])
     }
 
-    private func harness(notes: [Note] = []) -> Harness {
+    private func harness(
+        notes: [Note] = [],
+        atomicWrite: @escaping @Sendable (Data, URL) throws -> Void = { try $0.write(to: $1, options: .atomic) }
+    ) -> Harness {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WebbyTabNotes-\(UUID().uuidString)", isDirectory: true)
-        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"), atomicWrite: atomicWrite)
         for note in notes { _ = store.add(note) }
         let session = SessionBox()
         let clock = Clock()
@@ -322,4 +329,134 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         hello(h, connection: 2)
         #expect(model.lastTabTitle(for: inbox) == nil)
     }
+
+    /// A note on the restored tab, closed by a Chrome quit and waiting for its check.
+    private func restartedChrome(_ h: Harness) throws -> Note {
+        hello(h)
+        h.send(.inventory(windows: [window("chrome://newtab/")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+        h.send(.tabUpdated(tabId: 1, url: "https://a.example/docs", title: "Docs"))
+        h.controller.chromeTerminated(session: "100@1")
+        h.session.value = "200@2"
+        return note
+    }
+
+    /// Greptile 4488242865: a disconnect before the timer fired used to spend the
+    /// profile's only check on an empty inventory.
+    @Test func aDisconnectBeforeTheCheckDoesNotUseItUp() throws {
+        let h = harness()
+        defer { h.close() }
+        let note = try restartedChrome(h)
+        hello(h, connection: 2)
+        h.send(.inventory(windows: [window("https://a.example/docs", tabID: 70, windowID: 9)]), connection: 2)
+        h.deliver(.disconnected(connection: 2, profile: profile))
+        h.controller.runDueRestoreChecks(at: h.clock.now.addingTimeInterval(3))
+        #expect(h.store.note(id: note.id)?.tab?.pendingRestore == true)
+        #expect(h.controller.restoreOutcome(note.id) == nil)
+
+        h.clock.now = h.clock.now.addingTimeInterval(10)
+        hello(h, connection: 3)
+        h.send(.inventory(windows: [window("https://a.example/docs", tabID: 70, windowID: 9)]), connection: 3)
+        h.controller.runDueRestoreChecks(at: h.clock.now.addingTimeInterval(3))
+        #expect(h.store.note(id: note.id)?.tab?.tabID == 70)
+        #expect(TabBindingReconciler.isRestored(h.store.note(id: note.id)?.tab))
+    }
+
+    /// Greptile 4488242868: only tabCreated and inventory used to count as restore
+    /// activity, so a check could run before a restored tab's address arrived.
+    @Test func tabUpdatesDelayTheRestoreCheck() throws {
+        let h = harness()
+        defer { h.close() }
+        let note = try restartedChrome(h)
+        let start = h.clock.now
+        hello(h, connection: 2)
+        let loading = BridgeWindow(id: 9, focused: true, incognito: false,
+                                   bounds: BridgeWindowBounds(left: 20, top: 40, width: 1000, height: 700),
+                                   tabs: [BridgeTab(id: 70, index: 0, active: true, url: "", title: "")])
+        h.send(.inventory(windows: [loading]), connection: 2)
+        h.clock.now = start.addingTimeInterval(2)
+        h.send(.tabUpdated(tabId: 70, url: nil, title: "Loading"), connection: 2)
+        h.controller.runDueRestoreChecks(at: start.addingTimeInterval(3))
+        #expect(h.store.note(id: note.id)?.tab?.pendingRestore == true)
+        #expect(h.controller.restoreOutcome(note.id) == nil)
+
+        h.clock.now = start.addingTimeInterval(4)
+        h.send(.tabUpdated(tabId: 70, url: "https://a.example/docs", title: "Docs"), connection: 2)
+        h.controller.runDueRestoreChecks(at: start.addingTimeInterval(7))
+        #expect(h.store.note(id: note.id)?.tab?.tabID == 70)
+        #expect(h.controller.restoreOutcome(note.id) == .rebound)
+    }
+
+    /// Greptile 4488242874: tab events during an import used to be dropped, so a tab
+    /// replaced meanwhile lost its new ID and the next inventory closed the note.
+    @Test func tabEventsDuringAnImportApplyAfterIt() async throws {
+        let candidateStarted = TabImportSignal()
+        let releaseCandidate = TabImportGate()
+        let h = harness(atomicWrite: { data, destination in
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: destination.deletingLastPathComponent().path)) ?? []
+            if names.contains(where: { $0.hasPrefix("notes.pre-import-") }) {
+                candidateStarted.signal()
+                releaseCandidate.wait()
+            }
+            try data.write(to: destination, options: .atomic)
+        })
+        defer { h.close() }
+        hello(h)
+        h.send(.inventory(windows: [window("chrome://newtab/")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+        try h.store.save()
+
+        let imported = Note(text: "imported", frame: NoteFrame(), placement: .screen)
+        let plan = ImportPlan(notesToAdd: [imported], workspacesToAdd: [], workspaceUpdates: [])
+        let controller = h.controller
+        let task = Task { try await controller.importNotes(plan) }
+        await candidateStarted.wait()
+        #expect(h.controller.isImporting)
+        h.send(.tabReplaced(added: 5, removed: 1))
+        #expect(h.store.note(id: note.id)?.tab?.tabID == 1) // the import owns the store
+        releaseCandidate.signal()
+        _ = try await task.value
+
+        #expect(h.store.note(id: note.id)?.tab?.tabID == 5)
+        h.send(.inventory(windows: [window("chrome://newtab/", tabID: 5)]))
+        #expect(h.store.note(id: note.id)?.tab?.closedAt == nil)
+        #expect(h.store.notes.contains { $0.id == imported.id })
+    }
+}
+
+private final class TabImportSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var signaled = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func signal() {
+        lock.lock()
+        guard !signaled else { lock.unlock(); return }
+        signaled = true
+        let waiter = waiter
+        self.waiter = nil
+        lock.unlock()
+        waiter?.resume()
+    }
+
+    func wait() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if signaled {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiter = continuation
+                lock.unlock()
+            }
+        }
+    }
+}
+
+private final class TabImportGate: @unchecked Sendable {
+    private let semaphore = DispatchSemaphore(value: 0)
+    func wait() { semaphore.wait() }
+    func signal() { semaphore.signal() }
 }
