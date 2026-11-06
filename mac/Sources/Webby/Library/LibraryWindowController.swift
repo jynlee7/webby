@@ -46,9 +46,13 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
         notes: NotesController,
         openTabs: OpenTabsFeed? = nil,
         currentAppBundleID: @escaping @MainActor () -> String?,
+        currentContext: (@MainActor () -> Context?)? = nil,
         enabledQueryRules: [QueryRule] = QueryRules.builtIns
     ) {
-        let currentApp = LiveLibraryCurrentAppProvider(currentBundleID: currentAppBundleID)
+        let currentApp = LiveLibraryCurrentAppProvider(
+            currentBundleID: currentAppBundleID,
+            currentContext: currentContext
+        )
         let actions = LibraryAnchorActions(
             appAvailability: WorkspaceLibraryAppAvailability(),
             appActivation: WorkspaceLibraryAppActivation(),

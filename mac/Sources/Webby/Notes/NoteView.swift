@@ -16,6 +16,10 @@ final class NoteModel {
     var appearance: NoteAppearance?
     /// Bumped to move keyboard focus into the text.
     var focusRequest = 0
+    /// Where the note can stick in the current context ("This page", each parent path,
+    /// "Whole site", "This app"), and the choice its anchor matches.
+    var scopes: [NoteScope] = []
+    var selectedScope: Int?
 
     @ObservationIgnored var onTextChange: @MainActor () -> Void = {}
     @ObservationIgnored var onToggleCollapsed: @MainActor () -> Void = {}
@@ -25,6 +29,7 @@ final class NoteModel {
     @ObservationIgnored var onSelectPalette: @MainActor (Int?) -> Void = { _ in }
     @ObservationIgnored var onSetDecorationHidden: @MainActor (Bool) -> Void = { _ in }
     @ObservationIgnored var onResizeEnded: @MainActor () -> Void = {}
+    @ObservationIgnored var onScope: @MainActor (WebbyCore.Anchor) -> Void = { _ in }
 
     init(id: UUID, text: String, collapsed: Bool, isEditable: Bool, themes: NoteThemes) {
         self.id = id
@@ -43,6 +48,13 @@ final class NoteModel {
 
     var title: String {
         Note.summaryLine(of: text) ?? "Empty note"
+    }
+
+    /// Re-attaches the note to another scope. Choosing the current one changes nothing,
+    /// so a page anchor stored without a query is never rewritten by accident.
+    func chooseScope(at index: Int) {
+        guard index != selectedScope, scopes.indices.contains(index) else { return }
+        onScope(scopes[index].anchor)
     }
 }
 
@@ -153,6 +165,17 @@ struct NoteView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Menu {
+                if model.scopes.count > 1 {
+                    Menu("Stick To") {
+                        ForEach(model.scopes.indices, id: \.self) { index in
+                            Toggle(model.scopes[index].title, isOn: Binding(
+                                get: { model.selectedScope == index },
+                                set: { if $0 { model.chooseScope(at: index) } }
+                            ))
+                        }
+                    }
+                    Divider()
+                }
                 Button("Hide Here", action: model.onHide)
                 if model.themes.paletteSlotCount > 0 || model.themes.hasDecoration {
                     Divider()

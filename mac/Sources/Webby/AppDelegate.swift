@@ -6,6 +6,7 @@ import WebbyCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chromeBridge = ChromeBridge()
     private let openTabs = OpenTabsFeed()
+    private let browser = BrowserMonitor()
     private var notes: NotesController!
     private var statusMenu: StatusMenu!
     private var hotkeys: Hotkeys!
@@ -27,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = Self.makeMainMenu()
 
         permission = AccessibilityPermission()
-        monitor = ContextMonitor(permission: permission)
+        monitor = ContextMonitor(permission: permission, browser: browser)
         settingsStore = SettingsStore()
         let noteStore = NoteStore()
         skins = SkinStore(
@@ -46,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         skinImporter = SkinImporter(store: skins)
         skins.onThemesChanged = { [weak self] in self?.notes.refreshThemes() }
         skins.onNotesMutated = { [weak self] in self?.notes.workspacesMutated() }
+        browser.queryRules = { [weak self] in
+            guard let self else { return QueryRules.builtIns }
+            return QueryRules.effective(
+                rules: self.settingsStore.settings.enabledQueryRules,
+                anchors: self.notes.store.notes.lazy.filter { $0.trashedAt == nil }.compactMap(\.anchor)
+            )
+        }
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil,
@@ -74,7 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
-        chromeBridge.onEvent = { [weak self] event in self?.openTabs.receive(event) }
+        // Both consumers see every event: Open Tabs lists tabs, the browser monitor
+        // follows the focused window's page for web notes.
+        chromeBridge.onEvent = { [weak self] event in
+            self?.openTabs.receive(event)
+            self?.browser.receive(event)
+        }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
             statusMenu.needsMoveToApplications = true
@@ -150,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 notes: notes,
                 openTabs: openTabs,
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
+                currentContext: { [weak self] in self?.monitor.context },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
         }
@@ -180,7 +194,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }
-            window.onQueryRulesChange = { [weak self] rules in self?.libraryWindow?.model.enabledQueryRules = rules }
+            window.chromeIncognitoAccess = { [weak self] in self?.browser.incognitoAccess ?? [:] }
+            window.onQueryRulesChange = { [weak self] rules in
+                self?.libraryWindow?.model.enabledQueryRules = rules
+                // Page identity may have changed for the current Chrome tab.
+                self?.notes.layout()
+            }
             settingsWindow = window
         }
         settingsWindow?.present()
