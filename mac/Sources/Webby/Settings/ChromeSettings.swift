@@ -119,6 +119,19 @@ final class ChromeSettingsModel {
         }
     }
 
+    /// The install state line, shown only when it adds to the Installed and Bundled rows.
+    var extensionStateNote: String? {
+        if case .upToDate = extensionState { return nil }
+        return extensionStateText
+    }
+
+    /// What to do when a connected profile runs an older or unknown extension. Chrome
+    /// refuses programmatic chrome:// links, so this is an instruction, not a button.
+    var reloadGuidance: String? {
+        guard profiles.contains(where: { $0.reloadState != .current }) else { return nil }
+        return "In chrome://extensions, press Reload on Webby in each profile that isn't Current."
+    }
+
     /// Repair replaces an installed folder that can't be read.
     var needsRepair: Bool {
         extensionState == .invalid
@@ -226,9 +239,11 @@ struct ChromeSettingsView: View {
                 }
                 LabeledContent("Installed", value: model.installedVersionText)
                 LabeledContent("Bundled", value: model.bundledVersionText)
-                Text(model.extensionStateText)
-                    .font(.callout)
-                    .foregroundStyle(model.problemText == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                if let note = model.extensionStateNote {
+                    Text(note)
+                        .font(.callout)
+                        .foregroundStyle(model.problemText == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                }
             }
 
             Section("Set up") {
@@ -251,6 +266,11 @@ struct ChromeSettingsView: View {
                     Text("No Chrome profile is connected.")
                         .foregroundStyle(.secondary)
                 } else {
+                    if let guidance = model.reloadGuidance {
+                        Text(guidance)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     ForEach(model.profiles) { row in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {

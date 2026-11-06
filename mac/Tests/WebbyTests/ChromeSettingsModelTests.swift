@@ -168,6 +168,22 @@ private func makeModel(
         #expect(model.needsReRegister == false)
     }
 
+    @Test func reloadGuidanceAppearsOnlyWhileAProfileIsBehind() {
+        let model = makeModel(outcome: .unchanged(chromeFolder, version("1.2.0")))
+        #expect(model.reloadGuidance == nil)
+        #expect(model.extensionStateNote == nil)
+
+        model.receive(.connected(connection: 1))
+        model.receive(helloEvent(1, profile: "Default", version: "1.1.0"))
+        #expect(model.reloadGuidance?.contains("Reload") == true)
+
+        model.receive(helloEvent(1, profile: "Default", version: "1.2.0"))
+        #expect(model.reloadGuidance == nil)
+
+        let invalid = makeModel(outcome: .installationInvalid(chromeFolder))
+        #expect(invalid.extensionStateNote == "The installed folder is invalid")
+    }
+
     @Test func incognitoAccessIsShownInTheChromePane() {
         var access: [String: Bool] = [:]
         let model = ChromeSettingsModel(
