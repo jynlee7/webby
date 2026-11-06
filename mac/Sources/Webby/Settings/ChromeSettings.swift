@@ -49,18 +49,18 @@ final class ChromeSettingsModel {
     private let hostInspection: @MainActor () -> NativeHostInstaller.Inspection
 
     init(
-        extensionFolder: @escaping @MainActor () -> URL = { BridgeConstants.extensionDirectory },
+        extensionFolder folderProvider: @escaping @MainActor () -> URL = { BridgeConstants.extensionDirectory },
         bundledVersion: @escaping @MainActor () -> ExtensionVersion? = { nil },
         installedVersion: @escaping @MainActor () -> ExtensionVersion? = { nil },
         extensionOutcome: @escaping @MainActor () -> BundledExtensionInstaller.Outcome? = { nil },
         hostInspection: @escaping @MainActor () -> NativeHostInstaller.Inspection = { .missing }
     ) {
-        self.folder = extensionFolder
+        self.folder = folderProvider
         self.bundledVersion = bundledVersion
         self.installedVersion = installedVersion
         self.extensionOutcome = extensionOutcome
         self.hostInspection = hostInspection
-        extensionFolder = extensionFolder()
+        extensionFolder = folderProvider()
         expectedExtensionID = BridgeConstants.extensionID
         bundledVersionText = ""
         installedVersionText = ""
