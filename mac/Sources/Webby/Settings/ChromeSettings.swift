@@ -33,6 +33,8 @@ final class ChromeSettingsModel {
     var profiles: [ProfileRow] = []
     var reloadState: ExtensionReloadState = .unknown
     var problemText: String?
+    /// Incognito access across connected profiles (moved here from General).
+    var incognitoText = "Not connected"
     /// Set after Copy Path, so the pane can confirm the copy.
     var copied = false
 
@@ -47,19 +49,22 @@ final class ChromeSettingsModel {
     private let installedVersion: @MainActor () -> ExtensionVersion?
     private let extensionOutcome: @MainActor () -> BundledExtensionInstaller.Outcome?
     private let hostInspection: @MainActor () -> NativeHostInstaller.Inspection
+    private let incognitoAccess: @MainActor () -> [String: Bool]
 
     init(
         extensionFolder folderProvider: @escaping @MainActor () -> URL = { BridgeConstants.extensionDirectory },
         bundledVersion: @escaping @MainActor () -> ExtensionVersion? = { nil },
         installedVersion: @escaping @MainActor () -> ExtensionVersion? = { nil },
         extensionOutcome: @escaping @MainActor () -> BundledExtensionInstaller.Outcome? = { nil },
-        hostInspection: @escaping @MainActor () -> NativeHostInstaller.Inspection = { .missing }
+        hostInspection: @escaping @MainActor () -> NativeHostInstaller.Inspection = { .missing },
+        incognitoAccess: @escaping @MainActor () -> [String: Bool] = { [:] }
     ) {
         self.folder = folderProvider
         self.bundledVersion = bundledVersion
         self.installedVersion = installedVersion
         self.extensionOutcome = extensionOutcome
         self.hostInspection = hostInspection
+        self.incognitoAccess = incognitoAccess
         extensionFolder = folderProvider()
         expectedExtensionID = BridgeConstants.extensionID
         bundledVersionText = ""
@@ -164,7 +169,16 @@ final class ChromeSettingsModel {
         }
     }
 
+    /// "Allowed", "Not allowed", "Differs by profile", or nil when no profile is connected.
+    static func incognitoSummary(_ access: [String: Bool]) -> String? {
+        let values = Set(access.values)
+        guard let only = values.first else { return nil }
+        guard values.count == 1 else { return "Differs by profile" }
+        return only ? "Allowed" : "Not allowed"
+    }
+
     private func recomputeProfiles() {
+        incognitoText = Self.incognitoSummary(incognitoAccess()) ?? "Not connected"
         let bundled = bundledVersion()
         profiles = status.connections.map { connection in
             ProfileRow(
@@ -253,6 +267,11 @@ struct ChromeSettingsView: View {
                         }
                     }
                 }
+                LabeledContent("Extension in Incognito", value: model.incognitoText)
+                Text("Incognito windows show only notes for Chrome itself. Web notes never appear there.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section("Troubleshooting") {

@@ -168,6 +168,25 @@ private func makeModel(
         #expect(model.needsReRegister == false)
     }
 
+    @Test func incognitoAccessIsShownInTheChromePane() {
+        var access: [String: Bool] = [:]
+        let model = ChromeSettingsModel(
+            extensionFolder: { chromeFolder },
+            incognitoAccess: { access }
+        )
+        #expect(model.incognitoText == "Not connected")
+
+        // The browser monitor runs before the pane for each event, so the pane reads the
+        // access that event just produced.
+        access = ["Default": false]
+        model.receive(helloEvent(1, profile: "Default", version: "1.2.0"))
+        #expect(model.incognitoText == "Not allowed")
+
+        access["Work"] = true
+        model.refresh()
+        #expect(model.incognitoText == "Differs by profile")
+    }
+
     @Test func noConnectionsIsSafe() {
         let model = makeModel()
         model.receive(.disconnected(connection: 1, profile: nil))

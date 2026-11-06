@@ -71,7 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bundledVersion: { [weak self] in self?.chromeBridge.bundledExtensionVersion() },
             installedVersion: { [weak self] in self?.chromeBridge.installedExtensionVersion() },
             extensionOutcome: { [weak self] in self?.chromeBridge.extensionInstall },
-            hostInspection: { [weak self] in self?.chromeBridge.inspectHost() ?? .missing }
+            hostInspection: { [weak self] in self?.chromeBridge.inspectHost() ?? .missing },
+            incognitoAccess: { [weak self] in self?.browser.incognitoAccess ?? [:] }
         )
         chromeSettings.repairExtension = { [weak self] in
             guard let self else { return }
@@ -99,14 +100,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
-        // Every consumer sees every event: Open Tabs lists tabs, the browser monitor
-        // follows the focused window's page for web notes, and Chrome settings tracks
-        // connected profiles.
-        chromeBridge.onEvent = { [weak self] event in
-            self?.openTabs.receive(event)
-            self?.browser.receive(event)
-            self?.chromeSettings.receive(event)
-        }
+        // Every consumer sees every event, in this order: Open Tabs lists tabs, the browser
+        // monitor follows the focused window's page for web notes (and each profile's
+        // incognito access), and Chrome settings tracks connected profiles.
+        chromeBridge.addEventHandler { [weak self] event in self?.openTabs.receive(event) }
+        chromeBridge.addEventHandler { [weak self] event in self?.browser.receive(event) }
+        chromeBridge.addEventHandler { [weak self] event in self?.chromeSettings.receive(event) }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
             statusMenu.needsMoveToApplications = true
@@ -214,7 +213,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }
-            window.chromeIncognitoAccess = { [weak self] in self?.browser.incognitoAccess ?? [:] }
             window.onQueryRulesChange = { [weak self] rules in
                 self?.libraryWindow?.model.enabledQueryRules = rules
                 // Page identity may have changed for the current Chrome tab.

@@ -13,8 +13,8 @@ final class ChromeBridge {
     private var server: BridgeServer?
     private var eventsTask: Task<Void, Never>?
 
-    /// Called on the main actor after each event is logged.
-    var onEvent: ((BridgeEvent) -> Void)?
+    /// Subscribers called on the main actor, in the order added, after each event is logged.
+    private let handlers = BridgeEventHandlers()
 
     /// True when Webby runs from a translocated or unapproved location and can't register the bridge.
     private(set) var needsMoveToApplications = false
@@ -24,6 +24,16 @@ final class ChromeBridge {
 
     /// What the last launch did with the bundled extension, for the Chrome settings.
     private(set) var extensionInstall: BundledExtensionInstaller.Outcome?
+
+    /// Adds a subscriber for every later bridge event. Handlers run in the order added.
+    @discardableResult
+    func addEventHandler(_ handler: @escaping @MainActor (BridgeEvent) -> Void) -> BridgeEventHandlers.Token {
+        handlers.add(handler)
+    }
+
+    func removeEventHandler(_ token: BridgeEventHandlers.Token) {
+        handlers.remove(token)
+    }
 
     func start() {
         installExtension()
@@ -175,7 +185,7 @@ final class ChromeBridge {
         eventsTask = Task { [weak self] in
             for await event in events {
                 self?.log(event)
-                self?.onEvent?(event)
+                self?.handlers.deliver(event)
             }
         }
     }

@@ -21,9 +21,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let queryRules = QueryRulesSettingsModel()
     private var keyMonitor: Any?
 
-    /// Incognito access per connected Chrome profile, shown in General.
-    var chromeIncognitoAccess: @MainActor () -> [String: Bool] = { [:] }
-
     init(
         settings: SettingsStore,
         notes: NotesController,
@@ -134,7 +131,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             general.hotkeyFailed = status.isFailure
         }
         general.accessibilityTrusted = permission.isTrusted
-        general.chromeIncognito = GeneralSettingsModel.incognitoSummary(chromeIncognitoAccess())
         if case .readOnly(let problem) = settings.mode {
             general.storageProblem = SettingsError.readOnly(problem).localizedDescription
         } else {
@@ -282,16 +278,6 @@ final class GeneralSettingsModel {
     var storedShortcutProblem: String?
     var storageProblem: String?
     var accessibilityTrusted = false
-    /// "Allowed", "Not allowed", "Differs by profile", or nil when no profile is connected.
-    var chromeIncognito: String?
-
-    static func incognitoSummary(_ access: [String: Bool]) -> String? {
-        let values = Set(access.values)
-        guard let only = values.first else { return nil }
-        guard values.count == 1 else { return "Differs by profile" }
-        return only ? "Allowed" : "Not allowed"
-    }
-
     @ObservationIgnored var startRecording: @MainActor () -> Void = {}
     @ObservationIgnored var stopRecording: @MainActor () -> Void = {}
     @ObservationIgnored var resetShortcut: @MainActor () -> Void = {}
@@ -345,14 +331,6 @@ private struct GeneralSettingsView: View {
                         Button("Open System Settings") { model.openAccessibilitySettings() }
                     }
                 }
-            }
-
-            Section("Chrome") {
-                LabeledContent("Extension in Incognito") {
-                    Text(model.chromeIncognito ?? "Not connected")
-                }
-                note("Incognito windows show only notes for Chrome itself. Web notes never appear there.",
-                     failure: false)
             }
 
             if let problem = model.storageProblem {
