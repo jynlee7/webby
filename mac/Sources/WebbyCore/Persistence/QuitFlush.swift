@@ -141,8 +141,9 @@ public final class QuitFlushCoordinator: @unchecked Sendable {
 
     /// Resolves the current state. Returns true when the app may terminate.
     ///
-    /// Sequential calls after a resolved result reuse that result, so a second
-    /// call cannot run the fallback twice unless a new mutation arrives.
+    /// Sequential calls after a successful result reuse it, so a second call cannot
+    /// run the fallback twice unless a new mutation arrives. A failure is not reused:
+    /// the next request tries to save again, because the disk may have recovered.
     public func handleTermination() async -> Bool {
         if let cached = cachedResult() {
             return cached.terminate
@@ -246,7 +247,7 @@ public final class QuitFlushCoordinator: @unchecked Sendable {
 
     private func finish(_ outcome: QuitOutcome, terminate: Bool) {
         stateLock.lock()
-        lastResult = CachedResult(outcome: outcome, terminate: terminate)
+        lastResult = terminate ? CachedResult(outcome: outcome, terminate: true) : nil
         stateLock.unlock()
         onOutcome?(outcome)
     }

@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 notes: notes,
                 openTabs: openTabs,
                 currentAppBundleID: { [weak self] in self?.monitor.app?.bundleID },
-                currentContext: { [weak self] in self?.monitor.context },
+                currentContext: { [weak self] in self?.monitor.attachContext },
                 enabledQueryRules: settingsStore.settings.enabledQueryRules
             )
         }
