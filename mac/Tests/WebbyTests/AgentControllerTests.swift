@@ -746,3 +746,67 @@ private func temporaryConversations(clock: TestClock = TestClock(fixedNow)) thro
         #expect(deleted == [[summary.id]])
     }
 }
+
+@MainActor
+@Suite struct AgentChromePageScopeTests {
+    private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+
+    private func window(_ url: String) -> BridgeWindow {
+        BridgeWindow(
+            id: 1, focused: true, incognito: false,
+            bounds: BridgeWindowBounds(left: 20, top: 40, width: 1000, height: 700),
+            tabs: [BridgeTab(id: 1, index: 0, active: true, url: url, title: "Synthetic tab")]
+        )
+    }
+
+    @Test func theScopeFollowsTheFocusedChromePage() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WebbyAgentChrome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NoteStore(fileURL: directory.appendingPathComponent("notes.json"))
+        let page = try #require(PageURL(string: "https://leetcode.com/problems/two-sum/description", queryRules: QueryRules.builtIns))
+        let other = try #require(PageURL(string: "https://github.com/jynlee7", queryRules: QueryRules.builtIns))
+        #expect(store.add(Note(anchor: .web(page: page, scope: .prefix(path: "/problems/two-sum")), text: "Two-sum: one-pass hash map", frame: NoteFrame(), placement: .screen)))
+        #expect(store.add(Note(anchor: .web(page: other, scope: .site), text: "GITHUB-SENTINEL repo notes", frame: NoteFrame(), placement: .screen)))
+
+        let permission = AccessibilityPermission()
+        let browser = BrowserMonitor(sessionIdentity: { "100@1" })
+        let monitor = ContextMonitor(permission: permission, browser: browser)
+        monitor.app = ContextMonitor.FrontApp(bundleID: BrowserSession.bundleID, pid: 1, name: "Google Chrome")
+        monitor.windowFrame = CGRect(x: 20, y: 40, width: 1000, height: 700)
+        let notes = NotesController(store: store, monitor: monitor, permission: permission, themes: .fallback)
+        func send(_ message: ExtensionMessage) {
+            browser.receive(.message(connection: 1, profile: profile, message))
+        }
+        send(.hello(BridgeHello(profile: profile, extVersion: "1", incognitoAllowed: false)))
+        send(.inventory(windows: [window("https://leetcode.com/problems/two-sum/description")]))
+
+        let transport = ScriptedTransport([answer("A one-pass hash map [N1].")])
+        let agent = AgentController(notes: notes, dependencies: AgentController.Dependencies(
+            credentials: StubCredentials(key: "sk-test-synthetic"),
+            makeTransport: { KeyedClaudeTransport(base: transport, apiKey: $0) },
+            currentContext: { monitor.context },
+            model: { "synthetic-model" },
+            queryRules: { [] },
+            now: { fixedNow }
+        ))
+
+        #expect(agent.scopeTitle == "leetcode.com")
+        agent.draft = "What did I decide about two-sum?"
+        agent.ask()
+        for _ in 0..<2_000 where agent.isRunning { try? await Task.sleep(nanoseconds: 1_000_000) }
+
+        let body = String(decoding: try #require(transport.requests.first).body, as: UTF8.self)
+        #expect(body.contains("Two-sum: one-pass hash map"))
+        #expect(body.contains("from=\\\"leetcode.com/problems/two-sum/description\\\""))
+        #expect(!body.contains("GITHUB-SENTINEL"))
+        #expect(agent.turns.first?.citations.map(\.alias) == ["N1"])
+
+        // Moving the tab to another site makes the next question ask first.
+        send(.tabUpdated(tabId: 1, url: "https://github.com/jynlee7", title: nil))
+        agent.draft = "And my repo?"
+        agent.ask()
+        #expect(agent.scopePrompt?.currentTitle == "github.com")
+        #expect(transport.requests.count == 1)
+    }
+}
