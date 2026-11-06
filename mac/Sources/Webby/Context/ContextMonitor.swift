@@ -30,6 +30,27 @@ final class ContextMonitor {
         return Context(appBundleID: app.bundleID)
     }
 
+    /// Whether Webby itself is the active app. Tests replace it.
+    var isWebbyActive: @MainActor () -> Bool = { NSApp?.isActive ?? false }
+
+    /// The context the Library's "Attach to Current" uses.
+    ///
+    /// Opening the Library makes Webby active, and Chrome then reports no focused
+    /// window, so the live context loses its page. While Webby is active this keeps the
+    /// page verified last, but only while the same Chrome session still shows it as the
+    /// active tab of the same window (see `BrowserSession.context(continuing:queryRules:)`).
+    /// The page is read again on each call, so an attach never uses a stale one.
+    var attachContext: Context? {
+        let live = context
+        guard live?.page == nil, live?.appBundleID == BrowserSession.bundleID,
+              isWebbyActive(), let browser, let tab = lastVerifiedPage?.tab
+        else { return live }
+        return browser.context(continuing: tab) ?? live
+    }
+
+    /// The last page context verified while Chrome, not Webby, was in front.
+    private var lastVerifiedPage: Context?
+
     private let permission: AccessibilityPermission
     private let browser: BrowserMonitor?
     private var activationObserver: NSObjectProtocol?
@@ -57,7 +78,7 @@ final class ContextMonitor {
         self.browser = browser
         browser?.onChange = { [weak self] in
             guard let self, self.app?.bundleID == BrowserSession.bundleID else { return }
-            self.onChange?()
+            self.changed()
         }
     }
 
@@ -114,7 +135,7 @@ final class ContextMonitor {
         stopObservingWindows()
         if let front { observeWindows(of: front.pid) }
         windowFrame = readFocusedWindowFrame()
-        onChange?()
+        changed()
     }
 
     private func refreshWindowFrame(force: Bool) {
@@ -124,6 +145,18 @@ final class ContextMonitor {
         let frame = readFocusedWindowFrame()
         guard force || frame != windowFrame else { return }
         windowFrame = frame
+        changed()
+    }
+
+    /// Records the verified page, then notifies. While Webby is active, Chrome's
+    /// missing focus says nothing about its page, so the record is kept as it was.
+    /// Otherwise any context without a page (another app, a private or unverified
+    /// window) clears it.
+    private func changed() {
+        if !isWebbyActive() {
+            let live = app?.bundleID == BrowserSession.bundleID ? context : nil
+            lastVerifiedPage = live?.page != nil ? live : nil
+        }
         onChange?()
     }
 
