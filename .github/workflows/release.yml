@@ -129,7 +129,7 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.WEBBY_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
-          key="$RUNNER_TEMP/notary.p8"
+          key="$RUNNER_TEMP/AuthKey_$NOTARY_KEY_ID.p8"
           printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$key"
           chmod 0600 "$key"
           ditto -c -k --sequesterRsrc --keepParent dist/Webby.app "$RUNNER_TEMP/notarize.zip"
@@ -192,4 +192,4 @@ jobs:
         if: always()
         run: |
           if [[ -n "${WEBBY_KEYCHAIN:-}" ]]; then security delete-keychain "$WEBBY_KEYCHAIN" || true; fi
-          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP"/AuthKey_*.p8

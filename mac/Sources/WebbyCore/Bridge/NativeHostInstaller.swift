@@ -80,8 +80,11 @@ public struct NativeHostInstaller: Sendable {
     }
 
     public func inspect() -> Inspection {
-        guard FileManager.default.fileExists(atPath: manifestURL.path) else { return .missing }
-        guard let data = try? Data(contentsOf: manifestURL),
+        // attributesOfItem does not follow a final symlink, so a linked manifest is never read.
+        guard let type = (try? FileManager.default.attributesOfItem(atPath: manifestURL.path))?[.type] as? FileAttributeType
+        else { return .missing }
+        guard type == .typeRegular,
+              let data = try? Data(contentsOf: manifestURL),
               let manifest = try? JSONDecoder().decode(HostManifest.self, from: data),
               manifest.name == BridgeConstants.hostName,
               manifest.type == "stdio",

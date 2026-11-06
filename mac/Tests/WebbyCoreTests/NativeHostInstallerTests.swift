@@ -291,3 +291,16 @@ func approvedLaunchBacksUpAndRewritesABrokenManifest(_ state: String) throws {
     #expect(try Data(contentsOf: installer.manifestURL) == Data("old".utf8))
     #expect(!FileManager.default.fileExists(atPath: installer.backupURL.path))
 }
+
+@Test func symlinkedManifestIsMalformedAndNeverFollowed() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let chrome = try makeChromeFolder(in: root)
+    let installer = NativeHostInstaller(bridgeExecutableURL: try makeBridge(in: root), chromeSupportDirectory: chrome, policy: releasePolicy(root))
+    try FileManager.default.createDirectory(at: installer.manifestURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let elsewhere = root.appendingPathComponent("elsewhere.json")
+    try NativeHostInstaller.manifest(bridgePath: installer.bridgeExecutableURL.path).write(to: elsewhere)
+    try FileManager.default.createSymbolicLink(at: installer.manifestURL, withDestinationURL: elsewhere)
+
+    #expect(installer.inspect() == .malformed)
+}
