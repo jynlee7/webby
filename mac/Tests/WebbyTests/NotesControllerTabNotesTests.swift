@@ -297,4 +297,29 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         let pageNote = Note(anchor: .app(bundleID: "com.apple.TextEdit"), frame: NoteFrame(), placement: .window)
         #expect(LibraryNotePresentation.tabDetachEffect(for: pageNote, to: nil) == nil)
     }
+
+    @Test func theLibraryDemotesAnAnchoredNoteToTheLastVerifiedTab() throws {
+        let h = harness()
+        defer { h.close() }
+        let model = LibraryModel(controller: h.controller, openTabs: h.feed)
+        hello(h)
+        h.send(.inventory(windows: [window("https://a.example/docs")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+        #expect(model.lastTabTitle(for: note) == "Tab 1")
+        model.attachToLastTab(id: note.id)
+        let demoted = try #require(h.store.note(id: note.id))
+        #expect(demoted.tab?.tabID == 1)
+        #expect(demoted.anchor == note.anchor)
+        #expect(demoted.revision == note.revision + 1)
+        #expect(model.lastTabTitle(for: demoted) == nil) // already on a tab
+
+        // A tab from an earlier Chrome run is never offered.
+        let inbox = Note(anchor: .app(bundleID: "com.apple.TextEdit"), frame: NoteFrame(), placement: .window)
+        #expect(h.store.add(inbox))
+        h.controller.chromeTerminated(session: "100@1")
+        h.session.value = "200@2"
+        hello(h, connection: 2)
+        #expect(model.lastTabTitle(for: inbox) == nil)
+    }
 }

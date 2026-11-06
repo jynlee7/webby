@@ -104,8 +104,14 @@ extension NotesController {
     /// The last verified tab, if it is still open in the same Chrome run and profile as
     /// the note's binding. Used by the Library's Reattach.
     func reattachTarget(for id: UUID) -> (ref: TabRef, tab: BridgeTab)? {
-        guard let binding = store.note(id: id)?.tab, let ref = tabs.lastVerifiedTab,
-              ref.profile == binding.profile, ref.session == tabs.session,
+        guard let binding = store.note(id: id)?.tab, let target = lastVerifiedLiveTab(),
+              target.ref.profile == binding.profile else { return nil }
+        return target
+    }
+
+    /// The last verified tab, if it is still open in the running Chrome.
+    func lastVerifiedLiveTab() -> (ref: TabRef, tab: BridgeTab)? {
+        guard let ref = tabs.lastVerifiedTab, ref.session == tabs.session,
               let live = tabs.liveTab(ref) else { return nil }
         return (ref, live)
     }

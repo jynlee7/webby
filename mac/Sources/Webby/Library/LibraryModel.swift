@@ -850,6 +850,18 @@ final class LibraryModel {
         return URL(string: target.tab.url)?.host() ?? "Current Tab"
     }
 
+    /// The title of the tab an anchored note can be demoted to ("Just this tab"), or nil.
+    func lastTabTitle(for note: Note) -> String? {
+        guard note.tab == nil, note.anchor != nil, let target = controller.lastVerifiedLiveTab() else { return nil }
+        if !target.tab.title.isEmpty { return target.tab.title }
+        return URL(string: target.tab.url)?.host() ?? "Current Tab"
+    }
+
+    func attachToLastTab(id: UUID) {
+        controller.attachLibraryNoteToLastTab(id: id)
+        refresh()
+    }
+
     func reattachToLastTab(id: UUID) {
         controller.reattachToLastTab(id)
         refresh()

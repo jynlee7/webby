@@ -240,6 +240,17 @@ final class NotesController {
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
     }
 
+    /// Library demote: binds an anchored note to the last verified Chrome tab and keeps
+    /// its anchor, so its workspace doesn't move. A content edit, like the overlay's.
+    func attachLibraryNoteToLastTab(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt == nil, note.tab == nil, note.anchor != nil,
+              let target = lastVerifiedLiveTab(),
+              let binding = TabBindingReconciler.binding(for: target.ref, tab: target.tab) else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(id: id, change: .attachment(anchor: note.anchor, tab: binding), now: now())
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
     /// Replaces page anchors in one mutation and one queued save, for converting notes
     /// off a query key. Returns the number of notes changed; nothing changes while the
     /// store is read-only or an import owns it.

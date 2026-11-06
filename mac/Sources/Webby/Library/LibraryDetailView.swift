@@ -701,6 +701,14 @@ private struct NoteDetailContent: View {
                         }
                     }
                 }
+                if let tabTitle = model.lastTabTitle(for: note) {
+                    Divider()
+                    // Demote: the note keeps its anchor and follows the last Chrome tab.
+                    Button("Just This Tab: “\(tabTitle)”") {
+                        draft.commit(to: model)
+                        model.attachToLastTab(id: note.id)
+                    }
+                }
             }
             .fixedSize()
             .disabled(!canEdit)
