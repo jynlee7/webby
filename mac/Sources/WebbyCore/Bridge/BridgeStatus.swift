@@ -68,12 +68,10 @@ public struct BridgeStatus: Equatable, Sendable {
         case let .disconnected(connection, _):
             connections.removeAll { $0.connection == connection }
 
-        case let .dropped(connection, _):
-            if let connection {
-                connections.removeAll { $0.connection == connection }
-            } else {
-                connections.removeAll()
-            }
+        case .dropped:
+            // A dropped message or refused connection does not close a socket, so it is
+            // not a disconnect. Status follows .connected and .disconnected only.
+            break
         }
     }
 

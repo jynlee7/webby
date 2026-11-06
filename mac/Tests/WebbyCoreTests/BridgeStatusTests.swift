@@ -66,24 +66,31 @@ private func message(_ connection: Int, _ profile: String, _ hello: BridgeHello)
     #expect(status.connections[0].hasHello)
 }
 
-@Test func droppedWithoutAConnectionClearsEverything() {
+@Test func aDroppedMessageKeepsTheOpenConnection() {
     var status = BridgeStatus()
     status.receive(.connected(connection: 1))
     status.receive(.connected(connection: 2))
+    status.receive(message(2, testProfile, hello(testProfile, version: "1.0.0")))
 
-    status.receive(.dropped(connection: nil, reason: "too many bridges"))
+    status.receive(.dropped(connection: 2, reason: "invalid message"))
 
-    #expect(status.connections.isEmpty)
+    #expect(status.connections.map(\.connection) == [1, 2])
+    #expect(status.connections[1].hasHello)
+
+    // The socket is still open, so a later hello must update the same entry.
+    status.receive(message(2, testProfile, hello(testProfile, version: "1.1.0")))
+    #expect(status.connections[1].extensionVersion == "1.1.0")
 }
 
-@Test func droppedWithAConnectionRemovesOnlyThatOne() {
+@Test func aRefusedConnectionKeepsExistingStatus() {
     var status = BridgeStatus()
     status.receive(.connected(connection: 1))
-    status.receive(.connected(connection: 2))
+    status.receive(message(1, testProfile, hello(testProfile)))
 
-    status.receive(.dropped(connection: 2, reason: "write failed"))
+    status.receive(.dropped(connection: nil, reason: "refused a connection: too many bridges"))
 
     #expect(status.connections.map(\.connection) == [1])
+    #expect(status.connections[0].hasHello)
 }
 
 @Test func connectionsAreSortedByIDAcrossProfiles() {
