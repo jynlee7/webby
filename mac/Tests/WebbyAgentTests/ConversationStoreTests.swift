@@ -313,6 +313,24 @@ private final class RetentionClock: @unchecked Sendable {
     #expect(loaded.aliases.entries[0].retired)
 }
 
+@Test func redactionLeavesACorruptConversationAlone() async throws {
+    let directory = temporaryDirectory()
+    let store = ConversationStore(directory: directory)
+    let manager = FileManager.default
+    let id = agentUUID(103)
+    let garbled = Data("{ not json".utf8)
+    try garbled.write(to: store.fileURL(for: id))
+
+    let changed = try await store.redactNote(agentUUID(1))
+
+    #expect(changed == 0)
+    // No empty conversation is written where the unreadable one was.
+    #expect(!manager.fileExists(atPath: store.fileURL(for: id).path))
+    let names = try manager.contentsOfDirectory(atPath: directory.path)
+    let backup = try #require(names.first { $0.hasPrefix(id.uuidString.lowercased() + ".corrupt-") })
+    #expect(try Data(contentsOf: directory.appendingPathComponent(backup)) == garbled)
+}
+
 private final class BlockingWriter: @unchecked Sendable {
     private let lock = NSLock()
     private let started = DispatchSemaphore(value: 0)
