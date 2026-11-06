@@ -7,7 +7,7 @@ extension ResolvedTheme {
         return palette[index]
     }
 
-    /// An opaque fill for body text when artwork covers the surface: the selected
+    /// An opaque fill for text when artwork covers the surface: the selected
     /// palette color over the surface over a black or white page. These are the
     /// composites `ContrastReport` and the resolver measure, so text on this fill
     /// meets the floor whatever the artwork looks like (design.md principle 2).

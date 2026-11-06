@@ -201,7 +201,16 @@ struct NoteView: View {
         }
         .padding(.horizontal, 6)
         .frame(height: controlRowHeight)
-        .background(model.collapsed ? Color.clear : Color(theme.header.fill))
+        .background {
+            if surface.image != nil {
+                // Titles and collapsed first lines need the same measured backing
+                // as body text. Transparent header fills otherwise expose artwork.
+                Color(theme.textBacking(page: scheme == .dark ? .dark : .light))
+                    .allowsHitTesting(false)
+            } else {
+                model.collapsed ? Color.clear : Color(theme.header.fill)
+            }
+        }
     }
 
     @ViewBuilder
