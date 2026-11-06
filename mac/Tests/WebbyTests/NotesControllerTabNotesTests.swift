@@ -281,4 +281,20 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         newTab.tab?.lastURL = "chrome://newtab/"
         #expect(model.promotions(for: newTab).isEmpty)
     }
+
+    /// The Library used to clear a tab binding through "Save Anchor" (kind None) or
+    /// "Attach to Current" and drop the note into the Inbox without a word.
+    @Test func takingANoteOffItsTabInTheLibraryNamesTheEffect() throws {
+        let binding = TabBinding(browser: BrowserSession.bundleID, profile: profile, session: "100@1", tabID: 1,
+                                 windowID: 1, index: 0, lastURL: "https://a.example/docs?token=secret", lastTitle: "Docs")
+        let tabNote = Note(tab: binding, frame: NoteFrame(), placement: .window)
+        let toInbox = try #require(LibraryNotePresentation.tabDetachEffect(for: tabNote, to: nil))
+        #expect(toInbox.contains("Inbox"))
+        #expect(toInbox.contains("Docs"))
+        #expect(!toInbox.contains("secret"))
+        let toApp = try #require(LibraryNotePresentation.tabDetachEffect(for: tabNote, to: .app(bundleID: "com.apple.TextEdit")))
+        #expect(toApp.contains("com.apple.TextEdit"))
+        let pageNote = Note(anchor: .app(bundleID: "com.apple.TextEdit"), frame: NoteFrame(), placement: .window)
+        #expect(LibraryNotePresentation.tabDetachEffect(for: pageNote, to: nil) == nil)
+    }
 }

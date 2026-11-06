@@ -91,6 +91,17 @@ enum LibraryNotePresentation {
         return "Tab closed"
     }
 
+    /// What taking a tab note off its tab does, for the confirmation. Nil when the note
+    /// has no tab, so nothing needs confirming.
+    static func tabDetachEffect(for note: Note, to anchor: WebbyCore.Anchor?) -> String? {
+        guard let binding = note.tab else { return nil }
+        let place = tabPlace(binding)
+        guard let anchor else {
+            return "The note stops following “\(place)” and moves to the Inbox. Its text doesn't change."
+        }
+        return "The note stops following “\(place)” and sticks to \(scopeDescription(anchor)) instead. Its text doesn't change."
+    }
+
     static func tabPlace(_ binding: TabBinding) -> String {
         if let title = binding.lastTitle, !title.isEmpty { return title }
         if let host = URL(string: binding.lastURL)?.host(), !host.isEmpty { return host }
@@ -143,8 +154,17 @@ struct LibraryDetailView: View {
 
 private enum AnchorKind: String, CaseIterable, Hashable {
     case none
+    /// Bound to a Chrome tab ("Just this tab"); offered only for tab notes.
+    case tab
     case app
     case web
+}
+
+/// An attachment change that would take a note off its tab, waiting for confirmation.
+private struct PendingTabDetach: Identifiable {
+    let id = UUID()
+    let anchor: WebbyCore.Anchor?
+    let message: String
 }
 
 private enum WebScopeKind: String, CaseIterable, Hashable {
@@ -188,6 +208,7 @@ private struct NoteDetailContent: View {
     @State private var prefixPath: String
     @State private var workspaceChoice: WorkspaceChoice
     @State private var validationMessage: String?
+    @State private var pendingTabDetach: PendingTabDetach?
     @FocusState private var editorFocused: Bool
 
     init(note: Note, model: LibraryModel, actions: LibraryAnchorActions, draft: LibraryTextDraft) {
@@ -228,6 +249,8 @@ private struct NoteDetailContent: View {
             _prefixPath = State(initialValue: "")
         }
 
+        if note.tab != nil { _anchorKind = State(initialValue: .tab) }
+
         _workspaceChoice = State(
             initialValue: note.workspaceOverride.map(WorkspaceChoice.record) ?? .automatic
         )
@@ -265,6 +288,7 @@ private struct NoteDetailContent: View {
             webScopeKind = .page
             prefixPath = ""
         }
+        if note.tab != nil { anchorKind = .tab }
     }
 
     private var isTrashed: Bool { note.trashedAt != nil }
@@ -300,6 +324,23 @@ private struct NoteDetailContent: View {
         }
         .onChange(of: model.detailFocusRequest) { _, _ in
             focusIfRouted()
+        }
+        .onChange(of: note.tab == nil) { _, _ in
+            loadAnchorFields()
+        }
+        .confirmationDialog(
+            "Stop following this tab?",
+            isPresented: Binding(get: { pendingTabDetach != nil }, set: { if !$0 { pendingTabDetach = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingTabDetach
+        ) { pending in
+            Button(pending.anchor == nil ? "Move to Inbox" : "Stop Following Tab") {
+                draft.commit(to: model)
+                model.attach(id: note.id, anchor: pending.anchor, workspace: selectedWorkspaceID)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text(pending.message)
         }
         .onChange(of: note.anchor) { _, _ in
             // Attach or an external edit replaced the saved anchor; the editor must
@@ -529,6 +570,9 @@ private struct NoteDetailContent: View {
                 .font(.headline)
 
             Picker("Anchor type", selection: $anchorKind) {
+                if note.tab != nil {
+                    Text("This tab").tag(AnchorKind.tab)
+                }
                 Text("None").tag(AnchorKind.none)
                 Text("Mac app").tag(AnchorKind.app)
                 Text("Web page").tag(AnchorKind.web)
@@ -617,7 +661,7 @@ private struct NoteDetailContent: View {
                 Button("Save Anchor") {
                     saveAnchor()
                 }
-                .disabled(!canEdit)
+                .disabled(!canEdit || anchorKind == .tab)
             }
         }
     }
@@ -650,8 +694,7 @@ private struct NoteDetailContent: View {
                 ForEach(scopes, id: \.title) { scope in
                     Button(scope.title) {
                         let applied = actions.attachCurrentScope(titled: scope.title) { anchor in
-                            draft.commit(to: model)
-                            model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+                            attach(anchor)
                         }
                         if !applied {
                             validationMessage = "The page in front changed. Open the menu again to attach to it."
@@ -697,6 +740,9 @@ private struct NoteDetailContent: View {
         validationMessage = nil
         let result: AnchorValidation
         switch anchorKind {
+        case .tab:
+            // The tab section moves a tab note; nothing to save here.
+            return
         case .none:
             result = .valid(nil)
         case .app:
@@ -733,9 +779,19 @@ private struct NoteDetailContent: View {
         case .invalid(let message):
             validationMessage = message
         case .valid(let anchor):
-            draft.commit(to: model)
-            model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+            attach(anchor)
         }
+    }
+
+    /// Attaches the note, first asking when that takes it off its tab: a tab note must
+    /// never land in the Inbox, or on a page, without saying so.
+    private func attach(_ anchor: WebbyCore.Anchor?) {
+        if let message = LibraryNotePresentation.tabDetachEffect(for: note, to: anchor) {
+            pendingTabDetach = PendingTabDetach(anchor: anchor, message: message)
+            return
+        }
+        draft.commit(to: model)
+        model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
     }
 
     private func appStateDescription(_ state: LibraryAppAvailabilityState) -> String {
