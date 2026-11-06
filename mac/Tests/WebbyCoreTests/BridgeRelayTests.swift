@@ -234,3 +234,78 @@ private func largeInventoryPayload() throws -> Data {
     // than after each stalled write times out.
     #expect(await eventually(timeout: 5) { chrome.hasEnded }, "relay did not exit after Chrome closed stdin")
 }
+
+/// Tab notes follow `tabReplaced` by tab ID. A replacement that happens while Webby is
+/// down is replayed before the inventory that already shows the new ID; one newer than
+/// that inventory would contradict it, so it isn't.
+@Test func relayReplaysReplacementsTheLatestInventoryReflects() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let socketURL = directory.appendingPathComponent("bridge.sock")
+    let chrome = try RelayHarness(socketURL: socketURL)
+
+    let replaced = try ExtensionMessage.tabReplaced(added: 30, removed: 11).encoded()
+    let after = try ExtensionMessage.inventory(windows: [
+        BridgeWindow(id: 1, focused: true, incognito: false, tabs: [
+            BridgeTab(id: 30, index: 0, active: true, url: "https://example.com/11", title: "Tab 11"),
+        ]),
+    ]).encoded()
+    let tooNew = try ExtensionMessage.tabReplaced(added: 40, removed: 30).encoded()
+    try chrome.fromChrome(helloPayload(), inventoryPayload(), replaced, after, tooNew)
+    try await Task.sleep(nanoseconds: 300_000_000)
+
+    let server = BridgeServer(socketURL: socketURL)
+    let log = EventLog(server)
+    try server.start()
+    defer { server.stop() }
+    #expect(await eventually { log.messages.count == 3 })
+    #expect(log.messages.map(\.message) == [
+        try ExtensionMessage.decode(helloPayload()),
+        try ExtensionMessage.decode(replaced),
+        try ExtensionMessage.decode(after),
+    ])
+    // The newer replacement wasn't covered, so the extension is asked for a fresh snapshot.
+    #expect(try AppCommand.decode(await chrome.toChrome.next()) == .resend)
+    #expect(await chrome.closeInput())
+}
+
+/// Greptile 4488242875: the relay used to forget replacements once it had queued a
+/// replay, so a connection that closed before those writes reached the app lost them.
+@Test func relayKeepsReplacementsForTheNextConnection() async throws {
+    let directory = try makeSocketDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let socketURL = directory.appendingPathComponent("bridge.sock")
+    let chrome = try RelayHarness(socketURL: socketURL)
+
+    let replaced = try ExtensionMessage.tabReplaced(added: 30, removed: 11).encoded()
+    let after = try ExtensionMessage.inventory(windows: [
+        BridgeWindow(id: 1, focused: true, incognito: false, tabs: [
+            BridgeTab(id: 30, index: 0, active: true, url: "https://example.com/11", title: "Tab 11"),
+        ]),
+    ]).encoded()
+    try chrome.fromChrome(helloPayload(), inventoryPayload(), replaced, after)
+    try await Task.sleep(nanoseconds: 300_000_000)
+
+    let expected = [
+        try ExtensionMessage.decode(helloPayload()),
+        try ExtensionMessage.decode(replaced),
+        try ExtensionMessage.decode(after),
+    ]
+    var server = BridgeServer(socketURL: socketURL)
+    var log = EventLog(server)
+    try server.start()
+    #expect(await eventually { log.messages.count == 3 })
+    #expect(log.messages.map(\.message) == expected)
+    #expect(try AppCommand.decode(await chrome.toChrome.next()) == .resend)
+
+    // This connection goes away; the next one replays the same replacement again.
+    server.stop()
+    try await Task.sleep(nanoseconds: 300_000_000)
+    server = BridgeServer(socketURL: socketURL)
+    log = EventLog(server)
+    try server.start()
+    defer { server.stop() }
+    #expect(await eventually(timeout: 5) { log.messages.count == 3 })
+    #expect(log.messages.map(\.message) == expected)
+    #expect(await chrome.closeInput())
+}

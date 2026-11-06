@@ -89,11 +89,23 @@ public struct BrowserSession: Sendable {
               !window.incognito, let bounds = window.bounds,
               Self.matches(bounds, focusedFrame),
               window.tabs.filter(\.active).count == 1,
-              let tab = window.tabs.first(where: \.active),
-              let page = PageURL(string: tab.url, queryRules: queryRules) else { return fallback }
-        return Context(appBundleID: Self.bundleID, page: page, tab: TabRef(
-            browser: Self.bundleID, profile: key, session: identity, tabID: tab.id, windowID: window.id
-        ))
+              let tab = window.tabs.first(where: \.active) else { return fallback }
+        // A verified tab without a page identity (chrome://newtab, a loading tab) still
+        // reports the tab, so "Just this tab" can be offered for it.
+        return Context(
+            appBundleID: Self.bundleID,
+            page: PageURL(string: tab.url, queryRules: queryRules),
+            tab: TabRef(browser: Self.bundleID, profile: key, session: identity, tabID: tab.id, windowID: window.id)
+        )
+    }
+
+    /// The last reported state of a non-incognito tab of the current identity, used to
+    /// create a binding. Its `index` is Chrome's reported position in the window.
+    public func tab(_ ref: TabRef) -> BridgeTab? {
+        guard ref.browser == Self.bundleID, ref.session == identity, let profile = profiles[ref.profile] else { return nil }
+        return profile.windows
+            .first { $0.id == ref.windowID && !$0.incognito }?
+            .tabs.first { $0.id == ref.tabID }
     }
 
     private static func matches(_ bounds: BridgeWindowBounds, _ frame: CGRect) -> Bool {

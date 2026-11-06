@@ -51,6 +51,7 @@ private func send(_ message: ExtensionMessage, to browser: BrowserMonitor) {
             "/problems/two-sum and below",
             "/problems and below",
             "Whole site",
+            "Just this tab",
             "This app",
         ])
         #expect(model.selectedScope == 0)

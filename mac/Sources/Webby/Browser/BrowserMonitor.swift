@@ -50,6 +50,12 @@ final class BrowserMonitor {
         return session.context(focusedFrame: focusedFrame, queryRules: queryRules())
     }
 
+    /// The bridge's last report for a live, non-incognito tab of the running Chrome.
+    func tab(_ ref: TabRef) -> BridgeTab? {
+        session.setIdentity(sessionIdentity())
+        return session.tab(ref)
+    }
+
     /// The running Chrome's `"<pid>@<launch date>"`, or nil when Chrome isn't running.
     static func runningChromeSession() -> String? {
         let session = OpenTabsFeed.runningChromeSession()

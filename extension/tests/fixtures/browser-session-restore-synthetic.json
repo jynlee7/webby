@@ -1,0 +1,91 @@
+[
+  {
+    "type": "hello",
+    "v": 1,
+    "profile": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "extVersion": "1",
+    "incognitoAllowed": false
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 1,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 0,
+          "top": 25,
+          "width": 1200,
+          "height": 800
+        },
+        "tabs": [
+          {
+            "id": 10,
+            "index": 0,
+            "active": true,
+            "url": "https://a.example/docs?id=4",
+            "title": "Docs"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "active",
+    "windowId": 1,
+    "incognito": false,
+    "tab": {
+      "id": 10,
+      "index": 0,
+      "active": true,
+      "url": "https://a.example/docs?id=4",
+      "title": "Docs"
+    }
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 1,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 0,
+          "top": 25,
+          "width": 1200,
+          "height": 800
+        },
+        "tabs": [
+          {
+            "id": 10,
+            "index": 0,
+            "active": true,
+            "url": "https://a.example/docs?id=4",
+            "title": "Docs"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "focused": false,
+        "incognito": false,
+        "bounds": {
+          "left": 40,
+          "top": 65,
+          "width": 1000,
+          "height": 700
+        },
+        "tabs": [
+          {
+            "id": 20,
+            "index": 0,
+            "active": true,
+            "url": "https://b.example/pricing#annual",
+            "title": "Pricing"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,9 +1,60 @@
 /// Scope choices are derived from the current page, never from an incognito URL.
 public struct NoteScope: Equatable, Sendable {
-    public let title: String
-    public let anchor: Anchor
+    /// Where a note sticks: an anchor, or the reporting Chrome tab with no anchor.
+    public enum Choice: Equatable, Sendable {
+        case anchor(Anchor)
+        case thisTab
+    }
 
+    public static let thisTabTitle = "Just this tab"
+
+    public let title: String
+    public let choice: Choice
+
+    public init(title: String, anchor: Anchor) {
+        self.title = title
+        self.choice = .anchor(anchor)
+    }
+
+    public init(title: String, choice: Choice) {
+        self.title = title
+        self.choice = choice
+    }
+
+    /// The anchor this choice applies, or nil for "Just this tab".
+    public var anchor: Anchor? {
+        if case .anchor(let anchor) = choice { return anchor }
+        return nil
+    }
+
+    /// Page scopes, then "Just this tab" while a live, non-incognito tab reports the
+    /// context, then the app. A tab without a page identity starts on "Just this tab".
     public static func choices(for context: Context) -> [NoteScope] {
+        var choices = anchorChoices(for: context)
+        if context.tab != nil {
+            choices.insert(NoteScope(title: thisTabTitle, choice: .thisTab), at: choices.count - 1)
+        }
+        return choices
+    }
+
+    /// The choice a note uses in `context`: "Just this tab" while it is bound to a tab,
+    /// otherwise the choice its anchor matches.
+    public static func index(of note: Note, in choices: [NoteScope]) -> Int? {
+        if note.tab != nil { return choices.firstIndex { $0.choice == .thisTab } }
+        return index(of: note.anchor, in: choices)
+    }
+
+    /// The anchors a page or tab URL can be promoted to: This page, each parent path and
+    /// Whole site. Empty when the URL has no page identity, such as chrome://newtab.
+    public static func promotions(forURL url: String, queryRules: [QueryRule]) -> [NoteScope] {
+        guard let page = PageURL(string: url, queryRules: queryRules) else { return [] }
+        return anchorChoices(for: Context(appBundleID: BrowserSession.bundleID, page: page)).filter {
+            if case .anchor(.web) = $0.choice { return true }
+            return false
+        }
+    }
+
+    private static func anchorChoices(for context: Context) -> [NoteScope] {
         var choices: [NoteScope] = []
         if let page = context.page {
             choices.append(NoteScope(title: "This page", anchor: .web(page: page, scope: .page)))
@@ -27,6 +78,7 @@ public struct NoteScope: Equatable, Sendable {
     }
 
     private func covers(_ other: Anchor) -> Bool {
+        guard let anchor else { return false }
         switch (anchor, other) {
         case let (.app(current), .app(stored)):
             return current == stored

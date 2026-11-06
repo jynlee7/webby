@@ -200,7 +200,7 @@ struct LibraryContentView: View {
                     .width(min: 220, ideal: 320)
 
                     TableColumn("Scope") { item in
-                        Text(LibraryNotePresentation.scopeDescription(item.note.anchor))
+                        Text(scopeText(for: item.note))
                             .lineLimit(1)
                     }
                     .width(min: 150, ideal: 220)
@@ -270,9 +270,16 @@ struct LibraryContentView: View {
         return note.anchor == nil ? "tray" : "note.text"
     }
 
+    /// The scope column; Closed Tabs rows add their status.
+    private func scopeText(for note: Note) -> String {
+        let scope = LibraryNotePresentation.scopeDescription(for: note)
+        guard let status = LibraryNotePresentation.closedTabStatus(note.tab, outcome: model.restoreOutcome(note.id)) else { return scope }
+        return "\(scope) · \(status)"
+    }
+
     private func accessibilityLabel(for note: Note) -> String {
         var parts = [note.summaryLine() ?? "Empty note"]
-        parts.append(LibraryNotePresentation.scopeDescription(note.anchor))
+        parts.append(scopeText(for: note))
         if note.pinnedAt != nil { parts.append("Pinned") }
         if note.hidden { parts.append("Hidden here") }
         if note.excludedFromAgent { parts.append("Kept away from AI") }

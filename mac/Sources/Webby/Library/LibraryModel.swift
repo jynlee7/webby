@@ -837,6 +837,42 @@ final class LibraryModel {
         return controller.libraryNotes.first { $0.id == id }?.text != before
     }
 
+    /// The restore result for a Closed Tabs note, while Webby keeps running.
+    func restoreOutcome(_ id: UUID) -> RestoreOutcome? {
+        controller.restoreOutcome(id)
+    }
+
+    /// The title of the tab a closed or restored note can be reattached to: the last
+    /// verified Chrome tab, still open in the binding's profile and Chrome run.
+    func reattachTargetTitle(for id: UUID) -> String? {
+        guard let target = controller.reattachTarget(for: id) else { return nil }
+        if !target.tab.title.isEmpty { return target.tab.title }
+        return URL(string: target.tab.url)?.host() ?? "Current Tab"
+    }
+
+    /// The title of the tab an anchored note can be demoted to ("Just this tab"), or nil.
+    func lastTabTitle(for note: Note) -> String? {
+        guard note.tab == nil, note.anchor != nil, let target = controller.lastVerifiedLiveTab() else { return nil }
+        if !target.tab.title.isEmpty { return target.tab.title }
+        return URL(string: target.tab.url)?.host() ?? "Current Tab"
+    }
+
+    func attachToLastTab(id: UUID) {
+        controller.attachLibraryNoteToLastTab(id: id)
+        refresh()
+    }
+
+    func reattachToLastTab(id: UUID) {
+        controller.reattachToLastTab(id)
+        refresh()
+    }
+
+    /// The pages a tab note can be promoted to, from its tab's last address.
+    func promotions(for note: Note) -> [NoteScope] {
+        guard let url = note.tab?.lastURL else { return [] }
+        return NoteScope.promotions(forURL: url, queryRules: effectiveQueryRules)
+    }
+
     func attach(id: UUID, anchor: Anchor?, workspace: UUID?) {
         controller.setLibraryAttachment(id: id, anchor: anchor, workspace: workspace)
         refresh()
