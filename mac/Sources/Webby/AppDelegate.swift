@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permission: AccessibilityPermission!
     private var monitor: ContextMonitor!
     private var storedShortcutProblem: String?
+    private var chromeSettings: ChromeSettingsModel!
     private var skins: SkinStore!
     private var skinImporter: SkinImporter!
     private var pendingSkinURLs: [URL] = []
@@ -66,6 +67,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         hotkeys = Hotkeys { [weak self] in self?.notes.newNote() }
+        chromeSettings = ChromeSettingsModel(
+            bundledVersion: { [weak self] in self?.chromeBridge.bundledExtensionVersion() },
+            installedVersion: { [weak self] in self?.chromeBridge.installedExtensionVersion() },
+            extensionOutcome: { [weak self] in self?.chromeBridge.extensionInstall },
+            hostInspection: { [weak self] in self?.chromeBridge.inspectHost() ?? .missing }
+        )
+        chromeSettings.repairExtension = { [weak self] in
+            guard let self else { return }
+            self.chromeBridge.repairExtension()
+            self.chromeSettings.refresh()
+        }
+        chromeSettings.reRegisterHost = { [weak self] in
+            guard let self else { return }
+            self.chromeBridge.reRegisterHost()
+            self.chromeSettings.refresh()
+        }
         let shortcut = SettingsWindowController.shortcut(from: settingsStore.settings)
         if shortcut.storageString != KeyCombo(settingsStore.settings.newNoteHotkey)?.storageString {
             storedShortcutProblem = "The saved shortcut “\(settingsStore.settings.newNoteHotkey)” can't be used, so \(shortcut.displayString) is used instead."
@@ -82,11 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
-        // Both consumers see every event: Open Tabs lists tabs, the browser monitor
-        // follows the focused window's page for web notes.
+        // Every consumer sees every event: Open Tabs lists tabs, the browser monitor
+        // follows the focused window's page for web notes, and Chrome settings tracks
+        // connected profiles.
         chromeBridge.onEvent = { [weak self] event in
             self?.openTabs.receive(event)
             self?.browser.receive(event)
+            self?.chromeSettings.receive(event)
         }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
@@ -191,6 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 importSkin: { [weak self] in self?.skinImporter.chooseFiles() },
                 hotkeys: hotkeys,
                 permission: permission,
+                chrome: chromeSettings,
                 storedShortcutProblem: storedShortcutProblem
             )
             window.onClose = { [weak self] in self?.settingsClosed() }

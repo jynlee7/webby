@@ -81,6 +81,11 @@ public struct BundledExtensionInstaller: Sendable {
         self.operations = operations
     }
 
+    /// The version in the app's bundled payload, before any install decision.
+    public func bundledVersion() -> ExtensionVersion? {
+        readPayload(at: bundleDirectory)?.version
+    }
+
     /// The fixed staging name used by earlier launches; removed when found.
     var legacyStagingDirectory: URL { supportDirectory.appendingPathComponent(".Extension-staging", isDirectory: true) }
     var previousDirectory: URL { supportDirectory.appendingPathComponent(".Extension-previous", isDirectory: true) }
