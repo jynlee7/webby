@@ -54,7 +54,8 @@ final class NotesController {
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
     private let now: @MainActor () -> Date
-    private var themes: NoteThemes
+    private let skins: any NoteThemeSource
+    private let assets: SkinAssetCache
     private let latestSave: LatestSave
     private let logger = Logger(subsystem: Webby.bundleID, category: "notes")
     private lazy var autosave = AutosaveDebouncer { [weak self] in self?.saveNow() }
@@ -79,26 +80,74 @@ final class NotesController {
         store: NoteStore,
         monitor: ContextMonitor,
         permission: AccessibilityPermission,
-        themes: NoteThemes,
+        skins: any NoteThemeSource,
+        assets: SkinAssetCache,
         now: @escaping @MainActor () -> Date = { Date() }
     ) {
         self.store = store
         self.monitor = monitor
         self.permission = permission
-        self.themes = themes
+        self.skins = skins
+        self.assets = assets
         self.now = now
         latestSave = LatestSave(store.saveRequest())
     }
 
-    /// Applies a new look, for example after an accessibility display setting changed.
-    func updateThemes(_ themes: NoteThemes) {
-        guard themes != self.themes else { return }
-        self.themes = themes
-        for controller in windows.values {
-            controller.model.themes = themes
-            controller.themesChanged()
+    /// One look for every note and no skin artwork, for callers without a skin library.
+    convenience init(
+        store: NoteStore,
+        monitor: ContextMonitor,
+        permission: AccessibilityPermission,
+        themes: NoteThemes,
+        now: @escaping @MainActor () -> Date = { Date() }
+    ) {
+        self.init(
+            store: store,
+            monitor: monitor,
+            permission: permission,
+            skins: FixedNoteThemes(themes),
+            assets: SkinAssetCache(folder: { _ in nil }),
+            now: now
+        )
+    }
+
+    /// Re-reads every open note's look after a skin, accessibility or workspace change.
+    func refreshThemes() {
+        for (id, controller) in windows {
+            guard let note = store.note(id: id) else { continue }
+            applyAppearance(of: note, to: controller)
         }
         layout()
+    }
+
+    private func applyAppearance(of note: Note, to controller: NoteWindowController) {
+        let themes = skins.themes(for: note)
+        controller.model.appearance = note.appearance
+        guard themes != controller.model.themes else { return }
+        controller.model.themes = themes
+        controller.themesChanged()
+    }
+
+    /// Chooses a palette slot for one note, or the skin default with nil.
+    private func setPaletteIndex(_ index: Int?, for id: UUID) {
+        updateAppearance(id) { $0.paletteIndex = index }
+    }
+
+    private func setDecorationHidden(_ hidden: Bool, for id: UUID) {
+        updateAppearance(id) { $0.hideDecoration = hidden }
+    }
+
+    private func updateAppearance(_ id: UUID, _ change: (inout NoteAppearance) -> Void) {
+        guard !isImporting, let note = store.note(id: id) else { return }
+        var appearance = note.appearance ?? NoteAppearance()
+        change(&appearance)
+        let stored: NoteAppearance? = appearance == NoteAppearance() ? nil : appearance
+        commitDrafts()
+        guard store.updateLayout(id: id, change: .appearance(stored)) else { return }
+        didMutate()
+        if let updated = store.note(id: id), let controller = windows[id] {
+            applyAppearance(of: updated, to: controller)
+        }
     }
 
     func start() {
@@ -467,7 +516,7 @@ final class NotesController {
 
         let window = monitor.windowFrame
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) } ?? Self.mouseLocation)
-        let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.panel.frame, primaryScreenHeight: Self.primaryScreenHeight) }
+        let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.visualFrame, primaryScreenHeight: Self.primaryScreenHeight) }
         let absolute = OverlayPlanner.newNoteFrame(window: window, screens: screens, occupied: occupied)
         let placement = OverlayPlanner.placement(window: window)
         // A known Chrome page defaults to "This page"; everywhere else, "This app".
@@ -486,7 +535,7 @@ final class NotesController {
         controller.focus()
         if !permission.isTrusted, !onboardingShown {
             onboardingShown = true
-            permission.showOnboarding(near: controller.panel.frame)
+            permission.showOnboarding(near: controller.visualFrame)
         }
     }
 
@@ -531,7 +580,7 @@ final class NotesController {
     private func trash(_ id: UUID) {
         guard !isImporting else { return }
         commitDrafts()
-        let frame = windows[id]?.panel.frame
+        let frame = windows[id]?.visualFrame
         guard store.trash(id: id) else { return }
         didMutate()
         layout()
@@ -572,7 +621,7 @@ final class NotesController {
     private func userLaidOut(_ id: UUID) {
         guard !isImporting else { return }
         guard let controller = windows[id], let note = store.note(id: id) else { return }
-        let panel = Geometry.topLeftRect(fromAppKit: controller.panel.frame, primaryScreenHeight: Self.primaryScreenHeight)
+        let panel = Geometry.topLeftRect(fromAppKit: controller.visualFrame, primaryScreenHeight: Self.primaryScreenHeight)
         let frame = OverlayPlanner.storedFrame(forPanel: panel, note: note, window: monitor.windowFrame)
         guard store.updateLayout(id: id, change: .frame(frame)) else { return }
         didMutate()
@@ -594,7 +643,7 @@ final class NotesController {
             context: context,
             window: window,
             screens: screens,
-            collapsedHeight: themes.collapsedHeight
+            collapsedHeight: collapsedHeight
         )
 
         let planned = Set(plans.map(\.noteID))
@@ -609,6 +658,8 @@ final class NotesController {
         for plan in plans {
             guard let note = store.note(id: plan.noteID) else { continue }
             let controller = overlayController(for: note)
+            // A reused overlay may show a note that moved to a workspace with another skin.
+            applyAppearance(of: note, to: controller)
             controller.model.collapsed = plan.collapsed
             controller.model.isEditable = isWritable && !isImporting
             let selected = NoteScope.index(of: note.anchor, in: scopes)
@@ -619,6 +670,12 @@ final class NotesController {
         }
     }
 
+    /// The tallest collapsed bar among all notes' skins, so the planner's bar height
+    /// fits whichever skin a note uses.
+    private var collapsedHeight: Double {
+        store.notes.reduce(skins.themes().collapsedHeight) { max($0, skins.themes(for: $1).collapsedHeight) }
+    }
+
     /// The overlay controller for a note, created on demand. The overlay layout uses
     /// this, and tests use it to verify that a Library edit syncs an open draft.
     func overlayController(for note: Note) -> NoteWindowController {
@@ -627,16 +684,19 @@ final class NotesController {
 
     private func makeWindow(for note: Note) -> NoteWindowController {
         let id = note.id
-        let model = NoteModel(id: id, text: note.text, collapsed: note.collapsed, isEditable: isWritable, themes: themes)
+        let model = NoteModel(id: id, text: note.text, collapsed: note.collapsed, isEditable: isWritable, themes: skins.themes(for: note))
+        model.appearance = note.appearance
         model.onTextChange = { [weak self] in self?.autosave.schedule() }
         model.onToggleCollapsed = { [weak self] in self?.toggleCollapsed(id) }
         model.onHide = { [weak self] in self?.hideHere(id) }
         model.onTrash = { [weak self] in self?.trash(id) }
         model.onDone = { [weak self] in self?.done(id) }
+        model.onSelectPalette = { [weak self] index in self?.setPaletteIndex(index, for: id) }
+        model.onSetDecorationHidden = { [weak self] hidden in self?.setDecorationHidden(hidden, for: id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
         model.onScope = { [weak self] anchor in self?.changeScope(id, to: anchor) }
 
-        let controller = NoteWindowController(model: model)
+        let controller = NoteWindowController(model: model, assets: assets)
         controller.onUserLayout = { [weak self] in self?.userLaidOut(id) }
         // Autosave on blur.
         controller.onResignKey = { [weak self] in self?.autosave.fireNow() }
@@ -662,6 +722,11 @@ final class NotesController {
             notifyLibraryChange()
         }
         return changed
+    }
+
+    /// A workspace record changed outside the controller; save it like any other edit.
+    func workspacesMutated() {
+        didMutate()
     }
 
     private func didMutate() {

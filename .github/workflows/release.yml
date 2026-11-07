@@ -1,0 +1,195 @@
+# Signed, notarized Webby release (issue #20). Run by hand from main only; see RELEASING.md.
+# It uploads workflow artifacts and nothing else: no GitHub Release, tag, commit or
+# deployment. Signing and notary secrets live only in the protected "release" environment,
+# which pull requests and ordinary CI never reach.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Marketing version, must equal Webby.version (e.g. 0.1.0)
+        required: true
+        type: string
+      build:
+        description: Build number, higher than every build in release/history.json
+        required: true
+        type: string
+      confirm:
+        description: Type "release" to confirm
+        required: true
+        type: string
+      dry_run:
+        description: Run the preflight only (no signing, no notarization, no upload)
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webby-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: preflight
+    runs-on: macos-15
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check inputs, history and CI
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          BUILD: ${{ inputs.build }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          [[ "$REF" == "refs/heads/main" ]] || { echo "::error::Releases run from main only (got $REF)"; exit 1; }
+          [[ "$CONFIRM" == "release" ]] || { echo "::error::confirm must be 'release'"; exit 1; }
+          [[ -z "$(git status --porcelain)" ]] || { echo "::error::The checkout is not clean"; exit 1; }
+          swift_version="$(sed -nE 's/^[[:space:]]*public static let version = "([^"]*)"$/\1/p' mac/Sources/WebbyCore/Webby.swift)"
+          [[ "$VERSION" == "$swift_version" ]] || { echo "::error::version $VERSION does not match Webby.version $swift_version"; exit 1; }
+          # Checks build > every accepted build and the version against release/history.json.
+          plutil -replace CFBundleVersion -string "$BUILD" mac/Resources/Info.plist
+          WEBBY_BUILD_NUMBER="$BUILD" scripts/check-version-identifiers.sh --release
+          git checkout -- mac/Resources/Info.plist
+          sha="$(git rev-parse HEAD)"
+          conclusion="$(gh api "repos/$REPOSITORY/commits/$sha/check-runs?check_name=ci" \
+            --jq '[.check_runs[] | select(.name == "ci")] | sort_by(.completed_at) | last | .conclusion // "missing"')"
+          [[ "$conclusion" == "success" ]] || { echo "::error::ci for $sha is $conclusion, not success"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Preflight OK: $VERSION build $BUILD at $sha"
+
+  release:
+    name: release
+    needs: preflight
+    if: ${{ !inputs.dry_run }}
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: read
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ inputs.version }}
+      WEBBY_BUILD_NUMBER: ${{ inputs.build }}
+      WEBBY_ARCHS: arm64 x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+          persist-credentials: false
+
+      - name: Import the signing identity into an ephemeral keychain
+        env:
+          P12_BASE64: ${{ secrets.WEBBY_SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.WEBBY_SIGNING_P12_PASSWORD }}
+          WEBBY_TEAM_ID: ${{ secrets.WEBBY_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/webby-release.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          # Export now so the always() cleanup deletes it even if a later step fails.
+          echo "WEBBY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign > /dev/null
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -nE "s/.*\"(Developer ID Application: .+ \\($WEBBY_TEAM_ID\\))\"/\\1/p" | head -n 1)"
+          [[ -n "$identity" ]] || { echo "::error::No Developer ID Application identity for the configured team"; exit 1; }
+          echo "WEBBY_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build and sign
+        env:
+          WEBBY_TEAM_ID: ${{ secrets.WEBBY_TEAM_ID }}
+        run: scripts/build-app.sh --release
+
+      - name: Notarize and staple
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.WEBBY_NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.WEBBY_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.WEBBY_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey_$NOTARY_KEY_ID.p8"
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$key"
+          chmod 0600 "$key"
+          ditto -c -k --sequesterRsrc --keepParent dist/Webby.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$key" --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" --wait --output-format json > "$RUNNER_TEMP/notary.json" || true
+          status="$(jq -r '.status // "unknown"' "$RUNNER_TEMP/notary.json")"
+          id="$(jq -r '.id // "unknown"' "$RUNNER_TEMP/notary.json")"
+          echo "Notarization $id: $status"
+          if [[ "$status" != "Accepted" ]]; then
+            # Only the issue summaries, never credentials; see RELEASING.md for the full log.
+            xcrun notarytool log "$id" --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+              "$RUNNER_TEMP/notary-log.json" > /dev/null 2>&1 || true
+            jq -r '.issues[]? | "\(.severity): \(.message) (\(.path))"' "$RUNNER_TEMP/notary-log.json" 2> /dev/null || true
+            exit 1
+          fi
+          xcrun stapler staple dist/Webby.app
+          xcrun stapler validate dist/Webby.app
+
+      - name: Package, re-extract and verify
+        env:
+          WEBBY_TEAM_ID: ${{ secrets.WEBBY_TEAM_ID }}
+          RUNNER_IMAGE: ${{ runner.os }}-${{ runner.arch }}
+          COMMIT: ${{ needs.preflight.outputs.sha }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          # The ZIP itself cannot be stapled, so it is made after stapling the app.
+          ditto -c -k --sequesterRsrc --keepParent dist/Webby.app "$out/Webby-$VERSION.zip"
+          cp "dist/package/Webby-Extension-$VERSION.zip" "$out/"
+          check="$RUNNER_TEMP/verify"
+          mkdir -p "$check"
+          ditto -x -k "$out/Webby-$VERSION.zip" "$check"
+          scripts/verify-artifact.sh "$check/Webby.app" --release --team-id "$WEBBY_TEAM_ID" --archs "$WEBBY_ARCHS" --spctl
+          xcrun stapler validate "$check/Webby.app"
+          payload="$(cd dist/package/Extension && shasum -a 256 background.js manifest.json protocol.js | shasum -a 256 | cut -d' ' -f1)"
+          (cd "$out" && shasum -a 256 "Webby-$VERSION.zip" "Webby-Extension-$VERSION.zip" > SHA256SUMS)
+          jq -n \
+            --arg commit "$COMMIT" --arg version "$VERSION" --arg build "$WEBBY_BUILD_NUMBER" \
+            --arg archs "$(lipo -archs "$check/Webby.app/Contents/MacOS/Webby")" \
+            --arg swift "$(swift --version 2>&1 | head -n 1)" --arg xcode "$(xcodebuild -version | tr '\n' ' ')" \
+            --arg runner "$RUNNER_IMAGE" --arg payload "$payload" \
+            --arg appZip "$(shasum -a 256 "$out/Webby-$VERSION.zip" | cut -d' ' -f1)" \
+            --arg extensionZip "$(shasum -a 256 "$out/Webby-Extension-$VERSION.zip" | cut -d' ' -f1)" \
+            '{commit: $commit, version: $version, build: ($build | tonumber), architectures: ($archs | split(" ")),
+              toolchain: {swift: $swift, xcode: $xcode}, runner: $runner,
+              sha256: {appZip: $appZip, extensionZip: $extensionZip, extensionPayload: $payload}}' \
+            > "$out/provenance.json"
+          cat "$out/SHA256SUMS" "$out/provenance.json"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: webby-${{ inputs.version }}-build-${{ inputs.build }}
+          path: ${{ runner.temp }}/release/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Delete the keychain and key files
+        if: always()
+        run: |
+          if [[ -n "${WEBBY_KEYCHAIN:-}" ]]; then security delete-keychain "$WEBBY_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP"/AuthKey_*.p8

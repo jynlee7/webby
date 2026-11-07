@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -26,6 +29,12 @@ jobs:
 
       - name: Check skin archive dependency
         run: scripts/check-skin-dependency.sh
+
+      - name: Check identifiers and versions
+        run: |
+          plutil -lint mac/Resources/Info.plist mac/Resources/Webby.entitlements
+          scripts/check-version-identifiers.sh
+          scripts/test-version-identifiers.sh
 
       - name: Cache SwiftPM build
         uses: actions/cache@v6
@@ -60,8 +69,17 @@ jobs:
       - name: Build Webby.app
         run: scripts/build-app.sh
 
+      - name: Verify Webby.app
+        run: scripts/verify-artifact.sh dist/Webby.app
+
+      - name: Release mode fails closed without signing inputs
+        run: scripts/test-build-app-release.sh
+
       - name: Check extension
-        run: scripts/check-extension.sh
+        run: scripts/check-extension.sh --app dist/Webby.app
+
+      - name: Test extension packaging
+        run: scripts/test-extension-packaging.sh
 
       - name: Shellcheck
         run: |
