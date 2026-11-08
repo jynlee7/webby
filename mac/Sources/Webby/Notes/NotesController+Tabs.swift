@@ -102,14 +102,17 @@ extension NotesController {
         if tabs.deferred.count > TabTracking.maxDeferred { tabs.deferred.removeFirst() }
     }
 
-    /// Chrome quit while Webby runs. `session` is nil when the process can't be named;
-    /// the last seen session is used then.
+    /// A process with Chrome's bundle ID quit while Webby runs. `session` names it, or is
+    /// nil when it has no launch date. Only the end of the tracked run closes bindings.
+    /// That run always has a launch date, because its session is built from one, and
+    /// keeps it when it quits. An unnamed exit is another process, such as a browser a
+    /// test tool started outside LaunchServices, and so is a second instance's.
     func chromeTerminated(session: String?) {
         guard !isImporting else {
             deferTabWork(.terminated(session))
             return
         }
-        guard let ended = session ?? tabs.session else { return }
+        guard let ended = session, ended == tabs.session else { return }
         applyTabUpdates(tabs.reconciler.chromeTerminated(session: ended, notes: store.notes, now: now()))
         tabs.session = nil
         tabs.checkedSession = true

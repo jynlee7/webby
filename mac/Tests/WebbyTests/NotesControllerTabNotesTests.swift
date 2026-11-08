@@ -342,6 +342,31 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         return note
     }
 
+    /// Live Chrome pass: a browser that a test tool starts outside LaunchServices has no
+    /// launch date, so its exit can't be named. That exit used to close every tab note of
+    /// the Chrome still running, and with no new hello no restore check ever reopened them.
+    @Test func anotherChromeProcessQuittingLeavesTheRunningChromesNotes() throws {
+        let h = harness()
+        defer { h.close() }
+        hello(h)
+        h.send(.inventory(windows: [window("chrome://newtab/")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+
+        h.controller.chromeTerminated(session: nil) // "100@1" is still running
+        h.controller.chromeTerminated(session: "300@3") // a second instance
+        #expect(h.store.note(id: note.id)?.tab?.closedAt == nil)
+        h.send(.tabUpdated(tabId: 1, url: "https://a.example/next", title: nil))
+        #expect(h.store.note(id: note.id)?.tab?.lastURL == "https://a.example/next")
+        #expect(h.controller.windows[note.id] != nil)
+
+        // The tracked run's own exit still closes it for the restore check.
+        h.controller.chromeTerminated(session: "100@1")
+        #expect(h.store.note(id: note.id)?.tab?.closedAt != nil)
+        #expect(h.store.note(id: note.id)?.tab?.pendingRestore == true)
+        #expect(h.store.note(id: note.id)?.revision == note.revision)
+    }
+
     /// Greptile 4488242865: a disconnect before the timer fired used to spend the
     /// profile's only check on an empty inventory.
     @Test func aDisconnectBeforeTheCheckDoesNotUseItUp() throws {
