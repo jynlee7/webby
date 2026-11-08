@@ -8,8 +8,9 @@
 #   build-app.sh --release   Release: requires WEBBY_SIGN_IDENTITY naming a
 #                            "Developer ID Application: … (TEAMID)" identity, a matching
 #                            WEBBY_TEAM_ID and a numeric WEBBY_BUILD_NUMBER; adds a secure
-#                            timestamp and builds arm64 + x86_64. Missing or ad hoc inputs
-#                            fail before anything in dist/ is touched. Not notarized here.
+#                            timestamp and builds arm64 + x86_64. Missing or ad hoc inputs,
+#                            and an identity the keychain search list doesn't hold, fail
+#                            before anything in dist/ is touched. Not notarized here.
 #
 # $WEBBY_BUILD_NUMBER, when set, becomes the staged bundle's CFBundleVersion; the tracked
 # Info.plist is never rewritten. $WEBBY_ARCHS overrides the architectures (default: this
@@ -58,6 +59,15 @@ for arch in $archs; do
     *) refuse "unsupported architecture '$arch'" ;;
   esac
 done
+
+# codesign looks the identity up only after the build has replaced dist/Webby.app, so a
+# mistyped name or a certificate missing from the keychain search list must fail here.
+# The output is captured first: with pipefail, grep -q closing the pipe early can fail it.
+if [[ "$release" -eq 1 ]]; then
+  identities="$(security find-identity -v -p codesigning 2> /dev/null || true)"
+  grep -Fq "\"$identity\"" <<< "$identities" \
+    || refuse "no valid code-signing identity named '$identity' in the keychain search list"
+fi
 
 cd "$root/mac"
 swift build -c release "${arch_flags[@]}" --product Webby

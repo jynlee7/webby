@@ -45,6 +45,60 @@ expect_refusal "no build number" "requires WEBBY_BUILD_NUMBER" "WEBBY_SIGN_IDENT
 expect_refusal "non-numeric build number" "is not a positive integer" "WEBBY_SIGN_IDENTITY=$developer_id" WEBBY_TEAM_ID=ABCDE12345 WEBBY_BUILD_NUMBER=1.0
 expect_refusal "unsupported architecture" "unsupported architecture" "WEBBY_SIGN_IDENTITY=$developer_id" WEBBY_TEAM_ID=ABCDE12345 WEBBY_BUILD_NUMBER=1 WEBBY_ARCHS=ppc
 
+# A well-formed identity the keychain search list doesn't hold must be refused before the
+# build replaces dist/Webby.app. This runs a copy of build-app.sh in a temporary root with a
+# pre-existing bundle, and puts stubs first on PATH: `security` lists only another identity,
+# so no real keychain is read, and `swift` records that the build started. Without the check
+# the script would reach `rm -rf dist/Webby.app`.
+missing_identity_leaves_dist() {
+  local tmp stub before after err
+  tmp="$(mktemp -d)"
+  stub="$tmp/stub"
+  mkdir -p "$tmp/scripts" "$tmp/mac" "$tmp/dist/Webby.app/Contents/MacOS" "$stub"
+  cp "$root/scripts/build-app.sh" "$tmp/scripts/build-app.sh"
+  printf 'previous build\n' > "$tmp/dist/Webby.app/Contents/MacOS/Webby"
+  printf '<plist/>\n' > "$tmp/dist/Webby.app/Contents/Info.plist"
+  cat > "$stub/security" << 'STUB'
+#!/bin/sh
+echo '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Developer ID Application: Someone Else (ABCDE12345)"'
+echo '     1 valid identities found'
+STUB
+  cat > "$stub/swift" << STUB
+#!/bin/sh
+touch "$tmp/swift-ran"
+[ "\$*" = "\${*%--show-bin-path}" ] || echo "$tmp/bin"
+exit 0
+STUB
+  chmod +x "$stub/security" "$stub/swift"
+  digest() {
+    (cd "$tmp/dist" && find . -print0 | LC_ALL=C sort -z | xargs -0 stat -f '%N %p %i %m %z' \
+      && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256)
+  }
+  before="$(digest)"
+  if err="$(env -u WEBBY_SIGN_IDENTITY -u WEBBY_TEAM_ID -u WEBBY_BUILD_NUMBER -u WEBBY_ARCHS PATH="$stub:$PATH" \
+            "WEBBY_SIGN_IDENTITY=$developer_id" WEBBY_TEAM_ID=ABCDE12345 WEBBY_BUILD_NUMBER=1 WEBBY_ARCHS=arm64 \
+            "$tmp/scripts/build-app.sh" --release 2>&1 > /dev/null)"; then
+    echo "FAIL: identity not in keychain: build-app.sh --release succeeded" >&2
+    failures=$((failures + 1))
+  elif [[ "$err" != *"no valid code-signing identity named '$developer_id'"* ]]; then
+    echo "FAIL: identity not in keychain: expected the keychain refusal, got: $err" >&2
+    failures=$((failures + 1))
+  elif [[ -e "$tmp/swift-ran" ]]; then
+    echo "FAIL: identity not in keychain: the build started before the refusal" >&2
+    failures=$((failures + 1))
+  else
+    after="$(digest)"
+    if [[ "$after" != "$before" ]]; then
+      echo "FAIL: identity not in keychain: dist/Webby.app changed" >&2
+      failures=$((failures + 1))
+    else
+      passed=$((passed + 1))
+    fi
+  fi
+  rm -rf "$tmp"
+}
+missing_identity_leaves_dist
+
 if [[ "$failures" -ne 0 ]]; then
   echo "test-build-app-release: $failures failed, $passed passed" >&2
   exit 1
