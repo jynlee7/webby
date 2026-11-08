@@ -94,9 +94,10 @@ final class ChromeBridge {
     }
 
     /// Writes the host manifest again with the same policy as launch, then records the result.
+    /// Throws when the manifest can't be written, so the Chrome pane can say why.
     @discardableResult
-    func reRegisterHost() -> NativeHostInstaller.Outcome? {
-        guard let installer = hostInstaller else { return nil }
+    func reRegisterHost() throws -> NativeHostInstaller.Outcome {
+        guard let installer = hostInstaller else { return .bridgeMissing }
         do {
             let outcome = try installer.install()
             hostRegistration = outcome
@@ -104,7 +105,7 @@ final class ChromeBridge {
             return outcome
         } catch {
             logger.error("Couldn't register the Chrome bridge: \(error.localizedDescription, privacy: .public)")
-            return nil
+            throw error
         }
     }
 

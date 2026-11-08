@@ -141,6 +141,48 @@ private func makeModel(
         #expect(registered)
     }
 
+    @Test func reRegisterRefusalOrFailureIsExplainedInline() {
+        struct WriteFailed: LocalizedError {
+            var errorDescription: String? { "The disk is full." }
+        }
+        var inspection: NativeHostInstaller.Inspection = .dangling(path: "/missing/webby-bridge")
+        let model = ChromeSettingsModel(
+            extensionFolder: { chromeFolder },
+            hostInspection: { inspection }
+        )
+        #expect(model.registrationProblem == nil)
+
+        // A copy outside Applications is refused, and the registration row doesn't change.
+        model.reRegistered(.success(.unstableLocation))
+        #expect(model.registrationProblem?.contains("only from the Applications folder") == true)
+        model.reRegistered(.success(.preservedExisting(chromeManifest)))
+        #expect(model.registrationProblem?.contains("only from the Applications folder") == true)
+        model.reRegistered(.success(.translocated))
+        #expect(model.registrationProblem?.contains("only from the Applications folder") == true)
+        model.reRegistered(.success(.chromeNotFound))
+        #expect(model.registrationProblem?.contains("Open Chrome once") == true)
+        model.reRegistered(.success(.bridgeMissing))
+        #expect(model.registrationProblem?.contains("missing its Chrome bridge") == true)
+        model.reRegistered(.failure(WriteFailed()))
+        #expect(model.registrationProblem == "Couldn't write Chrome's registration file: The disk is full.")
+
+        // A refresh that still finds no working registration keeps the explanation.
+        model.refresh()
+        #expect(model.registrationProblem != nil)
+
+        model.reRegistered(.success(.installed(chromeManifest)))
+        #expect(model.registrationProblem == nil)
+        model.reRegistered(.success(.unstableLocation))
+        model.reRegistered(.success(.unchanged(chromeManifest)))
+        #expect(model.registrationProblem == nil)
+
+        // A registration that works again clears it.
+        model.reRegistered(.success(.chromeNotFound))
+        inspection = .current(chromeManifest)
+        model.refresh()
+        #expect(model.registrationProblem == nil)
+    }
+
     @Test func refreshPicksUpChangedInputs() {
         var installed: ExtensionVersion? = version("1.0.0")
         var outcome: BundledExtensionInstaller.Outcome? = .unchanged(chromeFolder, version("1.0.0"))

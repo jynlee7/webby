@@ -33,6 +33,8 @@ final class ChromeSettingsModel {
     var profiles: [ProfileRow] = []
     var reloadState: ExtensionReloadState = .unknown
     var problemText: String?
+    /// Why the last Re-register left Chrome without a working registration, else nil.
+    var registrationProblem: String?
     /// Incognito access across connected profiles (moved here from General).
     var incognitoText = "Not connected"
     /// Set after Copy Path, so the pane can confirm the copy.
@@ -88,8 +90,33 @@ final class ChromeSettingsModel {
         installedVersionText = installed?.description ?? "Not installed"
         extensionState = Self.extensionState(outcome: extensionOutcome())
         registration = hostInspection()
+        if case .current = registration { registrationProblem = nil }
         problemText = Self.problemText(for: extensionState)
         recomputeProfiles()
+    }
+
+    /// Records what Re-register did. A refusal or a failed write is explained inline,
+    /// because the registration row alone looks unchanged after pressing the button.
+    func reRegistered(_ result: Result<NativeHostInstaller.Outcome, any Error>) {
+        switch result {
+        case .success(let outcome):
+            registrationProblem = Self.registrationProblem(for: outcome)
+        case .failure(let error):
+            registrationProblem = "Couldn't write Chrome's registration file: \(error.localizedDescription)"
+        }
+    }
+
+    static func registrationProblem(for outcome: NativeHostInstaller.Outcome) -> String? {
+        switch outcome {
+        case .installed, .unchanged:
+            return nil
+        case .translocated, .unstableLocation, .preservedExisting:
+            return "Webby registers with Chrome only from the Applications folder. Quit Webby, move it to Applications, and open it again."
+        case .chromeNotFound:
+            return "Chrome isn't set up for this Mac user yet. Open Chrome once, then press Re-register again."
+        case .bridgeMissing:
+            return "This copy of Webby is missing its Chrome bridge. Download Webby again."
+        }
     }
 
     /// Copies the folder path, then records that it happened.
@@ -301,6 +328,12 @@ struct ChromeSettingsView: View {
                 }
                 if model.needsReRegister {
                     Button("Re-register Bridge") { model.reRegisterHost() }
+                }
+                if let problem = model.registrationProblem {
+                    Text(problem)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let problem = model.problemText {
                     Text(problem)

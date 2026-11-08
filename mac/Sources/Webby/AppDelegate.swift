@@ -81,8 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         chromeSettings.reRegisterHost = { [weak self] in
             guard let self else { return }
-            self.chromeBridge.reRegisterHost()
+            let result = Result { try self.chromeBridge.reRegisterHost() }
             self.chromeSettings.refresh()
+            self.chromeSettings.reRegistered(result)
         }
         let shortcut = SettingsWindowController.shortcut(from: settingsStore.settings)
         if shortcut.storageString != KeyCombo(settingsStore.settings.newNoteHotkey)?.storageString {
