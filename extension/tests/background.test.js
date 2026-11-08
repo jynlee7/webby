@@ -133,10 +133,10 @@ test("window movement publishes fresh bounds", async () => {
 });
 
 // Shared with the Swift tests (TabBindingReconcilerTests), which replay it through the
-// app's reducers. Synthetic: produced by this worker, not recorded from Chrome.
+// app's reducers.
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
 
-test("a window restored in the background is reported by an inventory", async () => {
+test("a window that opens after the snapshot without focus is reported by an inventory", async () => {
   const w = await worker();
   const docs = { id: 10, windowId: 1, index: 0, active: true, incognito: false, url: "https://a.example/docs?id=4", title: "Docs" };
   const front = { id: 1, focused: true, incognito: false, left: 0, top: 25, width: 1200, height: 800, tabs: [docs] };
@@ -144,11 +144,32 @@ test("a window restored in the background is reported by an inventory", async ()
   w.chrome.runtime.onStartup.fire();
   await w.drain();
   const pricing = { id: 20, windowId: 2, index: 0, active: true, incognito: false, url: "https://b.example/pricing#annual", title: "Pricing" };
-  const restored = { id: 2, focused: false, incognito: false, left: 40, top: 65, width: 1000, height: 700, tabs: [pricing] };
-  w.chrome.windows.getAll = async () => [front, restored];
-  w.chrome.windows.onCreated.fire(restored);
+  const later = { id: 2, focused: false, incognito: false, left: 40, top: 65, width: 1000, height: 700, tabs: [pricing] };
+  w.chrome.windows.getAll = async () => [front, later];
+  w.chrome.windows.onCreated.fire(later);
   await w.drain();
-  assert.deepEqual(w.messages, fixture("browser-session-restore-synthetic"));
+  assert.deepEqual(w.messages.map((m) => m.type), ["hello", "inventory", "active", "inventory"]);
+  assert.deepEqual(w.messages.at(-1).windows.map((win) => [win.id, win.focused, win.tabs.map((t) => t.url)]),
+    [[1, true, ["https://a.example/docs?id=4"]], [2, false, ["https://b.example/pricing#annual"]]]);
+});
+
+// Recorded from Chrome for Testing 157 restoring two windows (see CHROME-VALIDATION.md).
+// The first snapshot already lists every restored window; unloaded background tabs carry
+// their address as the title until they load, about 2.6 s later.
+test("session restore produces the recorded stream", async () => {
+  const recorded = fixture("browser-session-restore-recording");
+  const w = await worker();
+  const [hello, inventory, active, ...updates] = recorded;
+  w.chrome.runtime.getManifest = () => ({ version: hello.extVersion });
+  w.chrome.windows.getAll = async () => inventory.windows.map(({ bounds, tabs, ...win }) => ({
+    ...win, ...bounds, tabs: tabs.map((tab) => ({ ...tab, windowId: win.id, incognito: win.incognito })),
+  }));
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  for (const update of updates) w.chrome.tabs.onUpdated.fire(update.tabId, { title: update.title });
+  await w.drain();
+  assert.deepEqual(w.messages, recorded);
+  assert.equal(active.windowId, inventory.windows.find((win) => win.focused).id);
 });
 
 test("a replaced tab is reported before the inventory that follows", async () => {

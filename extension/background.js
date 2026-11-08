@@ -158,8 +158,9 @@ async function refreshWindows() {
 chrome.windows.onFocusChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onBoundsChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onRemoved.addListener(() => enqueueBrowserEvent(refreshWindows));
-// Session restore opens background windows that never get focus. Without an inventory
-// the app can't tell whether they are incognito, so their tabs couldn't take back notes.
+// A window that opens in the background after the snapshot never gets focus. Without an
+// inventory the app can't tell whether it is incognito, so its tabs couldn't take back
+// notes. (Session restore lists its windows in the first snapshot.)
 chrome.windows.onCreated.addListener(() => enqueueBrowserEvent(refreshWindows));
 
 chrome.tabs.onCreated.addListener((tab) => {

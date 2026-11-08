@@ -64,3 +64,53 @@ permission changes, typing/dragging notes, full-screen and multiple displays,
 multiple Chrome profiles, and switching between normal and incognito windows
 with extension incognito access both enabled and disabled. API observations above
 are real; they do not substitute for that end-to-end UI pass.
+
+## Issue #16: tab notes across a Chrome restart
+
+Recorded on 2026-11-07 with Chrome for Testing 157.0.8103.38 on macOS, in a
+disposable profile with "Continue where you left off" turned on and the extension
+loaded unpacked. The packaged app was built from a temporary copy whose storage,
+socket and Chrome folder pointed at temporary directories, and which treated Chrome
+for Testing as Chrome. The app wrote the host manifest into the profile's
+`NativeMessagingHosts` folder, and Chrome started the bridge from it. Without
+Accessibility, the copy read the front window's frame from the window list. Chrome
+was quit through DevTools (`Browser.close`), not the menu, and relaunched with
+`open`. No personal profile or notes were used.
+
+- **Quit.** One window with five tabs once sent `tabClosed` with
+  `windowClosing: true` for the active tab only, and the process ended 0.09 s later.
+  Another time the same five tabs sent five such closures within 11 ms, and the
+  process ended 0.2 s after the first. Two windows sent none before the bridge disconnected, and the process ended
+  0.12 s later. Every closure fell well inside the 3 s quit window. The termination
+  notification kept the launch date, so it named the run that ended.
+- **Restore.** Across three restores, `hello` arrived 0.9 to 3.8 s after launch. The
+  first `inventory`, 1 to 4 ms later, already listed every restored window and tab
+  with its URL. Background tabs that hadn't loaded yet had their address as the title,
+  for example `127.0.0.1:8766/dup.html`. `active` followed only when a restored window
+  had focus. No later inventory came from `windows.onCreated`, because the restored
+  windows existed before the worker connected. Background tabs then sent title-only
+  `tabUpdated` messages 1.9 to 2.9 s after `hello`. The check ran 3.0 s after the
+  last one, 4.9 to 5.9 s after `hello`, so the quiet period ended every wait. The 30 s
+  cap was never close.
+- **Restarted while Webby was down.** The bridge replayed `hello` and `inventory`
+  0.9 s after Webby started, and the check ran 3.0 s later.
+- **Outcomes.** A tab with a unique URL re-attached with the "Restored" badge,
+  including one in the background window. Two tabs with the same URL, and one tab
+  that two old tabs claimed, left their notes in Closed Tabs. A tab the user closed
+  stayed closed. Reattach and Keep on This Tab worked. Navigating across three hosts,
+  closing tabs, relaunching Webby, two Chrome restarts, Reattach and Keep never
+  changed a note's `revision` or `updatedAt`.
+- **Other processes with Chrome's bundle ID.** A browser started outside
+  LaunchServices, as test tools start one, has no launch date, and its exit still
+  posts `didTerminateApplicationNotification`. Such exits are now ignored. Before,
+  one closed every tab note of the Chrome that was still running.
+
+[The recorded restore](extension/tests/fixtures/browser-session-restore-recording.json)
+is the two-window restore as the app received it, with the profile key replaced by
+the tests' key. `background.test.js` checks that the worker emits it from the same
+restored windows. `TabBindingReconcilerTests` replays it with the measured arrival
+times through the restore schedule and matcher. It replaces a synthetic sequence that
+had the restored background window arrive in a second inventory.
+
+Not covered: quitting from Chrome's menu, branded Google Chrome, Accessibility
+window frames, several Chrome profiles, and the restore offered after a crash.

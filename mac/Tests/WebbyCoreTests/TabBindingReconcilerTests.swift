@@ -390,27 +390,50 @@ import Testing
         #expect(NoteVisibility.isAttached(notes[0], to: context))
     }
 
-    @Test func replayedRestoreReattachesTabsOfBackgroundWindows() throws {
-        // The extension's own output for a restore that opens a second window in the
-        // background (background.test.js produces the same file).
-        let messages = try JSONDecoder().decode([ExtensionMessage].self, from: fixture("browser-session-restore-synthetic"))
-        let docs = pending(tabID: 7, url: "https://a.example/docs?id=4")
-        let pricing = pending(tabID: 8, url: "https://b.example/pricing")
+    @Test func recordedRestoreSettlesAfterBackgroundTabsLoad() throws {
+        // Chrome for Testing 157 restoring two windows, as the app received it, with the
+        // milliseconds after hello that each message arrived (CHROME-VALIDATION.md).
+        let messages = try JSONDecoder().decode([ExtensionMessage].self, from: fixture("browser-session-restore-recording"))
+        let arrivals = [0, 3, 4, 2596, 2600, 2603]
+        try #require(messages.count == arrivals.count)
+        let front = pending(tabID: 7, url: "http://127.0.0.1:8766/d.html?after=relaunch")
+        let background = pending(tabID: 8, url: "http://localhost:8766/b.html?w=2")
+        let duplicate = pending(tabID: 9, url: "http://127.0.0.1:8766/dup.html")
+        let notes = [front, background, duplicate]
+
         var feed = OpenTabsInventory(session: newSession)
-        for (offset, message) in messages.enumerated() {
+        var schedule = RestoreSchedule()
+        schedule.setSession(newSession)
+        let hello = later
+        for (message, ms) in zip(messages, arrivals) {
+            let at = hello.addingTimeInterval(Double(ms) / 1000)
             feed.receive(.message(connection: 3, profile: profile, message))
-            if offset == 2 {
-                // Before the window's inventory its tabs are unknown, so they can't match.
-                let early = TabRestore.evaluate(notes: [docs, pricing], profile: profile, session: newSession, inventory: feed.inventory)
-                #expect(early.outcomes[docs.id] == .rebound)
-                #expect(early.outcomes[pricing.id] == .unmatched)
+            switch message {
+            case .hello: schedule.hello(profile: profile, connection: 3, now: at)
+            case .inventory: schedule.activity(profile: profile, now: at, inventory: true)
+            default: schedule.activity(profile: profile, now: at)
+            }
+            if case .inventory = message {
+                // Every restored window is in the first inventory, but the background
+                // tabs haven't loaded yet, so the check keeps waiting.
+                #expect(feed.inventory.windows.count == 2)
+                #expect(schedule.takeDue(now: at.addingTimeInterval(2.5)).isEmpty)
             }
         }
-        let result = TabRestore.evaluate(notes: [docs, pricing], profile: profile, session: newSession, inventory: feed.inventory)
-        #expect(result.outcomes[docs.id] == .rebound)
-        #expect(result.outcomes[pricing.id] == .rebound)
-        #expect(result.updates.first { $0.noteID == pricing.id }?.binding.tabID == 20)
-        #expect(result.updates.first { $0.noteID == pricing.id }?.binding.windowID == 2)
+        // The quiet period, not the cap, ends the wait: 3 s after the last title arrived.
+        let lastActivity = hello.addingTimeInterval(2.603)
+        #expect(schedule.nextDeadline == lastActivity.addingTimeInterval(RestoreSchedule.quietPeriod))
+        #expect(lastActivity.addingTimeInterval(RestoreSchedule.quietPeriod) < hello.addingTimeInterval(RestoreSchedule.cap))
+        #expect(schedule.takeDue(now: lastActivity.addingTimeInterval(2.9)).isEmpty)
+        #expect(schedule.takeDue(now: lastActivity.addingTimeInterval(3)) == [profile])
+
+        let result = TabRestore.evaluate(notes: notes, profile: profile, session: newSession, inventory: feed.inventory)
+        #expect(result.outcomes[front.id] == .rebound)
+        #expect(result.outcomes[background.id] == .rebound)
+        #expect(result.outcomes[duplicate.id] == .ambiguous)
+        let moved = result.updates.first { $0.noteID == background.id }?.binding
+        #expect(moved?.tabID == 551_729_560)
+        #expect(moved?.windowID == 551_729_559)
     }
 
     // MARK: Restore timing
