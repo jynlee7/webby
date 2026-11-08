@@ -3,6 +3,46 @@ import Observation
 import SwiftUI
 import WebbyCore
 
+/// What "Attach to Current" lists for the note on show.
+///
+/// A SwiftUI menu lists what its last render computed, and the front app and page
+/// aren't observable. So reading `scopes` also depends on Webby's activations: opening
+/// or clicking the Library makes Webby active, and the menu is rendered again with the
+/// page in front now, even for a note that was already on show.
+@MainActor @Observable
+final class LibraryAttachChoices {
+    private var activations = 0
+
+    @ObservationIgnored private let actions: LibraryAnchorActions
+    @ObservationIgnored private let center: NotificationCenter
+    @ObservationIgnored private var observer: NSObjectProtocol?
+
+    init(actions: LibraryAnchorActions, center: NotificationCenter = .default) {
+        self.actions = actions
+        self.center = center
+        observer = center.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.activations += 1 }
+        }
+    }
+
+    deinit {
+        // Released on the main actor, like LibraryModel.
+        MainActor.assumeIsolated {
+            if let observer = self.observer { self.center.removeObserver(observer) }
+        }
+    }
+
+    /// The scopes for the current context, read again on every call.
+    var scopes: [NoteScope] {
+        _ = activations
+        return actions.currentScopes()
+    }
+}
+
 /// The Library's local text draft. It is never an authoritative note copy: a commit
 /// goes through `LibraryModel.updateText`, which forwards to the only store owner.
 @MainActor @Observable
@@ -98,12 +138,15 @@ enum LibraryNotePresentation {
 struct LibraryDetailView: View {
     let model: LibraryModel
     let actions: LibraryAnchorActions
+    let attachChoices: LibraryAttachChoices
     let draft: LibraryTextDraft
 
     var body: some View {
         Group {
             if let note = model.selectedNote {
-                NoteDetailContent(note: note, model: model, actions: actions, draft: draft)
+                NoteDetailContent(
+                    note: note, model: model, actions: actions, attachChoices: attachChoices, draft: draft
+                )
                     .id(note.id)
             } else {
                 ContentUnavailableView(
@@ -155,6 +198,7 @@ private struct NoteDetailContent: View {
     let note: Note
     let model: LibraryModel
     let actions: LibraryAnchorActions
+    let attachChoices: LibraryAttachChoices
     let draft: LibraryTextDraft
 
     @State private var anchorKind: AnchorKind
@@ -166,10 +210,17 @@ private struct NoteDetailContent: View {
     @State private var validationMessage: String?
     @FocusState private var editorFocused: Bool
 
-    init(note: Note, model: LibraryModel, actions: LibraryAnchorActions, draft: LibraryTextDraft) {
+    init(
+        note: Note,
+        model: LibraryModel,
+        actions: LibraryAnchorActions,
+        attachChoices: LibraryAttachChoices,
+        draft: LibraryTextDraft
+    ) {
         self.note = note
         self.model = model
         self.actions = actions
+        self.attachChoices = attachChoices
         self.draft = draft
 
         if let anchor = note.anchor {
@@ -556,7 +607,7 @@ private struct NoteDetailContent: View {
             }
 
             Menu("Attach to Current") {
-                let scopes = actions.currentScopes()
+                let scopes = attachChoices.scopes
                 if scopes.isEmpty {
                     Button("Switch to an App First") {
                         validationMessage = "Switch to the app you want first. Webby can't attach a note to itself."
