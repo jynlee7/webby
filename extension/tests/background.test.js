@@ -172,6 +172,20 @@ test("session restore produces the recorded stream", async () => {
   assert.equal(active.windowId, inventory.windows.find((win) => win.focused).id);
 });
 
+// The bridge replays its latest inventory to a relaunched Webby, which closes the note of
+// any tab that inventory doesn't list.
+test("a new tab is followed by an inventory that lists it", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  const created = { id: 2, windowId: 1, index: 1, active: true, incognito: false, url: "chrome://newtab/", title: "New Tab" };
+  w.chrome.windows.getAll = async () => [{ id: 1, focused: true, incognito: false, tabs: [{ ...w.tab, active: false }, created] }];
+  w.chrome.tabs.onCreated.fire(created);
+  await w.drain();
+  assert.deepEqual(w.messages.slice(-2).map((m) => m.type), ["tabCreated", "inventory"]);
+  assert.deepEqual(w.messages.at(-1).windows[0].tabs.map((t) => t.id), [1, 2]);
+});
+
 test("a replaced tab is reported before the inventory that follows", async () => {
   const w = await worker();
   w.chrome.runtime.onStartup.fire();

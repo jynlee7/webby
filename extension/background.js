@@ -163,8 +163,13 @@ chrome.windows.onRemoved.addListener(() => enqueueBrowserEvent(refreshWindows));
 // notes. (Session restore lists its windows in the first snapshot.)
 chrome.windows.onCreated.addListener(() => enqueueBrowserEvent(refreshWindows));
 
+// The bridge replays its latest inventory when Webby reconnects, and a tab missing from
+// it counts as closed, so the inventory must list every new tab.
 chrome.tabs.onCreated.addListener((tab) => {
-  enqueueBrowserEvent(() => send(tabCreatedMessage(tab)));
+  enqueueBrowserEvent(async () => {
+    await send(tabCreatedMessage(tab));
+    await refreshWindows();
+  });
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {

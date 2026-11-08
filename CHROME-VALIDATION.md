@@ -100,6 +100,11 @@ was quit through DevTools (`Browser.close`), not the menu, and relaunched with
   stayed closed. Reattach and Keep on This Tab worked. Navigating across three hosts,
   closing tabs, relaunching Webby, two Chrome restarts, Reattach and Keep never
   changed a note's `revision` or `updatedAt`.
+- **A note on a new tab across a Webby relaunch.** In headless Chrome for Testing, a
+  new tab sent only `tabCreated`, `active` and `tabUpdated`. The inventory the bridge
+  replayed to the relaunched app predated the tab, so its note moved to Closed Tabs
+  while the tab stayed open. A new tab now sends an inventory as well, and the note
+  stays on its tab.
 - **Other processes with Chrome's bundle ID.** A browser started outside
   LaunchServices, as test tools start one, has no launch date, and its exit still
   posts `didTerminateApplicationNotification`. Such exits are now ignored. Before,
