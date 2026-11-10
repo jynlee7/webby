@@ -50,6 +50,9 @@ final class NotesController {
     /// `addLibraryObserver(_:)` so more than one can listen at a time.
     var onLibraryChange: (@MainActor () -> Void)?
     private var libraryObservers: [UUID: @MainActor () -> Void] = [:]
+    /// Called with the IDs of notes removed from Trash for good (Empty Trash or the
+    /// 30-day purge), so stored conversations can replace them with "note deleted".
+    var onNotesPurged: (@MainActor ([UUID]) -> Void)?
 
     private let monitor: ContextMonitor
     private let permission: AccessibilityPermission
@@ -137,7 +140,9 @@ final class NotesController {
     private func purgeExpiredTrash() {
         guard isWritable else { return }
         let cutoff = now().addingTimeInterval(-Self.trashRetentionPeriod)
+        let candidates = store.notes.filter { ($0.trashedAt.map { $0 < cutoff } ?? false) && !$0.ephemeral }.map(\.id)
         guard store.purgeTrash(olderThan: cutoff, includingEphemeral: false) > 0 else { return }
+        reportPurged(candidates)
         didMutate()
         onStatusChange?()
     }
@@ -296,9 +301,16 @@ final class NotesController {
     func emptyTrash(ids: Set<UUID>) -> Int {
         guard isWritable, !isImporting else { return 0 }
         let draftsChanged = commitDrafts()
+        let candidates = store.notes.filter { ids.contains($0.id) && $0.trashedAt != nil && !$0.ephemeral }.map(\.id)
         let removed = store.purgeTrash(ids: ids, includingEphemeral: false)
+        if removed > 0 { reportPurged(candidates) }
         finishLibraryMutation(changed: removed > 0, draftsChanged: draftsChanged, relayout: removed > 0)
         return removed
+    }
+
+    private func reportPurged(_ candidates: [UUID]) {
+        let purged = candidates.filter { store.note(id: $0) == nil }
+        if !purged.isEmpty { onNotesPurged?(purged) }
     }
 
     /// Creates an anchorless, tabless note for the Inbox or a workspace. This does not
