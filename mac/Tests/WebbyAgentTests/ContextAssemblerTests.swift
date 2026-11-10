@@ -371,3 +371,25 @@ import WebbyCore
     #expect(content.count <= 50)
     #expect(content.contains("truncated"))
 }
+
+/// A tab note's last URL and title stay local (decision 27): the agent sees the note
+/// and its scope, never the tab's address, whose query may carry tokens.
+@Test func tabNotesNeverSendTheirLastURLOrTitle() {
+    let secret = "tab-url-sentinel"
+    var tab = agentTab(lastURL: "https://example.com/a/b?token=\(secret)")
+    tab.lastTitle = "title-sentinel"
+    let context = agentContext()
+    let notes = [agentNote(id: 1, text: "Follow this tab", tab: tab, sourceURL: "https://example.com/a/b")]
+    let turn = ContextAssembler.assemble(
+        snapshot: AgentSnapshot(notes: notes),
+        context: context,
+        conversation: agentConversation(context: context),
+        now: Date(timeIntervalSince1970: 1_800_000_000),
+        question: "What is on this tab?"
+    )
+    #expect(turn.turnSnapshot.orderedAliases == ["N1"])
+    let sent = String(describing: turn.request) + String(describing: turn.manifest)
+    #expect(sent.contains("Follow this tab"))
+    #expect(!sent.contains(secret))
+    #expect(!sent.contains("title-sentinel"))
+}

@@ -113,6 +113,41 @@ enum LibraryNoteLink {
 
 /// Human-readable scope and status used in both the note table and the detail pane.
 enum LibraryNotePresentation {
+    /// A tab note reads as its tab, never as the Inbox. Its place is the tab's title or
+    /// host, never the raw URL, whose query may carry tokens.
+    static func scopeDescription(for note: Note) -> String {
+        guard let binding = note.tab else { return scopeDescription(note.anchor) }
+        let place = tabPlace(binding)
+        if binding.closedAt != nil { return "Closed tab: \(place)" }
+        if binding.pendingRestore { return "Restored tab: \(place)" }
+        return "Just this tab: \(place)"
+    }
+
+    /// The status line of a note in Closed Tabs. Nil for a note on a live tab.
+    static func closedTabStatus(_ binding: TabBinding?, outcome: RestoreOutcome?) -> String? {
+        guard let binding, binding.closedAt != nil else { return nil }
+        if binding.pendingRestore { return "Waiting for Chrome to restore tabs" }
+        if outcome == .ambiguous { return "More than one tab matched" }
+        return "Tab closed"
+    }
+
+    /// What taking a tab note off its tab does, for the confirmation. Nil when the note
+    /// has no tab, so nothing needs confirming.
+    static func tabDetachEffect(for note: Note, to anchor: WebbyCore.Anchor?) -> String? {
+        guard let binding = note.tab else { return nil }
+        let place = tabPlace(binding)
+        guard let anchor else {
+            return "The note stops following “\(place)” and moves to the Inbox. Its text doesn't change."
+        }
+        return "The note stops following “\(place)” and sticks to \(scopeDescription(anchor)) instead. Its text doesn't change."
+    }
+
+    static func tabPlace(_ binding: TabBinding) -> String {
+        if let title = binding.lastTitle, !title.isEmpty { return title }
+        if let host = URL(string: binding.lastURL)?.host(), !host.isEmpty { return host }
+        return "a Chrome tab"
+    }
+
     static func scopeDescription(_ anchor: WebbyCore.Anchor?) -> String {
         guard let anchor else { return "Inbox" }
         switch anchor {
@@ -162,8 +197,17 @@ struct LibraryDetailView: View {
 
 private enum AnchorKind: String, CaseIterable, Hashable {
     case none
+    /// Bound to a Chrome tab ("Just this tab"); offered only for tab notes.
+    case tab
     case app
     case web
+}
+
+/// An attachment change that would take a note off its tab, waiting for confirmation.
+private struct PendingTabDetach: Identifiable {
+    let id = UUID()
+    let anchor: WebbyCore.Anchor?
+    let message: String
 }
 
 private enum WebScopeKind: String, CaseIterable, Hashable {
@@ -208,6 +252,7 @@ private struct NoteDetailContent: View {
     @State private var prefixPath: String
     @State private var workspaceChoice: WorkspaceChoice
     @State private var validationMessage: String?
+    @State private var pendingTabDetach: PendingTabDetach?
     @FocusState private var editorFocused: Bool
 
     init(
@@ -255,6 +300,8 @@ private struct NoteDetailContent: View {
             _prefixPath = State(initialValue: "")
         }
 
+        if note.tab != nil { _anchorKind = State(initialValue: .tab) }
+
         _workspaceChoice = State(
             initialValue: note.workspaceOverride.map(WorkspaceChoice.record) ?? .automatic
         )
@@ -292,6 +339,7 @@ private struct NoteDetailContent: View {
             webScopeKind = .page
             prefixPath = ""
         }
+        if note.tab != nil { anchorKind = .tab }
     }
 
     private var isTrashed: Bool { note.trashedAt != nil }
@@ -310,6 +358,9 @@ private struct NoteDetailContent: View {
                 textEditor
                 status
                 toggles
+                if note.tab != nil {
+                    tabSection
+                }
                 anchorEditor
                 actionsRow
             }
@@ -324,6 +375,23 @@ private struct NoteDetailContent: View {
         }
         .onChange(of: model.detailFocusRequest) { _, _ in
             focusIfRouted()
+        }
+        .onChange(of: note.tab == nil) { _, _ in
+            loadAnchorFields()
+        }
+        .confirmationDialog(
+            "Stop following this tab?",
+            isPresented: Binding(get: { pendingTabDetach != nil }, set: { if !$0 { pendingTabDetach = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingTabDetach
+        ) { pending in
+            Button(pending.anchor == nil ? "Move to Inbox" : "Stop Following Tab") {
+                draft.commit(to: model)
+                model.attach(id: note.id, anchor: pending.anchor, workspace: selectedWorkspaceID)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { pending in
+            Text(pending.message)
         }
         .onChange(of: note.anchor) { _, _ in
             // Attach or an external edit replaced the saved anchor; the editor must
@@ -347,8 +415,8 @@ private struct NoteDetailContent: View {
                 .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: 8) {
-                statusChip(LibraryNotePresentation.scopeDescription(note.anchor),
-                           systemImage: note.anchor == nil ? "tray" : "link")
+                statusChip(LibraryNotePresentation.scopeDescription(for: note),
+                           systemImage: note.tab != nil ? "rectangle.on.rectangle" : note.anchor == nil ? "tray" : "link")
                 if note.hidden {
                     statusChip("Hidden here", systemImage: "eye.slash")
                 }
@@ -438,7 +506,7 @@ private struct NoteDetailContent: View {
             }
             GridRow {
                 Text("Scope").foregroundStyle(.secondary)
-                Text(LibraryNotePresentation.scopeDescription(note.anchor))
+                Text(LibraryNotePresentation.scopeDescription(for: note))
             }
             if let trashedAt = note.trashedAt {
                 GridRow {
@@ -489,12 +557,73 @@ private struct NoteDetailContent: View {
         .disabled(!canEdit)
     }
 
+    /// Closed Tabs and tab notes: where the note's tab is, and how to put it back.
+    private var tabSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Tab")
+                .font(.headline)
+            if let binding = note.tab {
+                Text(LibraryNotePresentation.scopeDescription(for: note))
+                if let closedAt = binding.closedAt {
+                    HStack(spacing: 4) {
+                        Text(LibraryNotePresentation.closedTabStatus(binding, outcome: model.restoreOutcome(note.id)) ?? "Tab closed")
+                        Text("·")
+                        Text(closedAt, style: .relative)
+                        Text("ago")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+
+            HStack(spacing: 10) {
+                if note.tab?.closedAt != nil || TabBindingReconciler.isRestored(note.tab) {
+                    let target = model.reattachTargetTitle(for: note.id)
+                    Button(target.map { "Reattach to “\($0)”" } ?? "Reattach to Current Tab") {
+                        draft.commit(to: model)
+                        model.reattachToLastTab(id: note.id)
+                    }
+                    .disabled(!canEdit || target == nil)
+                    .accessibilityHint(target == nil
+                        ? "Switch to the Chrome tab you want, in the same profile, then come back."
+                        : "Moves this note to that tab. The note itself doesn't change.")
+                }
+
+                let promotions = model.promotions(for: note)
+                Menu("Stick to Page") {
+                    ForEach(promotions, id: \.title) { scope in
+                        Button(scope.title) {
+                            if let anchor = scope.anchor {
+                                draft.commit(to: model)
+                                model.attach(id: note.id, anchor: anchor, workspace: note.workspaceOverride)
+                            }
+                        }
+                    }
+                }
+                .fixedSize()
+                .disabled(!canEdit || promotions.isEmpty)
+                .accessibilityHint(promotions.isEmpty
+                    ? "This tab's last address has no page to stick to."
+                    : "Attaches the note to the tab's last page instead of the tab.")
+            }
+            if note.tab?.closedAt != nil, model.reattachTargetTitle(for: note.id) == nil {
+                Text("To reattach, switch to the Chrome tab you want, then come back.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var anchorEditor: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Anchor")
                 .font(.headline)
 
             Picker("Anchor type", selection: $anchorKind) {
+                if note.tab != nil {
+                    Text("This tab").tag(AnchorKind.tab)
+                }
                 Text("None").tag(AnchorKind.none)
                 Text("Mac app").tag(AnchorKind.app)
                 Text("Web page").tag(AnchorKind.web)
@@ -583,7 +712,7 @@ private struct NoteDetailContent: View {
                 Button("Save Anchor") {
                     saveAnchor()
                 }
-                .disabled(!canEdit)
+                .disabled(!canEdit || anchorKind == .tab)
             }
         }
     }
@@ -616,12 +745,19 @@ private struct NoteDetailContent: View {
                 ForEach(scopes, id: \.title) { scope in
                     Button(scope.title) {
                         let applied = actions.attachCurrentScope(titled: scope.title) { anchor in
-                            draft.commit(to: model)
-                            model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+                            attach(anchor)
                         }
                         if !applied {
                             validationMessage = "The page in front changed. Open the menu again to attach to it."
                         }
+                    }
+                }
+                if let tabTitle = model.lastTabTitle(for: note) {
+                    Divider()
+                    // Demote: the note keeps its anchor and follows the last Chrome tab.
+                    Button("Just This Tab: “\(tabTitle)”") {
+                        draft.commit(to: model)
+                        model.attachToLastTab(id: note.id)
                     }
                 }
             }
@@ -663,6 +799,9 @@ private struct NoteDetailContent: View {
         validationMessage = nil
         let result: AnchorValidation
         switch anchorKind {
+        case .tab:
+            // The tab section moves a tab note; nothing to save here.
+            return
         case .none:
             result = .valid(nil)
         case .app:
@@ -699,9 +838,19 @@ private struct NoteDetailContent: View {
         case .invalid(let message):
             validationMessage = message
         case .valid(let anchor):
-            draft.commit(to: model)
-            model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
+            attach(anchor)
         }
+    }
+
+    /// Attaches the note, first asking when that takes it off its tab: a tab note must
+    /// never land in the Inbox, or on a page, without saying so.
+    private func attach(_ anchor: WebbyCore.Anchor?) {
+        if let message = LibraryNotePresentation.tabDetachEffect(for: note, to: anchor) {
+            pendingTabDetach = PendingTabDetach(anchor: anchor, message: message)
+            return
+        }
+        draft.commit(to: model)
+        model.attach(id: note.id, anchor: anchor, workspace: selectedWorkspaceID)
     }
 
     private func appStateDescription(_ state: LibraryAppAvailabilityState) -> String {

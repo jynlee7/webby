@@ -51,9 +51,9 @@ final class NotesController {
     var onLibraryChange: (@MainActor () -> Void)?
     private var libraryObservers: [UUID: @MainActor () -> Void] = [:]
 
-    private let monitor: ContextMonitor
+    let monitor: ContextMonitor
     private let permission: AccessibilityPermission
-    private let now: @MainActor () -> Date
+    let now: @MainActor () -> Date
     private let skins: any NoteThemeSource
     private let assets: SkinAssetCache
     private let latestSave: LatestSave
@@ -68,6 +68,8 @@ final class NotesController {
     private var onboardingShown = false
     private var screenObserver: NSObjectProtocol?
     private var spaceObserver: NSObjectProtocol?
+    /// "Just this tab" state; see NotesController+Tabs.swift.
+    let tabs = TabTracking()
 
     private var savedGeneration: UInt64 = 0
     private var failedGeneration: UInt64?
@@ -174,6 +176,7 @@ final class NotesController {
         }
         _ = quit
         purgeExpiredTrash()
+        startTabTracking()
         monitor.start()
         layout()
         if let problem = readOnlyProblem {
@@ -263,6 +266,7 @@ final class NotesController {
         if changed {
             // A stale overlay draft must not replace the Library's newer text.
             windows[id]?.model.setTextSilently(text)
+            acknowledgeRestore(id)
         }
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged)
     }
@@ -282,6 +286,17 @@ final class NotesController {
             ],
             now: now()
         )
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
+    /// Library demote: binds an anchored note to the last verified Chrome tab and keeps
+    /// its anchor, so its workspace doesn't move. A content edit, like the overlay's.
+    func attachLibraryNoteToLastTab(id: UUID) {
+        guard let note = libraryNoteForMutation(id: id), note.trashedAt == nil, note.tab == nil, note.anchor != nil,
+              let target = lastVerifiedLiveTab(),
+              let binding = TabBindingReconciler.binding(for: target.ref, tab: target.tab) else { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(id: id, change: .attachment(anchor: note.anchor, tab: binding), now: now())
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
     }
 
@@ -452,6 +467,7 @@ final class NotesController {
             if isImporting {
                 isImporting = false
                 layout()
+                replayDeferredTabWork()
             }
         }
 
@@ -489,6 +505,7 @@ final class NotesController {
             autosave.schedule()
             isImporting = false
             layout()
+            replayDeferredTabWork()
             notifyLibraryChange()
             onStatusChange?()
             importState = .succeeded(result)
@@ -519,11 +536,18 @@ final class NotesController {
         let occupied = windows.values.map { Geometry.topLeftRect(fromAppKit: $0.visualFrame, primaryScreenHeight: Self.primaryScreenHeight) }
         let absolute = OverlayPlanner.newNoteFrame(window: window, screens: screens, occupied: occupied)
         let placement = OverlayPlanner.placement(window: window)
-        // A known Chrome page defaults to "This page"; everywhere else, "This app".
-        let anchor = monitor.context.flatMap { NoteScope.choices(for: $0).first?.anchor }
-            ?? .app(bundleID: app.bundleID)
+        // A known Chrome page defaults to "This page", a Chrome tab without a page
+        // identity to "Just this tab"; everywhere else, "This app".
+        let first = monitor.context.flatMap { NoteScope.choices(for: $0).first }
+        var anchor = first?.anchor
+        var tab: TabBinding?
+        if first?.choice == .thisTab { tab = currentTabBinding() }
+        if anchor == nil, tab == nil { anchor = .app(bundleID: app.bundleID) }
         let note = Note(
             anchor: anchor,
+            tab: tab,
+            // The creation page decides a tab note's workspace (decision 27: local only).
+            source: tab.map { NoteSource(url: $0.lastURL, title: $0.lastTitle) },
             frame: Geometry.storedFrame(absolute: absolute, placement: placement, window: window),
             placement: placement
         )
@@ -610,10 +634,20 @@ final class NotesController {
         }
     }
 
-    private func changeScope(_ id: UUID, to anchor: Anchor) {
-        guard !isImporting, isWritable else { return }
+    /// Promote (tab to anchor) and demote (anchor to this tab) are content edits, so
+    /// they add one revision. Demoting keeps the anchor, so the workspace doesn't move.
+    private func changeScope(_ id: UUID, to choice: NoteScope.Choice) {
+        guard !isImporting, isWritable, let note = store.note(id: id) else { return }
         commitDrafts()
-        guard store.updateContent(id: id, change: .anchor(anchor), now: now()) else { return }
+        let change: NoteStore.ContentChange
+        switch choice {
+        case .anchor(let anchor):
+            change = note.tab == nil ? .anchor(anchor) : .attachment(anchor: anchor, tab: nil)
+        case .thisTab:
+            guard note.tab == nil, let binding = currentTabBinding() else { return }
+            change = .attachment(anchor: note.anchor, tab: binding)
+        }
+        guard store.updateContent(id: id, change: change, now: now()) else { return }
         didMutate()
         layout()
     }
@@ -636,6 +670,7 @@ final class NotesController {
         guard !isImporting else { return }
         let window = monitor.windowFrame
         let context = monitor.context
+        if let tab = context?.tab { tabs.lastVerifiedTab = tab }
         let scopes = context.map(NoteScope.choices(for:)) ?? []
         let screens = Self.visibleScreens(preferring: window.map { CGPoint(x: $0.midX, y: $0.midY) })
         let plans = OverlayPlanner.plan(
@@ -662,9 +697,11 @@ final class NotesController {
             applyAppearance(of: note, to: controller)
             controller.model.collapsed = plan.collapsed
             controller.model.isEditable = isWritable && !isImporting
-            let selected = NoteScope.index(of: note.anchor, in: scopes)
+            let selected = NoteScope.index(of: note, in: scopes)
             if controller.model.scopes != scopes { controller.model.scopes = scopes }
             if controller.model.selectedScope != selected { controller.model.selectedScope = selected }
+            let restored = TabBindingReconciler.isRestored(note.tab)
+            if controller.model.restored != restored { controller.model.restored = restored }
             controller.apply(frame: Geometry.appKitRect(fromTopLeft: plan.frame, primaryScreenHeight: Self.primaryScreenHeight))
             controller.show()
         }
@@ -694,7 +731,9 @@ final class NotesController {
         model.onSelectPalette = { [weak self] index in self?.setPaletteIndex(index, for: id) }
         model.onSetDecorationHidden = { [weak self] hidden in self?.setDecorationHidden(hidden, for: id) }
         model.onResizeEnded = { [weak self] in self?.userLaidOut(id) }
-        model.onScope = { [weak self] anchor in self?.changeScope(id, to: anchor) }
+        model.onScope = { [weak self] choice in self?.changeScope(id, to: choice) }
+        model.onKeepRestored = { [weak self] in self?.keepRestoredTab(id) }
+        model.onMoveToClosedTabs = { [weak self] in self?.moveToClosedTabs(id) }
 
         let controller = NoteWindowController(model: model, assets: assets)
         controller.onUserLayout = { [weak self] in self?.userLaidOut(id) }
@@ -714,7 +753,11 @@ final class NotesController {
         guard force || !isImporting else { return false }
         var changed = false
         for (id, controller) in windows where store.note(id: id)?.text != controller.model.text {
-            changed = store.updateContent(id: id, change: .text(controller.model.text)) || changed
+            if store.updateContent(id: id, change: .text(controller.model.text)) {
+                changed = true
+                // Editing a restored note accepts the restore.
+                acknowledgeRestore(id)
+            }
         }
         if changed {
             quit.noteMutation(generation: store.mutationGeneration)
@@ -729,7 +772,7 @@ final class NotesController {
         didMutate()
     }
 
-    private func didMutate() {
+    func didMutate() {
         quit.noteMutation(generation: store.mutationGeneration)
         autosave.schedule()
         notifyLibraryChange()

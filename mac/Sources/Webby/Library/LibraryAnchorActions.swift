@@ -105,15 +105,17 @@ struct LibraryAnchorActions {
     func currentScopes() -> [NoteScope] {
         guard case let .app(bundleID)? = currentExternalAppAnchor() else { return [] }
         let context = currentApp.currentContext().flatMap { $0.appBundleID == bundleID ? $0 : nil }
-        return NoteScope.choices(for: context ?? Context(appBundleID: bundleID))
+        // "Just this tab" needs the live tab, which the Library can't verify once it is
+        // in front, so it offers anchors only.
+        return NoteScope.choices(for: context ?? Context(appBundleID: bundleID)).filter { $0.anchor != nil }
     }
 
     /// Re-reads the current scopes and calls `apply` once with the one titled `title`,
     /// so a menu built for an earlier page never attaches to a stale anchor.
     @discardableResult
     func attachCurrentScope(titled title: String, _ apply: (Anchor) -> Void) -> Bool {
-        guard let scope = currentScopes().first(where: { $0.title == title }) else { return false }
-        apply(scope.anchor)
+        guard let anchor = currentScopes().first(where: { $0.title == title })?.anchor else { return false }
+        apply(anchor)
         return true
     }
 

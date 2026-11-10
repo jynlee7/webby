@@ -1,0 +1,108 @@
+[
+  {
+    "type": "hello",
+    "v": 1,
+    "profile": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "extVersion": "0.0.1",
+    "incognitoAllowed": false
+  },
+  {
+    "type": "inventory",
+    "windows": [
+      {
+        "id": 551729554,
+        "focused": false,
+        "incognito": false,
+        "bounds": {
+          "left": 22,
+          "top": 56,
+          "width": 1200,
+          "height": 813
+        },
+        "tabs": [
+          {
+            "id": 551729555,
+            "index": 0,
+            "active": true,
+            "url": "http://127.0.0.1:8766/d.html?after=relaunch",
+            "title": "Smoke d",
+            "lastAccessed": 1794101932714.645
+          },
+          {
+            "id": 551729556,
+            "index": 1,
+            "active": false,
+            "url": "http://127.0.0.1:8766/dup.html",
+            "title": "127.0.0.1:8766/dup.html",
+            "lastAccessed": 1794101882525.373
+          },
+          {
+            "id": 551729557,
+            "index": 2,
+            "active": false,
+            "url": "http://127.0.0.1:8766/dup.html",
+            "title": "127.0.0.1:8766/dup.html",
+            "lastAccessed": 1794101751588.129
+          },
+          {
+            "id": 551729558,
+            "index": 3,
+            "active": false,
+            "url": "http://127.0.0.1:8766/shared.html",
+            "title": "127.0.0.1:8766/shared.html",
+            "lastAccessed": 1794101823735.314
+          }
+        ]
+      },
+      {
+        "id": 551729559,
+        "focused": true,
+        "incognito": false,
+        "bounds": {
+          "left": 44,
+          "top": 78,
+          "width": 1200,
+          "height": 813
+        },
+        "tabs": [
+          {
+            "id": 551729560,
+            "index": 0,
+            "active": true,
+            "url": "http://localhost:8766/b.html?w=2",
+            "title": "Smoke b",
+            "lastAccessed": 1794101932811.092
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "active",
+    "windowId": 551729559,
+    "incognito": false,
+    "tab": {
+      "id": 551729560,
+      "index": 0,
+      "active": true,
+      "url": "http://localhost:8766/b.html?w=2",
+      "title": "Smoke b",
+      "lastAccessed": 1794101932811.092
+    }
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 551729558,
+    "title": "Smoke shared"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 551729556,
+    "title": "Smoke dup"
+  },
+  {
+    "type": "tabUpdated",
+    "tabId": 551729557,
+    "title": "Smoke dup"
+  }
+]

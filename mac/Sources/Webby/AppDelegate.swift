@@ -101,11 +101,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.registerNewNote(shortcut)
         notes.onStatusChange = { [weak self] in self?.statusMenu.refreshIcon() }
 
+        notes.tabs.chromeSession = { BrowserMonitor.runningChromeSession() }
+        notes.tabs.openTabs = { [weak self] in self?.openTabs.inventory ?? LibraryInventory() }
+        notes.tabs.liveTab = { [weak self] ref in self?.browser.tab(ref) }
         // Every consumer sees every event, in this order: Open Tabs lists tabs, the browser
         // monitor follows the focused window's page for web notes (and each profile's
-        // incognito access), and Chrome settings tracks connected profiles.
+        // incognito access), tab notes follow their tabs after open tabs and browser so
+        // their inventory is current, and Chrome settings tracks connected profiles.
         chromeBridge.addEventHandler { [weak self] event in self?.openTabs.receive(event) }
         chromeBridge.addEventHandler { [weak self] event in self?.browser.receive(event) }
+        chromeBridge.addEventHandler { [weak self] event in self?.notes.receiveBridgeEvent(event) }
         chromeBridge.addEventHandler { [weak self] event in self?.chromeSettings.receive(event) }
         chromeBridge.start()
         if chromeBridge.needsMoveToApplications {
