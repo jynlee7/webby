@@ -575,7 +575,13 @@ public actor ConversationStore {
         var changedCount = 0
         for id in try conversationIDs() {
             let open = open(id)
-            guard var document = open.document, !open.isReadOnly else { continue }
+            // Opening an unreadable file moves it aside and returns an empty stand-in.
+            // Only a conversation still on disk is redacted, so the stand-in is never
+            // saved in the corrupt file's place. The outcome alone can't tell: a
+            // conversation saved after a missing or recovered open keeps that outcome.
+            guard var document = open.document, !open.isReadOnly,
+                  FileManager.default.fileExists(atPath: fileURL(for: id).path)
+            else { continue }
             let changed = Self.applyRedaction(noteID: noteID, to: &document)
             if changed {
                 // A redaction must not extend the retention clock.

@@ -100,4 +100,24 @@ public struct BrowserSession: Sendable {
         abs(Double(bounds.left) - frame.minX) <= 2 && abs(Double(bounds.top) - frame.minY) <= 2
             && abs(Double(bounds.width) - frame.width) <= 2 && abs(Double(bounds.height) - frame.height) <= 2
     }
+
+    /// The page a previously verified `tab` shows now, for when Chrome reports no
+    /// focused window because Webby is in front. Returns nil unless the same session,
+    /// profile and non-incognito window still have `tab` as their one active tab and no
+    /// other window is focused. The URL is read from the current inventory.
+    public func context(continuing tab: TabRef, queryRules: [QueryRule]) -> Context? {
+        guard tab.browser == Self.bundleID, let identity, tab.session == identity,
+              let profile = profiles[tab.profile],
+              let window = profile.windows.first(where: { $0.id == tab.windowID }),
+              !window.incognito
+        else { return nil }
+        let otherFocused = profiles.contains { key, profile in
+            profile.windows.contains { $0.focused && (key != tab.profile || $0.id != tab.windowID) }
+        }
+        let active = window.tabs.filter(\.active)
+        guard !otherFocused, active.count == 1, let current = active.first, current.id == tab.tabID,
+              let page = PageURL(string: current.url, queryRules: queryRules)
+        else { return nil }
+        return Context(appBundleID: Self.bundleID, page: page, tab: tab)
+    }
 }

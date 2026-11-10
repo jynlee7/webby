@@ -50,6 +50,12 @@ final class BrowserMonitor {
         return session.context(focusedFrame: focusedFrame, queryRules: queryRules())
     }
 
+    /// The page `tab` still shows, or nil once Chrome moved away from it.
+    func context(continuing tab: TabRef) -> Context? {
+        session.setIdentity(sessionIdentity())
+        return session.context(continuing: tab, queryRules: queryRules())
+    }
+
     /// The running Chrome's `"<pid>@<launch date>"`, or nil when Chrome isn't running.
     static func runningChromeSession() -> String? {
         let session = OpenTabsFeed.runningChromeSession()

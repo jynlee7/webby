@@ -4,6 +4,7 @@ import WebbyCore
 struct LibraryView: View {
     let model: LibraryModel
     let actions: LibraryAnchorActions
+    let attachChoices: LibraryAttachChoices
     let draft: LibraryTextDraft
     let exportController: ExportController
     let importController: ImportController
@@ -25,7 +26,7 @@ struct LibraryView: View {
             )
             .navigationSplitViewColumnWidth(min: 340, ideal: 460, max: 680)
         } detail: {
-            LibraryDetailView(model: model, actions: actions, draft: draft)
+            LibraryDetailView(model: model, actions: actions, attachChoices: attachChoices, draft: draft)
         }
         .sheet(isPresented: $showingNewNote) {
             LibraryNewNoteSheet(model: model, draft: draft)

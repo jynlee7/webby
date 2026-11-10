@@ -25,6 +25,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     )
 
     private let actions: LibraryAnchorActions
+    private let attachChoices: LibraryAttachChoices
     private let presentation: Presentation
     private let focusDetail: DetailFocus
     private var hostingController: NSHostingController<LibraryView>?
@@ -37,6 +38,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
     ) {
         self.model = model
         self.actions = actions
+        attachChoices = LibraryAttachChoices(actions: actions)
         self.presentation = presentation
         self.focusDetail = focusDetail
         super.init(window: nil)
@@ -132,6 +134,7 @@ final class LibraryWindowController: NSWindowController, NSWindowDelegate {
             rootView: LibraryView(
                 model: model,
                 actions: actions,
+                attachChoices: attachChoices,
                 draft: draft,
                 exportController: exportController,
                 importController: importController
