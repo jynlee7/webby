@@ -63,16 +63,16 @@ private func actions(bundleID: @escaping @MainActor () -> String?, context: @esc
             browser.receive(.message(connection: connection, profile: profile,
                                      .hello(BridgeHello(profile: profile, extVersion: "1", incognitoAllowed: allowed))))
         }
-        #expect(GeneralSettingsModel.incognitoSummary(browser.incognitoAccess) == nil)
+        #expect(ChromeSettingsModel.incognitoSummary(browser.incognitoAccess) == nil)
         hello(1, "a", false)
-        #expect(GeneralSettingsModel.incognitoSummary(browser.incognitoAccess) == "Not allowed")
+        #expect(ChromeSettingsModel.incognitoSummary(browser.incognitoAccess) == "Not allowed")
         hello(2, "b", true)
-        #expect(GeneralSettingsModel.incognitoSummary(browser.incognitoAccess) == "Differs by profile")
+        #expect(ChromeSettingsModel.incognitoSummary(browser.incognitoAccess) == "Differs by profile")
         // A late disconnect from an older bridge keeps its replacement's answer.
         hello(3, "a", true)
         browser.receive(.disconnected(connection: 1, profile: "a"))
         #expect(browser.incognitoAccess == ["a": true, "b": true])
-        #expect(GeneralSettingsModel.incognitoSummary(browser.incognitoAccess) == "Allowed")
+        #expect(ChromeSettingsModel.incognitoSummary(browser.incognitoAccess) == "Allowed")
         browser.receive(.dropped(connection: 2, reason: "test"))
         browser.receive(.disconnected(connection: 3, profile: "a"))
         #expect(browser.incognitoAccess.isEmpty)

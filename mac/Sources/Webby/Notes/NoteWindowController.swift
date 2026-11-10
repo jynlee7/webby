@@ -8,19 +8,28 @@ import WebbyCore
 final class NoteWindowController: NSObject, NSWindowDelegate {
     let model: NoteModel
     let panel: NotePanel
-    /// The user moved the panel, or finished resizing it. Read `panel.frame`.
+    /// The user moved the panel, or finished resizing it. Read `visualFrame`.
     var onUserLayout: (@MainActor () -> Void)?
     /// The note lost keyboard focus.
     var onResignKey: (@MainActor () -> Void)?
 
     private var applyingFrame = false
 
-    init(model: NoteModel) {
+    /// The note as drawn, in AppKit coordinates. The panel is larger by the decoration
+    /// margin on every side, and stored frames describe this rect.
+    var visualFrame: NSRect {
+        panel.frame.insetBy(dx: Self.margin, dy: Self.margin)
+    }
+
+    private static let margin = Geometry.decorationMargin
+
+    init(model: NoteModel, assets: SkinAssetCache) {
         self.model = model
-        panel = NotePanel(contentRect: NSRect(origin: .zero, size: OverlayPlanner.defaultNoteSize))
+        panel = NotePanel(contentRect: NSRect(origin: .zero, size: OverlayPlanner.defaultNoteSize)
+            .insetBy(dx: -Self.margin, dy: -Self.margin))
         super.init()
 
-        let hosting = FirstMouseHostingView(rootView: NoteRootView(model: model))
+        let hosting = FirstMouseHostingView(rootView: NoteRootView(model: model, assets: assets))
         // The planner owns the panel's size; SwiftUI must not resize the window.
         hosting.sizingOptions = []
         panel.contentView = hosting
@@ -39,11 +48,13 @@ final class NoteWindowController: NSObject, NSWindowDelegate {
         panel.hasShadow = model.themes.light.surface.shadow != .known(.none)
     }
 
-    /// Moves the panel to `frame`, in AppKit coordinates, without reporting a user move.
+    /// Shows the note at the visual `frame`, in AppKit coordinates, without reporting a
+    /// user move.
     func apply(frame: NSRect) {
-        guard frame != panel.frame else { return }
+        let panelFrame = frame.insetBy(dx: -Self.margin, dy: -Self.margin)
+        guard panelFrame != panel.frame else { return }
         applyingFrame = true
-        panel.setFrame(frame, display: true)
+        panel.setFrame(panelFrame, display: true)
         applyingFrame = false
         panel.invalidateShadow()
     }

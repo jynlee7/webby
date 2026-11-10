@@ -6,7 +6,9 @@ import SwiftUI
 /// Without the permission notes still work, at fixed screen positions. Ad-hoc builds
 /// lose the grant on every rebuild: System Settings still shows the switch on, but
 /// `AXIsProcessTrusted()` is false until it is reset (`tccutil reset Accessibility
-/// com.webby.app`) or the build is signed with `WEBBY_SIGN_IDENTITY`.
+/// <Webby.bundleID>`, which `scripts/build-app.sh` prints) or the build is signed with
+/// `WEBBY_SIGN_IDENTITY`. Builds before 0.1.0 used `com.webby.app`, whose grant does not
+/// carry over to the new identifier.
 @MainActor
 final class AccessibilityPermission {
     private(set) var isTrusted = AXIsProcessTrusted()
