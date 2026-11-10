@@ -2329,6 +2329,140 @@ Temporary: dictation PCM ring buffer in memory (spilled to a temp file only for 
   - Ephemeral notes are never encoded, including an incognito page-scoped note before Keep; after Keep the next save includes it.
 - **Cut line:** Copy tab notes.
 
+### Integration briefs and issue #22 refinement (2026-11-10)
+
+This update supersedes conflicting scheduling and task-size assumptions in the 2026-11-06 #22 plan. It authorizes no implementation or merge. Product recommendations below still need approval.
+
+Observed baseline: `main@0474dea`, #67 `6f24f05`, #58 `d75bc79`, #66 `f5c3fd0`, #65 `9e183d4`. All four PRs have green CI; #65 remains draft. Recheck heads before execution. Read the [Track A coordination comment](https://github.com/jynlee7/webby/issues/42#issuecomment-6755201482) and [Track B integration handoff](https://github.com/jynlee7/webby/issues/43#issuecomment-6718052010).
+
+#### Shared execution rules
+
+1. The owner merges #67, then #58. PR #64 is already merged into #58. Do not reopen or retarget #64.
+2. Merge updated `origin/main` into `issue-16-tab-notes`. Do not rebase or force-push. After independent review and green CI, hand #66 back for the owner to merge.
+3. Merge that updated `main` into `issue-25-agent-panel`. Keep #65 draft until its real-key acceptance checks pass.
+4. Start #22 only after #58 is on `main`. Complete its note-lifecycle integration after #66 lands. Do not merge an unreviewed local combination in place of those owner merges.
+
+One implementer handles one conflict cluster or task at a time. Refresh branch heads and require a clean worktree before starting. Incoming clean merge changes retain their original scope. They do not expand the files an implementer may edit manually. Stop on unexpected conflicts, concurrent branch movement, unexplained behavior, or a failing regression. Never choose an entire file from one side to resolve a semantic conflict.
+
+Inspect every cluster diff. Resolve all conflicts before compiling the combined tree. Then run targeted tests and the full checks before starting feature work. A partial merge is not a meaningful build target. Independent review must inspect both conflict resolutions and automatically merged integration points.
+
+#### Brief A: integrate PR #66 for issue #16
+
+Gate: `main` contains #67 and #58. Target branch is `issue-16-tab-notes`.
+
+Manual resolution scope is limited to:
+
+- `mac/Sources/Webby/AppDelegate.swift`
+- `mac/Sources/Webby/Notes/NotesController.swift`
+- `mac/Sources/Webby/Browser/BrowserMonitor.swift`
+- `mac/Sources/Webby/Library/LibraryDetailView.swift`, only if the merge conflicts in the shared detail initializer or attachment controls. Keep #67's `LibraryAttachChoices` dependency and refreshed `attachChoices.scopes`, plus #66's tab status, detach confirmation and promotion controls. Do not redesign either UI.
+
+Preserve clean incoming persistence, Library, skin, Chrome settings, packaging and test changes. Preserve #66's tab models, extension behavior, restore fixtures, Library views and tests.
+
+Resolve three clusters in order:
+
+1. In `AppDelegate.applicationDidFinishLaunching`, keep `chromeBridge.addEventHandler`. Register `openTabs.receive`, `browser.receive`, `notes.receiveBridgeEvent`, then `chromeSettings.receive`, before `chromeBridge.start()`. Initialize `notes.tabs.chromeSession`, `openTabs` and `liveTab` closures first. Preserve skin importer, asset ownership, queued skin URLs and Chrome pane wiring.
+2. In `NotesController`, retain #58's `skins`, `assets`, initializers, `visualFrame`, `collapsedHeight`, `refreshThemes()` and `workspacesMutated()`. Retain #66's `tabs`, import event replay, restore acknowledgement and promotion/demotion behavior. Make `monitor`, `now` and `didMutate()` internal because `NotesController+Tabs.swift` uses them. Do not broaden other access.
+3. In `BrowserMonitor`, retain both `context(continuing:)` from #67 and `tab(_:)` from #66. Audit the automatically merged `BrowserSession` methods and `OpenTabsFeed.runningChromeSession()` use of `ChromeSessionIdentity`. These audit files are not preauthorized manual-edit scope.
+4. If `LibraryDetailView` conflicts, resolve only the overlap described above, preserving the refreshed Attach to Current choices and tab detach confirmation. Inspect all detail-view call sites and run `LibraryAttachChoicesTests` with the tab-note tests.
+
+Verification on macOS: build, then `scripts/test.sh --filter 'BridgeEventHandlersTests|BrowserSessionTests|TabBindingReconcilerTests|NotesControllerTabNotesTests|NotesControllerWebNotesTests|NotesControllerSkinTests|ChromeContextLibrarySettingsTests|LibraryAttachChoicesTests|secondQuitAfterFailedSaveTriesToSaveAgain|retriesShareOneTimeoutBudget|redactionLeavesACorruptConversationAlone|staleSaveCannotUndoRedaction'`. First enumerate test IDs with `scripts/test.sh list`; quit and conversation tests are top-level functions, not suites named after their files. Confirm every requested test family is selected; a nonempty overall selection alone is insufficient.
+
+Repeat packaged checks with disposable storage and Chrome for Testing: page/path/site/app notes, tab-following navigation, Closed Tabs, exact-URL restore, ambiguous restore refusal, promotion/demotion, restored-badge acknowledgement, another Chrome process quitting and Webby relaunch after opening another tab. Also check Library Attach to Current, skin reload, Chrome Settings and quit/relaunch persistence. Do not claim real Accessibility clicks or branded Chrome/profile/incognito coverage from synthetic calls.
+
+Hand off the integration SHA, manually resolved files, automatic-merge audit, CI URL, checks and manual gaps. Owner merges #66. The repeated-redaction bug is outside this work.
+
+#### Brief B: integrate PR #65 for issue #25
+
+Gate: `main` contains #67, #58 and #66. Target branch is `issue-25-agent-panel`.
+
+Manual resolution scope is limited to `mac/Package.swift`, `mac/Sources/Webby/AppDelegate.swift`, `mac/Sources/Webby/Settings/SettingsWindow.swift`, `mac/Sources/Webby/StatusMenu.swift`, and `scripts/check-imports.sh`.
+
+Resolve three clusters:
+
+1. Keep app dependencies on `WebbyCore`, `WebbySkinArchive` and `WebbyAgent`. Preserve corresponding test dependencies. Union the existing narrow import permissions for skin APIs, `WebbySkinArchive`, `WebbyAgent` and `Security`; do not broaden Core or Agent boundaries.
+2. In AppDelegate, keep all four ordered bridge consumers and #66's tab wiring. Create the agent and install purge hooks before `notes.start()`, then retain conversation retention and Library impact hooks. Replace obsolete `resolveThemes()` references with `skins.themes()`. Extend the skin change callback to refresh notes and `agentPanel?.updateThemes(skins.themes())`.
+3. Combine Settings dependencies without losing General, Appearance, Pages, Chrome or AI controls. Keep the Chrome pane's incognito state rather than resurrecting the obsolete General row. Preserve dual-shortcut recording/conflict checks and both agent and skin status-menu actions.
+
+If `mac/Sources/Webby/Notes/NotesController.swift` conflicts, an additional bounded cluster may resolve only #65's `onNotesPurged`/`reportPurged` additions alongside #66's internal `monitor`/`now`/`didMutate()` and tab lifecycle, while retaining #58's skins/assets architecture. This is a conditional manual-edit scope, not permission to alter purge semantics. Run conversation-storage, Empty Trash and tab-note tests after the tree compiles.
+
+Audit all automatically merged purge/import/quit behavior, Library hooks and hotkeys. Other edits require an explicit expanded scope, not an opportunistic fix.
+
+Verification on macOS: build and `scripts/test.sh --filter 'AgentControllerTests|AgentConversationStorageTests|AgentChromePageScopeTests|AgentShortcutTests|EmptyTrashConversationTests|KeychainCredentialStoreTests|LibraryModelTests|ChromeSettingsModelTests|NotesControllerSkinTests|NotesControllerTabNotesTests|conversationRoundTripAndOwnerOnlyPermissions|redactionLeavesACorruptConversationAlone|staleSaveCannotUndoRedaction'`. Enumerate actual IDs with `scripts/test.sh list` and verify every requested family before relying on counts. Run import and skin-dependency guards.
+
+The Keychain service is `io.github.jynlee7.webby`, account `anthropic`. No service migration is needed. Qualify #20's old no-Keychain statement after this lands. Test storage through fakes or an isolated namespace, never the real credential entry.
+
+Keep real-key checks unchecked until the maintainer explicitly authorizes an isolated test: key save/replace/remove, actual answers and citations opening Library notes, interrupted streaming and Retry, cache-read usage, and long-note `read_note`. Never print the key or capture private note content. Human approval and these checks remain separate from green CI.
+
+#### Full verification for each integrated PR
+
+The merged #58 delivers `scripts/verify-artifact.sh`, `scripts/test-build-app-release.sh` and `mac/Resources/Webby.entitlements`; verify their presence after that owner merge. Stop if the integration baseline lacks them. Inspect scripts before executing them. On macOS run `(cd mac && swift build)`, `scripts/test.sh --parallel`, `scripts/check-imports.sh`, `scripts/check-skin-dependency.sh`, `scripts/build-app.sh`, `scripts/verify-artifact.sh dist/Webby.app`, `scripts/check-extension.sh --app dist/Webby.app`, and `shellcheck scripts/*.sh`, plus packaging/checker tests required by current CI. App packaging replaces `dist/Webby.app`; use only the disposable checkout output. Re-run CI at the integration head. The reported 1092-test combined experiment predates final fixes and is not final-head evidence.
+
+Do not re-request Greptile when that PR has already used its one review. Reply to each finding, audit unanswered threads, and hand off to the owner. Signing, notarization, translocation and real Accessibility interaction remain explicit release gates.
+
+#### Refined #22 scope and decisions
+
+#22 is on-device dictation only. It excludes Cartesia, credentials, consent, audio upload, playback, voice-agent UI, note schemas and bundle identity changes. #23 consumes its audio contract later; #26 waits on both #22 and #23. #27 still waits on #65.
+
+The old two-task split is too broad. The tap's `nonisolated` declaration addresses actor inheritance, not real-time safety. A bounded ring alone does not bound callbacks, queues or recognizer backlog. Editor integration also needs an IME contract, and termination needs a capture shutdown barrier.
+
+Recommendations, not approvals:
+
+- One app-wide session. Cancel keeps already committed final text and discards pending hypotheses.
+- Append at the current end of the active editor, not a stale model snapshot or saved caret. Defer insertion during marked-text composition and preserve selection/undo through the normal editor change path.
+- Limit each session to 120 seconds. Retained 16 kHz Int16 PCM costs 3,840,000 bytes. Keep all app-owned audio buffers below 8 MiB, including bounded raw ingress, conversion scratch and delivery. Measure Apple framework memory separately. Reject unsupported sizes/formats or overflow explicitly.
+- Take Step 11a's cut line and defer `SpeechTranscriber`/`AssetInventory`. Use on-device `SFSpeechRecognizer` for the first PR. If the modern path is retained instead, approve its extra scope and require a real macOS 26 SDK build.
+- Validate the synchronization design before capture implementation. Use a preallocated bounded ingress with a proven single-producer/single-consumer protocol or a nonblocking acquisition policy that fails the session on contention. No new C target, external atomic dependency or unchecked concurrency wrapper is implicitly approved. Stop and revise scope if one is required.
+
+Capture contracts:
+
+- `AudioEngineHost` solely owns engine/tap lifecycle. The `nonisolated static` tap copies into preallocated ingress only. No converter calls, heap allocation, logging, actor hops, networking, blocking locks or per-buffer tasks in that callback. Borrowed AVAudio buffers never escape.
+- A serialized worker owns conversion. Emit ordered 3,200-byte little-endian frames, each with session id, sequence and `validSampleCount` up to 1,600. Only the terminal frame may be zero-padded; recognition consumes valid samples only. Test mono mixing, clipping, residuals and sample-rate conversion.
+- Keep live recognition delivery separate from the retained retry buffer. No replay, retry UI or audio handoff to #23/#65 in this issue. Stop, Cancel, terminal error and the session limit release app-owned audio. Autosave and blur do not.
+- Request microphone and speech authorization only after explicit activation. Revalidate session identity after every suspension and before hardware start. Require supported locale, `supportsOnDeviceRecognition` and `requiresOnDeviceRecognition = true`; never fall back to cloud recognition.
+- Stop hardware and the app recording state within one second, independently of recognizer finalization. Bound finalization with a timeout. Cancel invalidates callbacks first. Old callbacks cannot edit a restarted session or another note.
+- Hide, close, trash, import freeze, context/tab removal and quit stop capture. Revalidate writable/nontrashed state before inserting final text. Quit waits for a bounded shutdown acknowledgement even with no dirty notes, without blocking a main queue needed for cleanup. Blur alone is not terminal.
+- The no-network requirement applies to dictation: no transport or audio routing is introduced. Do not claim the whole app is offline after #65 lands.
+
+#### Sequential #22 implementer tasks
+
+Each task includes its regression tests, permits only the listed files and requires review before the next. Paths under `Sources` and `Tests` are relative to `mac/`. New file names are proposed interfaces, not existing code. This includes the explicitly permitted new `scripts/test-audio-entitlements.sh` in D8.
+
+| Task | Allowed files | Gate and verification |
+|---|---|---|
+| D1: target and PCM values | `mac/Package.swift`, `scripts/check-imports.sh`, `Sources/WebbyVoice/{PCMFrame,PCMRingBuffer}.swift`, `Tests/WebbyVoiceTests/{PCMFrameTests,PCMRingBufferTests}.swift` | Approve capacity/session limit. Keep Voice dependent only on Core. Test framing, valid samples, bounds and cleanup. |
+| D2: bounded ingress and tap | `Sources/WebbyVoice/{AudioIngress,AudioTap}.swift`, `Tests/WebbyVoiceTests/{AudioIngressTests,AudioTapTests}.swift` | D1; prove synchronization, publication, overflow and shutdown lifetime. Stop if the chosen implementation needs another target/dependency. |
+| D3: conversion and engine owner | `Sources/WebbyVoice/{AudioEngineHost,PCMConverter}.swift`, `Tests/WebbyVoiceTests/{AudioEngineHostTests,PCMConverterTests,AudioTapTests}.swift` | D2; test 48 kHz to 16 kHz sine, arbitrary chunking, endian output, drain/padding, restart and idempotent shutdown. |
+| D4: permissions and local recognition | `Sources/WebbyVoice/{LocalSpeech,SpeechPermission}.swift`, `Tests/WebbyVoiceTests/{LocalSpeechTests,SpeechPermissionTests}.swift` | D3; fake permissions and sessions. Test denial, capability, cumulative/final results, duplicate suppression, late callbacks and timeout. |
+| D5: session state machine | `Sources/Webby/Notes/DictationController.swift`, `Tests/WebbyTests/DictationControllerTests.swift` | D4; test Cancel/Stop during every phase, overflow/limit, stale sessions and hardware-stop ordering. |
+| D6: editor insertion and UI | `Sources/Webby/Notes/NoteView.swift`, `Tests/WebbyTests/NoteDictationEditorTests.swift` | D5; approve append/Cancel semantics. Test typing, IME, Library refresh, selection/undo, and Escape with and without dictation. |
+| D7: lifecycle wiring | `Sources/Webby/Notes/{NotesController,NoteWindowController}.swift`, `Sources/Webby/AppDelegate.swift`, `Tests/WebbyTests/NotesControllerDictationTests.swift` | D6 and merged #66. Test close/hide/trash/import/tab/context/quit races. Preserve autosave and failed-quit behavior. |
+| D8: permissions and signing configuration | `mac/Resources/{Info.plist,Webby.entitlements}`, `scripts/{build-app.sh,verify-artifact.sh,test-build-app-release.sh,test-audio-entitlements.sh}`, `Tests/WebbyTests/InfoPlistTests.swift` | D7. Add both usage strings. Split signing flags so only the app receives audio-input, not the bridge. Update exact entitlement assertions. |
+
+D6 exposes optional dictation bindings with inert defaults so existing note callers still compile before D7. D7 supplies the single shared controller and lifecycle ownership. Do not enable capture in the UI until that wiring is complete. D8 adds configuration; only then run live microphone checks.
+
+Before every task, refresh the exact allowlist against merged code and verify new test/entry points. Use `scripts/test.sh` for CLT compatibility. Each task must compile and pass its named tests on macOS, then pass the full suite and guards at the combined head. Stop rather than guessing an unavailable Apple API or adding an unreviewed dependency.
+
+#### #22 acceptance and evidence
+
+| Issue criterion | Automated evidence | Manual evidence |
+|---|---|---|
+| 30 seconds English becomes editable text | Fake finalized-segment insertion | Dictate offline, edit, save and reopen |
+| Audio deleted on accept/Cancel, not autosave | Ownership/queue cleanup, temporary storage checks | Confirm no audio file is created or left behind |
+| Mic indicator off within one second | Shutdown ordering with fake clock | Time actual hardware indicator independently of finalization |
+| Unsupported Mac offers typing | Capability/permission fakes | Type-instead focus and usable editor |
+| Clear microphone permission request | Both usage strings and both authorization paths | Fresh dedicated-user prompts/denial/revocation |
+| 16 kHz mono Int16 LE, 100 ms | Sine conversion, framing, sample count and padding tests | Confirm production format on test hardware |
+| No dictation network path | Import/call-path and audio-routing review | Isolated traffic observation, distinguish OS asset activity |
+| Tests require no microphone | Deterministic tap/converter/state tests | Manual-render engine checks wiring only, not physical input proof |
+| Both supported toolchains build | Record actual Swift/Xcode/SDK versions and build/test results | Swift 6.1/macOS 15 and Swift 6.2/macOS 26 validation hosts |
+
+CI uses a floating macOS image and prints versions; it does not pin the older documented SDK. No timeout or unsupported manual-render tap becomes a silent skip. Report the coverage gap and exercise the extracted callback separately. No Apple SDK execution or live hardware validation occurred during this planning pass. An independent reviewer checked these briefs; the two extra conditional conflict scopes above address its findings. The parent verified the referenced agent and event-handler suite declarations in the branch sources.
+
+#### Follow-ups and handoff limits
+
+Keep repeated-redaction idempotence separate after #67, with a regression for no second save/count. Keep #20 open for credentials, protected release execution and clean-machine evidence. Once #65 lands, revise the old no-Keychain assertion to explain the already-matching service. Do not reopen completed PR #64, merge any PR, call a provider, reset user permissions, or publish these planning changes without the next authorized step.
+
 ### Step 11a: voice foundation and on-device dictation (no network)
 
 - **Size:** M.
