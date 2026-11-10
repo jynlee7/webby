@@ -23,9 +23,11 @@ allowed_for() {
     Webby)
       # OSLog: Logger keeps URLs and titles private in the unified log (plan.md §6.1).
       # Carbon: RegisterEventHotKey for the global New Note shortcut (plan.md Step 3b).
+      # UniformTypeIdentifiers: the .webbyskin type for the open and save panels.
+      # CoreServices: FSEvents watches the user skins folder for hot reload (plan.md §5.4.8).
       # Observation: @Observable models such as LibraryModel (its plugin ships with the CLT).
       # WebKit: the locked-down Compiled view, app-only and never used by WebbyCore.
-      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics OSLog Carbon Observation WebbyCore WebKit"
+      printf '%s\n' "AppKit SwiftUI Foundation CoreGraphics CoreServices OSLog Carbon Observation UniformTypeIdentifiers WebbyCore WebbySkinArchive WebKit"
       ;;
     WebbyBridge)
       printf '%s\n' "Foundation WebbyCore"

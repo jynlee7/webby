@@ -395,8 +395,26 @@ public enum SkinArchiveStaging {
         _ staged: StagedSkinArchive,
         availableBaseIDs: Set<String>
     ) -> SkinArchiveValidation {
-        let checker = SkinAssetChecker(staged)
-        let manifestURL = staged.root.appendingPathComponent("skin.json")
+        validate(
+            root: staged.root,
+            paths: staged.entries.map(\.path),
+            warnings: staged.warnings,
+            availableBaseIDs: availableBaseIDs,
+            isBuiltIn: false
+        )
+    }
+
+    /// Validates an already admitted file set under `root` with the real media
+    /// checks. The installed-folder catalog uses this with `isBuiltIn` for bundled skins.
+    static func validate(
+        root: URL,
+        paths: [String],
+        warnings: [SkinDiagnostic],
+        availableBaseIDs: Set<String>,
+        isBuiltIn: Bool
+    ) -> SkinArchiveValidation {
+        let checker = SkinAssetChecker(root: root, paths: paths)
+        let manifestURL = root.appendingPathComponent("skin.json")
 
         var loaderDiagnostics: [SkinDiagnostic] = []
         let manifestData: Data
@@ -418,12 +436,12 @@ public enum SkinArchiveStaging {
             document: document,
             assets: checker,
             context: SkinValidationContext(
-                isBuiltIn: false,
+                isBuiltIn: isBuiltIn,
                 availableBaseIDs: availableBaseIDs
             )
         )
 
-        var diagnostics = staged.warnings + loaderDiagnostics + validation.diagnostics
+        var diagnostics = warnings + loaderDiagnostics + validation.diagnostics
         if checker.pixelBudgetExceeded {
             diagnostics.append(SkinDiagnostic(
                 code: "pixel-budget-exceeded",

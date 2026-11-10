@@ -45,6 +45,6 @@ public struct ClaudeConfiguration: Equatable, Sendable {
         effort: .medium,
         maxOutputTokens: 16_000,
         notesBudget: 32_000,
-        tieringContext: Context(appBundleID: "com.webby.app")
+        tieringContext: Context(appBundleID: Webby.bundleID)
     )
 }

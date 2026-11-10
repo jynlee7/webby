@@ -210,3 +210,46 @@ func recordedPrivateWindowNeverReusesNormalPage(_ name: String) throws {
     let videoScopes = NoteScope.choices(for: Context(appBundleID: BrowserSession.bundleID, page: video))
     #expect(NoteScope.index(of: .web(page: PageURL(host: "youtube.com", path: "/watch"), scope: .page), in: videoScopes) == 0)
 }
+
+@Test func continuingATabNeedsTheSameWindowTabAndNoOtherFocus() throws {
+    var session = try connected()
+    try receive(.inventory(windows: [window([tab("https://example.com/a")])]), into: &session)
+    let verified = context(session)
+    let ref = try #require(verified.tab)
+    func continued() -> PageURL? {
+        session.context(continuing: ref, queryRules: QueryRules.builtIns)?.page
+    }
+
+    // Webby in front: Chrome reports no focused window, and the page is re-read.
+    try receive(.inventory(windows: [window([tab("https://example.com/b")], focused: false)]), into: &session)
+    #expect(continued() == PageURL(string: "https://example.com/b", queryRules: QueryRules.builtIns))
+
+    // Another focused window, even with no page of its own, takes precedence.
+    try receive(.inventory(windows: [
+        window([tab("https://example.com/b")], focused: false),
+        window([tab("chrome://newtab", id: 9)], id: 2),
+    ]), into: &session)
+    #expect(continued() == nil)
+
+    // So does a different profile's focused window.
+    try receive(.inventory(windows: [window([tab("https://example.com/b")], focused: false)]), into: &session)
+    try receive(.hello(BridgeHello(profile: profileB, extVersion: "1", incognitoAllowed: false)), into: &session,
+                connection: 2, profile: profileB)
+    try receive(.inventory(windows: [window([tab("https://other.example", id: 5)], id: 5)]), into: &session,
+                connection: 2, profile: profileB)
+    #expect(continued() == nil)
+    session.receive(.disconnected(connection: 2, profile: profileB))
+    #expect(continued() != nil)
+
+    // An internal page, a closed tab or a new identity end the continuation.
+    try receive(.tabUpdated(tabId: 1, url: "chrome://settings", title: nil), into: &session)
+    #expect(continued() == nil)
+    try receive(.tabUpdated(tabId: 1, url: "https://example.com/b", title: nil), into: &session)
+    #expect(continued() != nil)
+    try receive(.tabClosed(tabId: 1, windowClosing: false), into: &session)
+    #expect(continued() == nil)
+    try receive(.inventory(windows: [window([tab("https://example.com/b")], focused: false)]), into: &session)
+    #expect(continued() != nil)
+    session.setIdentity("200@2")
+    #expect(continued() == nil)
+}
