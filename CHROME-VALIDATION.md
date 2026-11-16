@@ -119,3 +119,48 @@ had the restored background window arrive in a second inventory.
 
 Not covered: quitting from Chrome's menu, branded Google Chrome, Accessibility
 window frames, several Chrome profiles, and the restore offered after a crash.
+
+### Rerun on the integrated head (769e141)
+
+Recorded on 2026-11-15 on macOS 26.1 with Chrome for Testing 158.0.8127.18,
+headless, with a disposable `--user-data-dir`, `--use-mock-keychain` and the
+extension loaded unpacked. The packaged app was built with `scripts/build-app.sh`
+from a temporary copy patched only to move Application Support to a temporary
+folder, treat Chrome for Testing as Chrome and skip the global hotkey. Its staged
+bundle had its own ID and no URL scheme or document types. The app wrote the host
+manifest into the profile, and Chrome started the bridge from it. Tab-bound notes
+were seeded into the temporary notes.json with a small program that uses
+`NoteStore`, because headless Chrome has no window to verify. Pages were served
+from 127.0.0.1.
+
+- **Webby relaunch while Chrome runs.** A binding with the current run's tab ID and
+  a stale `lastURL` re-bound by ID, and `lastURL` was refreshed.
+- **Stale-session pass and restore check at launch.** An open binding from an old run
+  closed and waited for the check. A unique exact-URL match re-attached with
+  `pendingRestore` set ("Restored"). Two open tabs with the URL, and one open tab
+  claimed by two old tabs, left those notes in Closed Tabs with the check used up.
+  A binding with no matching tab stayed closed.
+- **Navigation.** b.html, then `c.html?q=1#frag`: `lastURL` became
+  `c.html?q=1`, and `source.url` stayed a.html.
+- **Close.** Closing the tab moved the note to Closed Tabs (`pendingRestore` false).
+- **`tabMoved`** (not covered live before). Moving a bound tab with
+  `chrome.tabs.move` updated `index`. Moving one into a new window with
+  `chrome.windows.create({tabId})` updated `windowID` and `index`, and the other
+  binding's index followed the next inventory.
+- **Chrome restarted while Webby was down.** Two open bindings, one already showing
+  "Restored", both re-attached to the new run's tabs with the badge.
+- **Chrome quit while Webby runs, then restore.** Headless Chrome for Testing posts no
+  `didLaunchApplicationNotification` or `didTerminateApplicationNotification`,
+  although its `NSRunningApplication` has a launch date and a regular activation
+  policy. A standalone observer saw only KVO changes to `runningApplications`. With no
+  exit notification, the windowClosing closures stayed "Tab closed", and the restore
+  didn't re-attach them. The harness then detected the exit by polling the tracked
+  pid and called `chromeTerminated(session:)`. With that, both bindings waited for
+  the check and re-attached after the restore. Headed Chrome, which users run, posts
+  the notification (see the pass above), and the merge didn't change that code.
+- **Bookkeeping.** `revision` and `updatedAt` never changed, and notes.json stayed at
+  version 2. The user's notes.json and Chrome host manifest were not modified.
+
+Not covered in this rerun: anything that needs a verified window (the scope picker,
+the badge's menu, Library buttons), `tabReplaced`, and the exit notification of a
+headed Chrome on this head.
