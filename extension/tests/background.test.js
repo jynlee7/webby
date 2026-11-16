@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 function event() {
   const listeners = [];
@@ -26,7 +27,7 @@ async function worker() {
       session: { get: async () => { throw new Error("quota storage must not be needed"); } },
     },
     extension: { isAllowedIncognitoAccess: async () => false },
-    windows: { getAll: async () => windows, onFocusChanged: event(), onBoundsChanged: event(), onRemoved: event(), WINDOW_ID_NONE: -1 },
+    windows: { getAll: async () => windows, onFocusChanged: event(), onBoundsChanged: event(), onRemoved: event(), onCreated: event(), WINDOW_ID_NONE: -1 },
     tabs: Object.fromEntries(["onActivated", "onCreated", "onUpdated", "onRemoved", "onMoved", "onAttached", "onReplaced"].map((name) => [name, event()])),
   };
   await import(`../background.js?test=${serial++}`);
@@ -129,4 +130,68 @@ test("window movement publishes fresh bounds", async () => {
   w.chrome.windows.onBoundsChanged.fire({ id: 1 });
   await w.drain();
   assert.deepEqual(w.messages.at(-1).windows[0].bounds, { left: 42, top: 80, width: 1000, height: 700 });
+});
+
+// Shared with the Swift tests (TabBindingReconcilerTests), which replay it through the
+// app's reducers.
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), "utf8"));
+
+test("a window that opens after the snapshot without focus is reported by an inventory", async () => {
+  const w = await worker();
+  const docs = { id: 10, windowId: 1, index: 0, active: true, incognito: false, url: "https://a.example/docs?id=4", title: "Docs" };
+  const front = { id: 1, focused: true, incognito: false, left: 0, top: 25, width: 1200, height: 800, tabs: [docs] };
+  w.chrome.windows.getAll = async () => [front];
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  const pricing = { id: 20, windowId: 2, index: 0, active: true, incognito: false, url: "https://b.example/pricing#annual", title: "Pricing" };
+  const later = { id: 2, focused: false, incognito: false, left: 40, top: 65, width: 1000, height: 700, tabs: [pricing] };
+  w.chrome.windows.getAll = async () => [front, later];
+  w.chrome.windows.onCreated.fire(later);
+  await w.drain();
+  assert.deepEqual(w.messages.map((m) => m.type), ["hello", "inventory", "active", "inventory"]);
+  assert.deepEqual(w.messages.at(-1).windows.map((win) => [win.id, win.focused, win.tabs.map((t) => t.url)]),
+    [[1, true, ["https://a.example/docs?id=4"]], [2, false, ["https://b.example/pricing#annual"]]]);
+});
+
+// Recorded from Chrome for Testing 157 restoring two windows (see CHROME-VALIDATION.md).
+// The first snapshot already lists every restored window; unloaded background tabs carry
+// their address as the title until they load, about 2.6 s later.
+test("session restore produces the recorded stream", async () => {
+  const recorded = fixture("browser-session-restore-recording");
+  const w = await worker();
+  const [hello, inventory, active, ...updates] = recorded;
+  w.chrome.runtime.getManifest = () => ({ version: hello.extVersion });
+  w.chrome.windows.getAll = async () => inventory.windows.map(({ bounds, tabs, ...win }) => ({
+    ...win, ...bounds, tabs: tabs.map((tab) => ({ ...tab, windowId: win.id, incognito: win.incognito })),
+  }));
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  for (const update of updates) w.chrome.tabs.onUpdated.fire(update.tabId, { title: update.title });
+  await w.drain();
+  assert.deepEqual(w.messages, recorded);
+  assert.equal(active.windowId, inventory.windows.find((win) => win.focused).id);
+});
+
+// The bridge replays its latest inventory to a relaunched Webby, which closes the note of
+// any tab that inventory doesn't list.
+test("a new tab is followed by an inventory that lists it", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  const created = { id: 2, windowId: 1, index: 1, active: true, incognito: false, url: "chrome://newtab/", title: "New Tab" };
+  w.chrome.windows.getAll = async () => [{ id: 1, focused: true, incognito: false, tabs: [{ ...w.tab, active: false }, created] }];
+  w.chrome.tabs.onCreated.fire(created);
+  await w.drain();
+  assert.deepEqual(w.messages.slice(-2).map((m) => m.type), ["tabCreated", "inventory"]);
+  assert.deepEqual(w.messages.at(-1).windows[0].tabs.map((t) => t.id), [1, 2]);
+});
+
+test("a replaced tab is reported before the inventory that follows", async () => {
+  const w = await worker();
+  w.chrome.runtime.onStartup.fire();
+  await w.drain();
+  w.chrome.tabs.onReplaced.fire(5, 1);
+  await w.drain();
+  assert.deepEqual(w.messages.slice(-2).map((m) => m.type), ["tabReplaced", "inventory"]);
+  assert.deepEqual(w.messages.at(-2), { type: "tabReplaced", added: 5, removed: 1 });
 });

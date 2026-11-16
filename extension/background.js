@@ -158,9 +158,18 @@ async function refreshWindows() {
 chrome.windows.onFocusChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onBoundsChanged.addListener(() => enqueueBrowserEvent(refreshWindows));
 chrome.windows.onRemoved.addListener(() => enqueueBrowserEvent(refreshWindows));
+// A window that opens in the background after the snapshot never gets focus. Without an
+// inventory the app can't tell whether it is incognito, so its tabs couldn't take back
+// notes. (Session restore lists its windows in the first snapshot.)
+chrome.windows.onCreated.addListener(() => enqueueBrowserEvent(refreshWindows));
 
+// The bridge replays its latest inventory when Webby reconnects, and a tab missing from
+// it counts as closed, so the inventory must list every new tab.
 chrome.tabs.onCreated.addListener((tab) => {
-  enqueueBrowserEvent(() => send(tabCreatedMessage(tab)));
+  enqueueBrowserEvent(async () => {
+    await send(tabCreatedMessage(tab));
+    await refreshWindows();
+  });
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {

@@ -33,6 +33,6 @@ final class OpenTabsFeed {
         guard let chrome, let launched = chrome.launchDate else {
             return OpenTabsInventory.unknownSession
         }
-        return "\(chrome.processIdentifier)@\(launched.timeIntervalSince1970)"
+        return ChromeSessionIdentity.session(processIdentifier: chrome.processIdentifier, launchDate: launched)
     }
 }

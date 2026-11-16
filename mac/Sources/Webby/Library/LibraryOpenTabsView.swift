@@ -25,7 +25,7 @@ struct LibraryOpenTabsView: View {
                                 Text(item.note.summaryLine() ?? "Empty note")
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
-                                Text(LibraryNotePresentation.scopeDescription(item.note.anchor))
+                                Text(TabBindingReconciler.isRestored(item.note.tab) ? "Restored" : LibraryNotePresentation.scopeDescription(for: item.note))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)

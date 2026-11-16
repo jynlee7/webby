@@ -3,7 +3,8 @@ import Foundation
 /// The bridge process: relays framed messages from Chrome (stdin) to the app's socket, and
 /// the app's commands back to Chrome (stdout). It keeps running while the app is down,
 /// reconnecting every `reconnectInterval`. Meanwhile it keeps only the latest `hello`,
-/// `inventory` and `active`, replays them on reconnecting, and asks the extension to
+/// `inventory` and `active` (plus the tab replacements that inventory reflects, so tab
+/// notes can follow a replaced tab), replays them on reconnecting, and asks the extension to
 /// resend if anything else may have been missed. Both directions are validated, and
 /// everything runs on one serial queue, so messages keep their order. Writes to the app go
 /// through a `SocketWriter`, so an app that stops reading can't stall that queue: the relay
@@ -39,6 +40,15 @@ public final class BridgeRelay: @unchecked Sendable {
     private var latestHello: Data?
     private var latestInventory: Data?
     private var latestActive: Data?
+    /// `tabReplaced` messages since the latest `hello`, oldest first, and how many of them
+    /// came before `latestInventory`. Only those are replayed, before the inventory: a
+    /// replacement newer than the inventory would contradict it. Without them, a tab note
+    /// would see its old tab ID missing from the inventory and close. They are kept even
+    /// after a replay, because queued writes can fail with the connection, and replaying
+    /// one the app already applied changes nothing.
+    private var replacementsSinceHello: [Data] = []
+    private var replacementsBeforeInventory = 0
+    static let maxKeptReplacements = 256
     /// Set when the app may have missed a message that the replay doesn't cover.
     private var needsResend = false
 
@@ -122,14 +132,25 @@ public final class BridgeRelay: @unchecked Sendable {
             latestHello = payload
             latestInventory = nil
             latestActive = nil
+            replacementsSinceHello.removeAll()
+            replacementsBeforeInventory = 0
         }
         guard latestHello != nil else {
             log("dropping \(message.type): it arrived before hello")
             return
         }
         switch message {
-        case .inventory: latestInventory = payload
+        case .inventory:
+            latestInventory = payload
+            replacementsBeforeInventory = replacementsSinceHello.count
         case .active: latestActive = payload
+        case .tabReplaced:
+            replacementsSinceHello.append(payload)
+            if replacementsSinceHello.count > Self.maxKeptReplacements {
+                // The oldest goes; a note on that chain ends up in Closed tabs, not lost.
+                replacementsSinceHello.removeFirst()
+                replacementsBeforeInventory = max(replacementsBeforeInventory - 1, 0)
+            }
         default: break
         }
 
@@ -183,7 +204,8 @@ public final class BridgeRelay: @unchecked Sendable {
         source.resume()
         log("connected to Webby")
 
-        for payload in [latestHello, latestInventory, latestActive].compactMap({ $0 }) {
+        let replacements = latestInventory == nil ? [] : Array(replacementsSinceHello.prefix(replacementsBeforeInventory))
+        for payload in [latestHello].compactMap({ $0 }) + replacements + [latestInventory, latestActive].compactMap({ $0 }) {
             sendToApp(payload)
             guard appSocket >= 0 else { return }
         }
