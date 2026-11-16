@@ -289,6 +289,16 @@ final class NotesController {
         finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
     }
 
+    /// Sets only a note's workspace override; the anchor and any tab binding stay. A nil
+    /// workspace clears the override; a workspace ID must already exist.
+    func setLibraryWorkspace(id: UUID, workspace: UUID?) {
+        guard libraryNoteForMutation(id: id) != nil else { return }
+        if let workspace, !store.workspaces.contains(where: { $0.id == workspace }) { return }
+        let draftsChanged = commitDrafts()
+        let changed = store.updateContent(id: id, change: .workspaceOverride(workspace), now: now())
+        finishLibraryMutation(changed: changed, draftsChanged: draftsChanged, relayout: true)
+    }
+
     /// Library demote: binds an anchored note to the last verified Chrome tab and keeps
     /// its anchor, so its workspace doesn't move. A content edit, like the overlay's.
     func attachLibraryNoteToLastTab(id: UUID) {

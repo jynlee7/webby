@@ -289,6 +289,37 @@ private let profile = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
         #expect(model.promotions(for: newTab).isEmpty)
     }
 
+    /// The Library's Workspace picker must save for a tab note without taking it off
+    /// its tab (Save Anchor used to be disabled for tab notes).
+    @Test func theLibraryChangesATabNotesWorkspaceAndKeepsItsTab() throws {
+        let h = harness()
+        defer { h.close() }
+        hello(h)
+        h.send(.inventory(windows: [window("chrome://newtab/")]))
+        h.controller.newNote()
+        let note = try #require(h.store.notes.first)
+        let binding = try #require(note.tab)
+        let record = WorkspaceRecord(keys: [.app(bundleID: "com.example.Notes")], createdAt: h.clock.now)
+        #expect(h.store.add(Note(text: "seed", frame: NoteFrame(), placement: .window), workspace: record))
+        let model = LibraryModel(controller: h.controller, openTabs: h.feed)
+
+        model.setWorkspace(id: note.id, workspace: record.id)
+        let moved = try #require(h.store.note(id: note.id))
+        #expect(moved.workspaceOverride == record.id)
+        #expect(moved.tab == binding)
+        #expect(moved.anchor == note.anchor)
+        #expect(moved.revision == note.revision + 1)
+
+        model.setWorkspace(id: note.id, workspace: nil)
+        let cleared = try #require(h.store.note(id: note.id))
+        #expect(cleared.workspaceOverride == nil)
+        #expect(cleared.tab == binding)
+
+        // An unknown workspace changes nothing.
+        model.setWorkspace(id: note.id, workspace: UUID())
+        #expect(h.store.note(id: note.id) == cleared)
+    }
+
     /// The Library used to clear a tab binding through "Save Anchor" (kind None) or
     /// "Attach to Current" and drop the note into the Inbox without a word.
     @Test func takingANoteOffItsTabInTheLibraryNamesTheEffect() throws {

@@ -712,7 +712,7 @@ private struct NoteDetailContent: View {
                 Button("Save Anchor") {
                     saveAnchor()
                 }
-                .disabled(!canEdit || anchorKind == .tab)
+                .disabled(!canEdit || (anchorKind == .tab && selectedWorkspaceID == note.workspaceOverride))
             }
         }
     }
@@ -800,7 +800,10 @@ private struct NoteDetailContent: View {
         let result: AnchorValidation
         switch anchorKind {
         case .tab:
-            // The tab section moves a tab note; nothing to save here.
+            // The tab section moves a tab note; here only the workspace can change, and
+            // the note stays on its tab.
+            draft.commit(to: model)
+            model.setWorkspace(id: note.id, workspace: selectedWorkspaceID)
             return
         case .none:
             result = .valid(nil)

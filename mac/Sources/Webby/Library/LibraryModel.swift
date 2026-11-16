@@ -878,6 +878,12 @@ final class LibraryModel {
         refresh()
     }
 
+    /// Changes only the workspace, so a tab note keeps its tab.
+    func setWorkspace(id: UUID, workspace: UUID?) {
+        controller.setLibraryWorkspace(id: id, workspace: workspace)
+        refresh()
+    }
+
     func setPinned(id: UUID, pinned: Bool) {
         controller.setPinned(id: id, pinned: pinned)
         refresh()
